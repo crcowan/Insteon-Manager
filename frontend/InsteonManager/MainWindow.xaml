@@ -1,0 +1,1800 @@
+<Window x:Class="InsteonManager.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:local="clr-namespace:InsteonManager"
+        xmlns:vm="clr-namespace:InsteonManager.ViewModels"
+        xmlns:models="clr-namespace:InsteonManager.Models"
+        mc:Ignorable="d"
+        Title="Insteon Network Management Bridge" 
+        Height="850" Width="1280"
+        MinHeight="650" MinWidth="950"
+        WindowStartupLocation="CenterScreen"
+        Background="#181825"
+        Foreground="#CDD6F4"
+        FontFamily="Segoe UI">
+
+    <Window.DataContext>
+        <vm:MainViewModel />
+    </Window.DataContext>
+
+    <Window.Resources>
+        <BooleanToVisibilityConverter x:Key="BoolToVis" />
+
+        <!-- Modern Colors -->
+        <SolidColorBrush x:Key="DarkSurface" Color="#1E1E2E" />
+        <SolidColorBrush x:Key="DarkSurfaceLight" Color="#313244" />
+        <SolidColorBrush x:Key="AccentBlue" Color="#89B4FA" />
+        <SolidColorBrush x:Key="AccentGreen" Color="#A6E3A1" />
+        <SolidColorBrush x:Key="AccentAmber" Color="#F9E2AF" />
+        <SolidColorBrush x:Key="AccentRed" Color="#F38BA8" />
+        <SolidColorBrush x:Key="TextPrimary" Color="#CDD6F4" />
+        <SolidColorBrush x:Key="TextMuted" Color="#A6ADC8" />
+
+        <!-- Base Button Style -->
+        <Style TargetType="Button">
+            <Setter Property="Padding" Value="14,8" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Background" Value="#45475A" />
+            <Setter Property="Foreground" Value="#CDD6F4" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border Background="{TemplateBinding Background}" 
+                                CornerRadius="6" 
+                                Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Background" Value="#585B70" />
+                </Trigger>
+                <Trigger Property="IsEnabled" Value="False">
+                    <Setter Property="Opacity" Value="0.4" />
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+
+        <Style x:Key="PrimaryButtonStyle" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+            <Setter Property="Background" Value="#89B4FA" />
+            <Setter Property="Foreground" Value="#11111B" />
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Background" Value="#B4BEFE" />
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+
+        <Style x:Key="DangerButtonStyle" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+            <Setter Property="Background" Value="#F38BA8" />
+            <Setter Property="Foreground" Value="#11111B" />
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Background" Value="#EBA0AC" />
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+
+        <Style x:Key="SessionToggleButtonStyle" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+            <Setter Property="Background" Value="#89B4FA" />
+            <Setter Property="Foreground" Value="#11111B" />
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Background" Value="#B4BEFE" />
+                </Trigger>
+                <DataTrigger Binding="{Binding IsSessionActive}" Value="True">
+                    <Setter Property="Background" Value="#F38BA8" />
+                </DataTrigger>
+                <MultiDataTrigger>
+                    <MultiDataTrigger.Conditions>
+                        <Condition Binding="{Binding IsSessionActive}" Value="True" />
+                        <Condition Binding="{Binding RelativeSource={RelativeSource Self}, Path=IsMouseOver}" Value="True" />
+                    </MultiDataTrigger.Conditions>
+                    <Setter Property="Background" Value="#EBA0AC" />
+                </MultiDataTrigger>
+            </Style.Triggers>
+        </Style>
+    </Window.Resources>
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <!-- 0: Header & Connection Settings -->
+            <RowDefinition Height="Auto" />
+            <!-- 1: Session Status & Hardware Lock Bar -->
+            <RowDefinition Height="Auto" />
+            <!-- 2: Main Workspace -->
+            <RowDefinition Height="*" />
+            <!-- 3: Status & Log Bar -->
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <!-- 1. Top App Bar -->
+        <Border Grid.Row="0" Background="{StaticResource DarkSurface}" Padding="16,12" BorderBrush="#313244" BorderThickness="0,0,0,1">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+
+                <!-- App Title -->
+                <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
+                    <TextBlock Text="⚡ Insteon Network Bridge" FontSize="18" FontWeight="Bold" Foreground="{StaticResource AccentBlue}" VerticalAlignment="Center" />
+                    <TextBlock Text=" (Raspberry Pi &lt;-&gt; openHAB 5.1)" FontSize="13" Foreground="{StaticResource TextMuted}" Margin="8,0,0,0" VerticalAlignment="Center" />
+                </StackPanel>
+
+                <!-- Backend Connection Bar -->
+                <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
+                    <TextBlock Text="Pi Backend URL:" VerticalAlignment="Center" Margin="0,0,8,0" Foreground="{StaticResource TextMuted}" />
+                    <TextBox Text="{Binding BackendUrl, UpdateSourceTrigger=PropertyChanged}" Width="220" Padding="8,4" Background="{StaticResource DarkSurfaceLight}" Foreground="{StaticResource TextPrimary}" BorderThickness="1" BorderBrush="#45475A" />
+                    <Button Content="Test Link" Command="{Binding CheckConnectionCommand}" Margin="8,0,0,0" Padding="10,4" />
+                    <Button Content="Force Restore openHAB" Command="{Binding ForceRestoreOpenhabCommand}" Style="{StaticResource DangerButtonStyle}" Margin="8,0,0,0" Padding="10,4" ToolTip="Emergency recovery to re-enable openHAB Insteon Thing" />
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <!-- 2. Session Control & Lock Status Bar -->
+        <Border Grid.Row="1" Background="#11111B" Padding="16,12" BorderBrush="#313244" BorderThickness="0,0,0,1">
+            <DockPanel LastChildFill="False">
+                <!-- Actions (Docked Right for layout priority) -->
+                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+                    <Button Content="{Binding SessionToggleButtonText}" 
+                            Command="{Binding ToggleSessionCommand}" 
+                            Style="{StaticResource SessionToggleButtonStyle}"
+                            ToolTip="{Binding SessionToggleButtonToolTip}"
+                            Margin="0,0,16,0" />
+
+                    <!-- ALDB Query Trigger -->
+                    <CheckBox IsChecked="{Binding ForceRefreshHardware}" 
+                              Content="Force Read from Hardware" 
+                              Foreground="{StaticResource TextMuted}"
+                              VerticalAlignment="Center" 
+                              Margin="0,0,12,0" 
+                              ToolTip="Bypass backend cache and read directly across powerline" />
+
+                    <Button Content="🔄 Query PLM ALDB" 
+                            Command="{Binding QueryAldbCommand}" 
+                            Padding="14,8"
+                            ToolTip="Query All-Link Database and render network topology" />
+                </StackPanel>
+
+                <!-- Status Badges (Docked Left) -->
+                <StackPanel DockPanel.Dock="Left" Orientation="Horizontal" VerticalAlignment="Center">
+                    <!-- openHAB Status Badge -->
+                    <Border CornerRadius="12" Padding="10,4" Margin="0,0,12,0" Background="{StaticResource DarkSurfaceLight}">
+                        <StackPanel Orientation="Horizontal">
+                            <Ellipse Width="10" Height="10" Margin="0,0,6,0" VerticalAlignment="Center">
+                                <Ellipse.Style>
+                                    <Style TargetType="Ellipse">
+                                        <Setter Property="Fill" Value="{StaticResource AccentGreen}" />
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding IsSessionActive}" Value="True">
+                                                <Setter Property="Fill" Value="{StaticResource AccentAmber}" />
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </Ellipse.Style>
+                            </Ellipse>
+                            <TextBlock Text="{Binding OpenhabStatusText}" FontWeight="SemiBold" FontSize="12" VerticalAlignment="Center" />
+                        </StackPanel>
+                    </Border>
+
+                    <!-- Session Lock Badge -->
+                    <Border CornerRadius="12" Padding="10,4" Margin="0,0,12,0" Background="{StaticResource DarkSurfaceLight}">
+                        <StackPanel Orientation="Horizontal">
+                            <Ellipse Width="10" Height="10" Margin="0,0,6,0" VerticalAlignment="Center">
+                                <Ellipse.Style>
+                                    <Style TargetType="Ellipse">
+                                        <Setter Property="Fill" Value="#6C7086" />
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding IsSessionActive}" Value="True">
+                                                <Setter Property="Fill" Value="{StaticResource AccentGreen}" />
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </Ellipse.Style>
+                            </Ellipse>
+                            <TextBlock Text="{Binding SessionStatusText}" FontWeight="SemiBold" FontSize="12" VerticalAlignment="Center" />
+                        </StackPanel>
+                    </Border>
+                </StackPanel>
+            </DockPanel>
+        </Border>
+
+        <!-- 3. Main Workspace: Tabs -->
+        <TabControl Grid.Row="2" SelectedIndex="{Binding SelectedTabIndex}" Background="Transparent" BorderThickness="0" Margin="12,8,12,8">
+            <TabControl.Resources>
+                <Style TargetType="TabItem">
+                    <Setter Property="Template">
+                        <Setter.Value>
+                            <ControlTemplate TargetType="TabItem">
+                                <Border Name="Border" Background="{StaticResource DarkSurface}" CornerRadius="6,6,0,0" Margin="0,0,4,0" Padding="16,8">
+                                    <ContentPresenter ContentSource="Header" />
+                                </Border>
+                                <ControlTemplate.Triggers>
+                                    <Trigger Property="IsSelected" Value="True">
+                                        <Setter TargetName="Border" Property="Background" Value="{StaticResource DarkSurfaceLight}" />
+                                    </Trigger>
+                                </ControlTemplate.Triggers>
+                            </ControlTemplate>
+                        </Setter.Value>
+                    </Setter>
+                    <Setter Property="Foreground" Value="{StaticResource TextPrimary}" />
+                    <Setter Property="FontWeight" Value="SemiBold" />
+                </Style>
+            </TabControl.Resources>
+
+            <!-- TAB 1: Network Topology Graph (Canvas with Dynamic Links & Draggable Nodes) -->
+            <TabItem Header="🗺️ Network Topology Map">
+                <Grid Background="{StaticResource DarkSurface}">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="340" />
+                    </Grid.ColumnDefinitions>
+
+                    <!-- Left: Interactive Graph Map Column with Quick Actions Bar -->
+                    <Grid Grid.Column="0">
+                        <Grid.RowDefinitions>
+                            <!-- Row 0: Quick Scene & Selected Node Control Bar -->
+                            <RowDefinition Height="Auto" />
+                            <!-- Row 1: Scrollable Canvas with Zoom & Pan Support -->
+                            <RowDefinition Height="*" />
+                        </Grid.RowDefinitions>
+
+                        <!-- TOP TOOLBAR: Quick Scene & Selected Node Control Bar -->
+                        <Border Grid.Row="0" Background="#181825" BorderBrush="#313244" BorderThickness="0,0,0,1" Padding="12,8">
+                            <DockPanel LastChildFill="False">
+                                <!-- LEFT: Quick Scene Trigger -->
+                                <StackPanel DockPanel.Dock="Left" Orientation="Horizontal" VerticalAlignment="Center">
+                                    <TextBlock Text="🎬 Quick Scene:" FontWeight="Bold" FontSize="12" Foreground="{StaticResource AccentAmber}" VerticalAlignment="Center" Margin="0,0,8,0" />
+                                    <ComboBox ItemsSource="{Binding Scenes}" SelectedItem="{Binding SelectedQuickScene}" DisplayMemberPath="Name"
+                                              Width="200" Padding="6,4" Background="#1E1E2E" Foreground="{StaticResource TextPrimary}" Margin="0,0,10,0"
+                                              ToolTip="Select a scene to trigger live across the network" />
+                                    <Button Content="💡 On" Command="{Binding QuickTriggerSceneCommand}" CommandParameter="on"
+                                            Padding="8,4" FontSize="11" Margin="0,0,4,0" Background="#2E4035" Foreground="#A6E3A1" FontWeight="SemiBold" ToolTip="Broadcast All-Link ON for selected scene" />
+                                    <Button Content="🌑 Off" Command="{Binding QuickTriggerSceneCommand}" CommandParameter="off"
+                                            Padding="8,4" FontSize="11" Margin="0,0,4,0" Background="#3D2930" Foreground="#F38BA8" FontWeight="SemiBold" ToolTip="Broadcast All-Link OFF for selected scene" />
+                                    <Button Content="⚡ Fast On" Command="{Binding QuickTriggerSceneCommand}" CommandParameter="fast_on"
+                                            Padding="6,4" FontSize="10" Margin="0,0,4,0" Background="#2A324B" Foreground="#89B4FA" ToolTip="Broadcast Fast ON for selected scene" />
+                                    <Button Content="⚡ Fast Off" Command="{Binding QuickTriggerSceneCommand}" CommandParameter="fast_off"
+                                            Padding="6,4" FontSize="10" Margin="0,0,16,0" Background="#2A324B" Foreground="#89B4FA" ToolTip="Broadcast Fast OFF for selected scene" />
+                                </StackPanel>
+
+                                <!-- RIGHT: Selected Device Live Controls & Staging -->
+                                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+                                    <TextBlock Text="💡 Selected Node:" FontWeight="Bold" FontSize="12" Foreground="{StaticResource AccentBlue}" VerticalAlignment="Center" Margin="0,0,6,0" />
+                                    <Border Background="#1E1E2E" CornerRadius="4" Padding="8,4" Margin="0,0,8,0" VerticalAlignment="Center">
+                                        <TextBlock Text="{Binding SelectedGraphNodeTitle}" FontWeight="SemiBold" FontSize="11" Foreground="{StaticResource TextPrimary}" TextTrimming="CharacterEllipsis" MaxWidth="180" />
+                                    </Border>
+                                    
+                                    <!-- Staging Actions -->
+                                    <Button Content="🔗 Controller" Command="{Binding SetSelectedNodeAsControllerCommand}"
+                                            IsEnabled="{Binding HasSelectedGraphNode}" Padding="6,4" FontSize="10" Margin="0,0,3,0"
+                                            Background="#263445" Foreground="{StaticResource AccentBlue}" FontWeight="SemiBold"
+                                            ToolTip="Stage selected node as Controller in Link Creator (Tab 5)" />
+                                    <Button Content="🎯 Responder" Command="{Binding SetSelectedNodeAsResponderCommand}"
+                                            IsEnabled="{Binding HasSelectedGraphNode}" Padding="6,4" FontSize="10" Margin="0,0,3,0"
+                                            Background="#263445" Foreground="{StaticResource AccentGreen}" FontWeight="SemiBold"
+                                            ToolTip="Stage selected node as Responder in Link Creator (Tab 5)" />
+                                    <Button Content="🔍 ALDB" Command="{Binding InspectNodeInAldbCommand}"
+                                            IsEnabled="{Binding HasSelectedGraphNode}" Padding="6,4" FontSize="10" Margin="0,0,8,0"
+                                            Background="#3A3225" Foreground="{StaticResource AccentAmber}" FontWeight="SemiBold"
+                                            ToolTip="Inspect this device's ALDB database in Tab 2" />
+
+                                    <!-- Quick Controls -->
+                                    <Button Content="💡 On" Command="{Binding ControlSelectedNodeCommand}" CommandParameter="on"
+                                            IsEnabled="{Binding HasSelectedGraphNode}"
+                                            Padding="7,4" FontSize="11" Margin="0,0,3,0" Background="#2E4035" Foreground="#A6E3A1" FontWeight="SemiBold" ToolTip="Turn ON selected device" />
+                                    <Button Content="🌑 Off" Command="{Binding ControlSelectedNodeCommand}" CommandParameter="off"
+                                            IsEnabled="{Binding HasSelectedGraphNode}"
+                                            Padding="7,4" FontSize="11" Margin="0,0,6,0" Background="#3D2930" Foreground="#F38BA8" FontWeight="SemiBold" ToolTip="Turn OFF selected device" />
+                                    <TextBlock Text="Dim:" FontSize="10" Foreground="{StaticResource TextMuted}" VerticalAlignment="Center" Margin="0,0,4,0" />
+                                    <Slider Value="{Binding SelectedNodeBrightness}" Minimum="0" Maximum="100" Width="70" VerticalAlignment="Center" Margin="0,0,4,0" IsEnabled="{Binding HasSelectedGraphNode}" />
+                                    <TextBlock Text="{Binding SelectedNodeBrightness, StringFormat='{}{0}%'}" FontSize="10" Foreground="{StaticResource AccentGreen}" Width="30" VerticalAlignment="Center" Margin="0,0,4,0" />
+                                    <Button Content="🔆" Command="{Binding ControlSelectedNodeCommand}" CommandParameter="dim"
+                                            IsEnabled="{Binding HasSelectedGraphNode}"
+                                            Padding="6,4" FontSize="10" Background="#3A3225" Foreground="{StaticResource AccentAmber}" FontWeight="SemiBold" ToolTip="Set dim brightness level" />
+                                </StackPanel>
+                            </DockPanel>
+                        </Border>
+
+                        <!-- Scrollable Graph Canvas with Zoom & Pan Support -->
+                        <ScrollViewer x:Name="GraphScrollViewer" Grid.Row="1" 
+                                  HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto"
+                                  PreviewMouseWheel="GraphScrollViewer_PreviewMouseWheel">
+                        <Grid>
+                            <!-- Main Visual Canvas (Expanded 2600x2000 for generous node distribution) -->
+                            <Canvas x:Name="GraphCanvas" Width="2600" Height="2000"
+                                    Cursor="Hand"
+                                    MouseLeftButtonDown="GraphCanvas_MouseLeftButtonDown"
+                                    MouseMove="GraphCanvas_MouseMove"
+                                    MouseLeftButtonUp="GraphCanvas_MouseLeftButtonUp"
+                                    MouseDown="GraphCanvas_MouseDown"
+                                    MouseUp="GraphCanvas_MouseUp">
+                                <Canvas.LayoutTransform>
+                                    <ScaleTransform ScaleX="{Binding ZoomLevel}" ScaleY="{Binding ZoomLevel}" />
+                                </Canvas.LayoutTransform>
+                                
+                                <!-- Subtle Background Grid Pattern -->
+                                <Canvas.Background>
+                                    <VisualBrush TileMode="Tile" Viewport="0,0,50,50" ViewportUnits="Absolute">
+                                        <VisualBrush.Visual>
+                                            <Rectangle Width="50" Height="50" Stroke="#1E1E2E" StrokeThickness="0.6" Fill="#14141E" />
+                                        </VisualBrush.Visual>
+                                    </VisualBrush>
+                                </Canvas.Background>
+
+                                <!-- LAYER 1: Connecting Relationship Lines (Behind Nodes) -->
+                                <ItemsControl ItemsSource="{Binding TopologyLinks}">
+                                    <ItemsControl.ItemsPanel>
+                                        <ItemsPanelTemplate>
+                                            <Canvas IsItemsHost="True" />
+                                        </ItemsPanelTemplate>
+                                    </ItemsControl.ItemsPanel>
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate DataType="{x:Type models:TopologyLink}">
+                                            <Canvas Visibility="{Binding IsVisible, Converter={StaticResource BoolToVis}}">
+                                                <!-- A. Line Shaft -->
+                                                <Line X1="{Binding LineX1}" Y1="{Binding LineY1}"
+                                                      X2="{Binding LineX2}" Y2="{Binding LineY2}"
+                                                      Stroke="{Binding StrokeHex}"
+                                                      StrokeThickness="2.5"
+                                                      StrokeDashArray="{Binding StrokeDashArray}"
+                                                      Cursor="Hand">
+                                                    <Line.ToolTip>
+                                                        <ToolTip Content="{Binding TooltipText}" />
+                                                    </Line.ToolTip>
+                                                </Line>
+
+                                                <!-- B. Arrow Tail at Controller Node (initiates signal) -->
+                                                <Path Data="{Binding TailGeometry}"
+                                                      Stroke="{Binding StrokeHex}"
+                                                      Fill="{Binding StrokeHex}"
+                                                      StrokeThickness="2.4"
+                                                      StrokeStartLineCap="Round"
+                                                      StrokeEndLineCap="Round"
+                                                      IsHitTestVisible="False" />
+
+                                                <!-- C. Arrow Head at Responder Node (receives signal) -->
+                                                <Path Data="{Binding HeadGeometry}"
+                                                      Fill="{Binding StrokeHex}"
+                                                      Stroke="{Binding StrokeHex}"
+                                                      StrokeThickness="1"
+                                                      IsHitTestVisible="False" />
+
+                                                <!-- D. Relationship Tag at Midpoint -->
+                                                <Border Canvas.Left="{Binding MidX}" Canvas.Top="{Binding MidY}"
+                                                        Background="#181825" BorderBrush="{Binding StrokeHex}" BorderThickness="1.2"
+                                                        CornerRadius="4" Padding="5,2" Margin="-35,-11,0,0" IsHitTestVisible="False">
+                                                    <TextBlock Text="{Binding RelationshipLabel}" FontSize="9" FontWeight="SemiBold" Foreground="#CDD6F4" />
+                                                </Border>
+                                            </Canvas>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+
+                                <!-- LAYER 2: Interactive Draggable Device Nodes -->
+                                <ItemsControl ItemsSource="{Binding DeviceNodes}">
+                                    <ItemsControl.ItemsPanel>
+                                        <ItemsPanelTemplate>
+                                            <Canvas IsItemsHost="True" />
+                                        </ItemsPanelTemplate>
+                                    </ItemsControl.ItemsPanel>
+                                    <ItemsControl.ItemContainerStyle>
+                                        <Style TargetType="ContentPresenter">
+                                            <Setter Property="Canvas.Left" Value="{Binding X}" />
+                                            <Setter Property="Canvas.Top" Value="{Binding Y}" />
+                                            <Setter Property="Visibility" Value="{Binding IsVisible, Converter={StaticResource BoolToVis}}" />
+                                        </Style>
+                                    </ItemsControl.ItemContainerStyle>
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate DataType="{x:Type models:DeviceNode}">
+                                            <!-- Node Card Element (Mouse Drag Handlers) -->
+                                            <Border Width="{Binding Width}" Height="{Binding Height}" CornerRadius="8" Padding="10"
+                                                    Background="{StaticResource DarkSurfaceLight}"
+                                                    BorderBrush="{StaticResource AccentBlue}" BorderThickness="2"
+                                                    Cursor="SizeAll"
+                                                    MouseLeftButtonDown="Node_MouseLeftButtonDown"
+                                                    MouseMove="Node_MouseMove"
+                                                    MouseLeftButtonUp="Node_MouseLeftButtonUp">
+                                                <Border.ContextMenu>
+                                                    <ContextMenu Background="#181825" BorderBrush="#45475A" Foreground="{StaticResource TextPrimary}">
+                                                        <MenuItem Header="🔗 Set as Controller (Link Creator)"
+                                                                  Command="{Binding DataContext.SetSelectedNodeAsControllerCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                                  CommandParameter="{Binding}" />
+                                                        <MenuItem Header="🎯 Set as Responder (Link Creator)"
+                                                                  Command="{Binding DataContext.SetSelectedNodeAsResponderCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                                  CommandParameter="{Binding}" />
+                                                        <MenuItem Header="🔄 Set as Device to Replace (Wizard)"
+                                                                  Command="{Binding DataContext.SetSelectedNodeAsReplaceOldCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                                  CommandParameter="{Binding}" />
+                                                        <MenuItem Header="🔍 Inspect in ALDB Inspector (Tab 2)"
+                                                                  Command="{Binding DataContext.InspectNodeInAldbCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                                  CommandParameter="{Binding Address}" />
+                                                        <MenuItem Header="📋 Copy Insteon Address"
+                                                                  Command="{Binding DataContext.CopyNodeAddressCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                                  CommandParameter="{Binding Address}" />
+                                                        <Separator Background="#313244" />
+                                                        <MenuItem Header="💡 Turn ON (100%)"
+                                                                  Command="{Binding DataContext.ControlDeviceCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                                  CommandParameter="{Binding Address, StringFormat='{}{0}:on'}" />
+                                                        <MenuItem Header="🌑 Turn OFF"
+                                                                  Command="{Binding DataContext.ControlDeviceCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                                  CommandParameter="{Binding Address, StringFormat='{}{0}:off'}" />
+                                                        <MenuItem Header="⚡ Fast ON"
+                                                                  Command="{Binding DataContext.ControlDeviceCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                                  CommandParameter="{Binding Address, StringFormat='{}{0}:fast_on'}" />
+                                                        <MenuItem Header="⚡ Fast OFF"
+                                                                  Command="{Binding DataContext.ControlDeviceCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                                  CommandParameter="{Binding Address, StringFormat='{}{0}:fast_off'}" />
+                                                        <Separator Background="#313244" />
+                                                        <MenuItem Header="🔆 Dim to 25%"
+                                                                  Command="{Binding DataContext.ControlDeviceCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                                  CommandParameter="{Binding Address, StringFormat='{}{0}:dim:64'}" />
+                                                        <MenuItem Header="🔆 Dim to 50%"
+                                                                  Command="{Binding DataContext.ControlDeviceCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                                  CommandParameter="{Binding Address, StringFormat='{}{0}:dim:128'}" />
+                                                        <MenuItem Header="🔆 Dim to 75%"
+                                                                  Command="{Binding DataContext.ControlDeviceCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                                  CommandParameter="{Binding Address, StringFormat='{}{0}:dim:192'}" />
+                                                    </ContextMenu>
+                                                </Border.ContextMenu>
+                                                <Border.Style>
+                                                    <Style TargetType="Border">
+                                                        <Style.Triggers>
+                                                            <!-- Distinct Style for PLM Modem Hub -->
+                                                            <DataTrigger Binding="{Binding IsModem}" Value="True">
+                                                                <Setter Property="Background" Value="#1E1E38" />
+                                                                <Setter Property="BorderBrush" Value="#F5C2E7" />
+                                                            </DataTrigger>
+                                                            <!-- Highlight Border when Selected -->
+                                                            <DataTrigger Binding="{Binding IsSelected}" Value="True">
+                                                                <Setter Property="BorderBrush" Value="{StaticResource AccentAmber}" />
+                                                                <Setter Property="BorderThickness" Value="3" />
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </Border.Style>
+
+                                                <Grid>
+                                                    <Grid.RowDefinitions>
+                                                        <RowDefinition Height="Auto" />
+                                                        <RowDefinition Height="*" />
+                                                        <RowDefinition Height="Auto" />
+                                                    </Grid.RowDefinitions>
+
+                                                    <!-- Address & Type Badge -->
+                                                    <StackPanel Grid.Row="0" Orientation="Horizontal" HorizontalAlignment="Stretch">
+                                                        <TextBlock Text="{Binding Address}" FontWeight="Bold" FontSize="13" Foreground="{StaticResource AccentBlue}" />
+                                                        <TextBlock Text=" (HUB)" FontWeight="Bold" FontSize="11" Foreground="#F5C2E7" Margin="4,0,0,0">
+                                                            <TextBlock.Style>
+                                                                <Style TargetType="TextBlock">
+                                                                    <Setter Property="Visibility" Value="Collapsed" />
+                                                                    <Style.Triggers>
+                                                                        <DataTrigger Binding="{Binding IsModem}" Value="True">
+                                                                            <Setter Property="Visibility" Value="Visible" />
+                                                                        </DataTrigger>
+                                                                    </Style.Triggers>
+                                                                </Style>
+                                                            </TextBlock.Style>
+                                                        </TextBlock>
+                                                    </StackPanel>
+
+                                                    <!-- Description / Device Type -->
+                                                    <TextBlock Grid.Row="1" Text="{Binding DeviceType}" FontSize="11" Foreground="{StaticResource TextMuted}" TextWrapping="Wrap" Margin="0,4,0,0" />
+
+                                                    <!-- Footer (Quick Action Buttons & Link Count Badge) -->
+                                                    <DockPanel Grid.Row="2" LastChildFill="False" Margin="0,4,0,0">
+                                                        <!-- Quick Control Buttons -->
+                                                        <StackPanel DockPanel.Dock="Left" Orientation="Horizontal">
+                                                            <Button Content="💡" Command="{Binding DataContext.ControlDeviceCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                                    CommandParameter="{Binding Address, StringFormat='{}{0}:on'}"
+                                                                    Padding="4,1" FontSize="9" Margin="0,0,3,0" Background="#2E4035" Foreground="#A6E3A1" ToolTip="Quick Turn ON (100%)" />
+                                                            <Button Content="🌑" Command="{Binding DataContext.ControlDeviceCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                                    CommandParameter="{Binding Address, StringFormat='{}{0}:off'}"
+                                                                    Padding="4,1" FontSize="9" Background="#3D2930" Foreground="#F38BA8" ToolTip="Quick Turn OFF" />
+                                                        </StackPanel>
+
+                                                        <!-- Link Count Badge -->
+                                                        <Border DockPanel.Dock="Right" Background="#45475A" CornerRadius="4" Padding="6,2">
+                                                            <TextBlock Text="{Binding LinkCount, StringFormat='Links: {0}'}" FontSize="10" Foreground="{StaticResource TextPrimary}" />
+                                                        </Border>
+                                                    </DockPanel>
+                                                </Grid>
+                                            </Border>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </Canvas>
+
+                            <!-- Floated Filter Active Banner (Top-Left) -->
+                            <Border HorizontalAlignment="Left" VerticalAlignment="Top"
+                                    Margin="16" Background="#EA181825" BorderBrush="#F9E2AF" BorderThickness="1.5"
+                                    CornerRadius="8" Padding="12,8"
+                                    Visibility="{Binding IsMapFiltered, Converter={StaticResource BoolToVis}}"
+                                    IsHitTestVisible="True">
+                                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                    <Ellipse Width="8" Height="8" Fill="#F9E2AF" Margin="0,0,8,0" VerticalAlignment="Center" />
+                                    <TextBlock Text="{Binding MapFilterStatusText}" FontSize="12" FontWeight="SemiBold" Foreground="#CDD6F4" VerticalAlignment="Center" Margin="0,0,12,0" />
+                                    <Button Content="↺ Show All Nodes" Command="{Binding ShowAllMapNodesCommand}" 
+                                            Background="#89B4FA" Foreground="#11111B" FontWeight="Bold"
+                                            Padding="10,4" FontSize="11" ToolTip="Reset filter to display all nodes and connections" />
+                                </StackPanel>
+                            </Border>
+
+                            <!-- Floated Zoom & Spread Control Toolbar (Top-Right) -->
+                            <Border HorizontalAlignment="Right" VerticalAlignment="Top"
+                                    Margin="16" Background="#24273AE6" BorderBrush="#45475A" BorderThickness="1"
+                                    CornerRadius="8" Padding="12,10" IsHitTestVisible="True">
+                                <StackPanel Orientation="Vertical">
+                                    <!-- Zoom Controls -->
+                                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,0,6">
+                                        <TextBlock Text="🔍 Zoom:" FontWeight="SemiBold" FontSize="11" Foreground="{StaticResource TextMuted}" VerticalAlignment="Center" Margin="0,0,6,0" />
+                                        <Button Content="-" Command="{Binding ZoomOutCommand}" Width="26" Height="26" Padding="0" Margin="2,0" ToolTip="Zoom Out (-15%)" />
+                                        <Slider Value="{Binding ZoomLevel}" Minimum="0.3" Maximum="2.5" Width="100" VerticalAlignment="Center" Margin="6,0" ToolTip="Zoom Canvas (30% - 250%)" />
+                                        <Button Content="+" Command="{Binding ZoomInCommand}" Width="26" Height="26" Padding="0" Margin="2,0" ToolTip="Zoom In (+15%)" />
+                                        <Button Content="{Binding ZoomPercentageText}" Command="{Binding ResetZoomCommand}" Width="48" Height="26" Padding="0" Margin="6,0,0,0" FontSize="11" ToolTip="Reset Zoom (100%)" />
+                                    </StackPanel>
+
+                                    <Separator Background="#313244" Margin="0,4" />
+
+                                    <!-- Spread / Anti-Overlap Spacing Controls -->
+                                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="0,4,0,0">
+                                        <TextBlock Text="↔️ Spread:" FontWeight="SemiBold" FontSize="11" Foreground="{StaticResource TextMuted}" VerticalAlignment="Center" Margin="0,0,6,0" />
+                                        <Slider Value="{Binding SpreadDistance}" Minimum="280" Maximum="850" Width="100" VerticalAlignment="Center" Margin="6,0" ToolTip="Spacing Radius (280px - 850px)" />
+                                        <Button Content="Spread" Command="{Binding SpreadLayoutCommand}" Padding="8,4" FontSize="11" Margin="4,0,0,0" ToolTip="Spread nodes out cleanly with current spacing" />
+                                        <Button Content="Save" Command="{Binding SavePositionsCommand}" Padding="8,4" FontSize="11" Margin="4,0,0,0" ToolTip="Save node coordinates" />
+                                    </StackPanel>
+                                </StackPanel>
+                            </Border>
+
+                            <!-- Floated Graph Legend Overlay (Bottom-Left) -->
+                            <Border HorizontalAlignment="Left" VerticalAlignment="Bottom"
+                                    Margin="16" Background="#24273AE6" BorderBrush="#45475A" BorderThickness="1"
+                                    CornerRadius="8" Padding="12" IsHitTestVisible="True">
+                                <StackPanel Width="230">
+                                    <TextBlock Text="Topology Legend" FontWeight="Bold" FontSize="12" Foreground="{StaticResource TextPrimary}" Margin="0,0,0,8" />
+                                    
+                                    <!-- Controller Link -->
+                                    <StackPanel Orientation="Horizontal" Margin="0,2">
+                                        <Line X1="0" Y1="6" X2="24" Y2="6" Stroke="#89B4FA" StrokeThickness="3" Margin="0,0,8,0" VerticalAlignment="Center" />
+                                        <TextBlock Text="Controls (Solid Blue)" FontSize="11" Foreground="{StaticResource TextMuted}" />
+                                    </StackPanel>
+
+                                    <!-- Responder Link -->
+                                    <StackPanel Orientation="Horizontal" Margin="0,2">
+                                        <Line X1="0" Y1="6" X2="24" Y2="6" Stroke="#A6E3A1" StrokeThickness="3" StrokeDashArray="3 3" Margin="0,0,8,0" VerticalAlignment="Center" />
+                                        <TextBlock Text="Responds To (Dotted Green)" FontSize="11" Foreground="{StaticResource TextMuted}" />
+                                    </StackPanel>
+
+                                    <!-- Cross-Linked -->
+                                    <StackPanel Orientation="Horizontal" Margin="0,2">
+                                        <Line X1="0" Y1="6" X2="24" Y2="6" Stroke="#F9E2AF" StrokeThickness="3" StrokeDashArray="6 3" Margin="0,0,8,0" VerticalAlignment="Center" />
+                                        <TextBlock Text="Cross-Linked (Dashed Gold)" FontSize="11" Foreground="{StaticResource TextMuted}" />
+                                    </StackPanel>
+
+                                    <!-- Directional Markers -->
+                                    <Border Background="#181825" CornerRadius="4" Padding="6,4" Margin="0,6,0,4">
+                                        <StackPanel>
+                                            <TextBlock Text="Directional Markers:" FontWeight="SemiBold" FontSize="10" Foreground="{StaticResource TextPrimary}" Margin="0,0,0,2" />
+                                            <TextBlock Text="⤚ Arrow Tail  = Controller (Initiator)" FontSize="9.5" Foreground="{StaticResource AccentBlue}" Margin="0,1" />
+                                            <TextBlock Text="▶ Arrow Head  = Responder (Receiver)" FontSize="9.5" Foreground="{StaticResource AccentGreen}" Margin="0,1" />
+                                            <TextBlock Text="◀▶ Dual Heads = Peer-to-Peer" FontSize="9.5" Foreground="{StaticResource AccentAmber}" Margin="0,1" />
+                                        </StackPanel>
+                                    </Border>
+
+                                    <Separator Background="#45475A" Margin="0,4" />
+
+                                    <TextBlock Text="💡 Drag canvas to pan view. Drag nodes to rearrange. Scroll wheel to zoom." FontSize="10" Foreground="{StaticResource TextMuted}" TextWrapping="Wrap" Margin="0,0,0,8" />
+                                    
+                                    <UniformGrid Columns="2">
+                                        <Button Content="↔️ Expand" Command="{Binding SpreadLayoutCommand}" Padding="6,4" FontSize="11" Margin="0,0,2,0" ToolTip="Expand layout cleanly" />
+                                        <Button Content="↺ Circle" Command="{Binding ResetLayoutCommand}" Padding="6,4" FontSize="11" Margin="2,0,0,0" ToolTip="Reset to circle" />
+                                    </UniformGrid>
+                                </StackPanel>
+                            </Border>
+                        </Grid>
+                    </ScrollViewer>
+                </Grid>
+
+                <!-- Node Selector & Visibility Side Panel (Modeled after ALDB Inspector) -->
+                    <Border Grid.Column="1" Background="{StaticResource DarkSurfaceLight}" Padding="14,12" BorderBrush="#313244" BorderThickness="1,0,0,0">
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="*" />
+                                <RowDefinition Height="Auto" />
+                            </Grid.RowDefinitions>
+
+                            <!-- Header & Status -->
+                            <StackPanel Grid.Row="0" Margin="0,0,0,8">
+                                <TextBlock Text="Node Selector" FontSize="15" FontWeight="Bold" Foreground="{StaticResource AccentBlue}" />
+                                <TextBlock Text="Check nodes to display on the map. Unchecked nodes and unrelated connections will be hidden." FontSize="11" Foreground="{StaticResource TextMuted}" Margin="0,2,0,6" TextWrapping="Wrap" />
+
+                                <!-- Filter Status Banner -->
+                                <Border CornerRadius="6" Padding="8,5" Margin="0,0,0,2">
+                                    <Border.Style>
+                                        <Style TargetType="Border">
+                                            <Setter Property="Background" Value="#1E1E2E" />
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding IsMapFiltered}" Value="True">
+                                                    <Setter Property="Background" Value="#3B3520" />
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </Border.Style>
+                                    <DockPanel LastChildFill="True">
+                                        <Button DockPanel.Dock="Right" Content="↺ Show All" Command="{Binding ShowAllMapNodesCommand}" 
+                                                Padding="8,2" FontSize="10" FontWeight="Bold" Background="{StaticResource AccentBlue}" Foreground="#11111B"
+                                                Visibility="{Binding IsMapFiltered, Converter={StaticResource BoolToVis}}" ToolTip="Reset to show all nodes" />
+                                        <TextBlock Text="{Binding MapFilterStatusText}" FontSize="11" FontWeight="SemiBold" VerticalAlignment="Center">
+                                            <TextBlock.Style>
+                                                <Style TargetType="TextBlock">
+                                                    <Setter Property="Foreground" Value="{StaticResource AccentGreen}" />
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding IsMapFiltered}" Value="True">
+                                                            <Setter Property="Foreground" Value="{StaticResource AccentAmber}" />
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </TextBlock.Style>
+                                        </TextBlock>
+                                    </DockPanel>
+                                </Border>
+                            </StackPanel>
+
+                            <!-- Search / Filter Box -->
+                            <TextBox Grid.Row="1" Text="{Binding MapNodeFilterText, UpdateSourceTrigger=PropertyChanged}"
+                                     Padding="8,6" Background="#181825" Foreground="{StaticResource TextPrimary}"
+                                     BorderThickness="1" BorderBrush="#45475A" Margin="0,0,0,8"
+                                     ToolTip="Filter nodes by name, address, or type" />
+
+                            <!-- Batch Selection Buttons -->
+                            <UniformGrid Grid.Row="2" Columns="3" Margin="0,0,0,6">
+                                <Button Content="Show All" Command="{Binding ShowAllMapNodesCommand}" Padding="4,4" FontSize="11" Margin="0,0,3,0" ToolTip="Select and show all nodes" />
+                                <Button Content="Clear" Command="{Binding ClearAllMapNodesCommand}" Padding="4,4" FontSize="11" Margin="2,0" ToolTip="Deselect and hide all nodes" />
+                                <Button Content="Line Only" Command="{Binding SelectLineOnlyMapNodesCommand}" Padding="4,4" FontSize="11" Margin="3,0,0,0" ToolTip="Show only line-powered devices" />
+                            </UniformGrid>
+
+                            <!-- Include Connected Peers Option -->
+                            <CheckBox Grid.Row="3" IsChecked="{Binding IncludeConnectedPeers}" 
+                                      Content="Also Show Connected Peers" 
+                                      Foreground="{StaticResource TextMuted}" FontSize="11"
+                                      Margin="2,0,0,8" VerticalAlignment="Center"
+                                      ToolTip="When checked, any node directly connected to a checked node will also remain visible" />
+
+                            <!-- Node Checklist -->
+                            <ScrollViewer Grid.Row="4" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                                <ItemsControl ItemsSource="{Binding FilteredMapNodes}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate DataType="{x:Type models:DeviceNode}">
+                                            <Border Margin="0,2" Padding="8,6" Background="#1E1E2E" CornerRadius="6" BorderBrush="#313244" BorderThickness="1">
+                                                <DockPanel LastChildFill="True">
+                                                    <!-- Checkbox -->
+                                                    <CheckBox IsChecked="{Binding IsFilterChecked}" VerticalAlignment="Center" Margin="0,0,8,0" DockPanel.Dock="Left" />
+                                                    
+                                                    <!-- Link Count Badge (Docked Right) -->
+                                                    <Border DockPanel.Dock="Right" Background="#313244" CornerRadius="4" Padding="6,2" VerticalAlignment="Center">
+                                                        <TextBlock Text="{Binding LinkCount, StringFormat='{}{0} links'}" FontSize="10" Foreground="{StaticResource TextMuted}" />
+                                                    </Border>
+
+                                                    <!-- Node Info -->
+                                                    <StackPanel VerticalAlignment="Center">
+                                                        <TextBlock Text="{Binding FriendlyName}" FontWeight="SemiBold" FontSize="12" Foreground="{StaticResource TextPrimary}" TextTrimming="CharacterEllipsis" />
+                                                        <StackPanel Orientation="Horizontal" Margin="0,1,0,0">
+                                                            <TextBlock Text="{Binding Address}" FontSize="11" FontWeight="Bold" Foreground="{StaticResource AccentBlue}" Margin="0,0,6,0">
+                                                                <TextBlock.Style>
+                                                                    <Style TargetType="TextBlock">
+                                                                        <Style.Triggers>
+                                                                            <DataTrigger Binding="{Binding IsModem}" Value="True">
+                                                                                <Setter Property="Foreground" Value="#F5C2E7" />
+                                                                            </DataTrigger>
+                                                                        </Style.Triggers>
+                                                                    </Style>
+                                                                </TextBlock.Style>
+                                                            </TextBlock>
+                                                            <TextBlock Text="{Binding CategoryBadge}" FontSize="10" Foreground="{StaticResource TextMuted}" TextTrimming="CharacterEllipsis" />
+                                                        </StackPanel>
+                                                    </StackPanel>
+                                                </DockPanel>
+                                            </Border>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </ScrollViewer>
+
+                            <!-- Footer Summary -->
+                            <Border Grid.Row="5" Margin="0,8,0,0" Padding="8,6" Background="#181825" CornerRadius="6">
+                                <DockPanel LastChildFill="False">
+                                    <TextBlock DockPanel.Dock="Left" Text="{Binding VisibleLinksCount, StringFormat='Visible Links: {0}'}" FontSize="11" Foreground="{StaticResource TextMuted}" VerticalAlignment="Center" />
+                                    <TextBlock DockPanel.Dock="Right" Text="{Binding VisibleNodesCount, StringFormat='Nodes: {0}'}" FontSize="11" FontWeight="SemiBold" Foreground="{StaticResource AccentGreen}" VerticalAlignment="Center" />
+                                </DockPanel>
+                            </Border>
+                        </Grid>
+                    </Border>
+                </Grid>
+            </TabItem>
+
+            <!-- TAB 2: Device ALDB Inspector (Select 1 or more devices to inspect organized ALDB) -->
+            <TabItem Header="📑 Device ALDB Inspector">
+                <Grid Background="{StaticResource DarkSurface}">
+                    <Grid.ColumnDefinitions>
+                        <!-- Left: Device Selection Sidebar -->
+                        <ColumnDefinition Width="340" />
+                        <!-- Right: Organized ALDB Content View -->
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+
+                    <!-- LEFT: Device Selection Column -->
+                    <Border Grid.Column="0" Background="{StaticResource DarkSurfaceLight}" Padding="14,12" BorderBrush="#313244" BorderThickness="0,0,1,0">
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="*" />
+                                <RowDefinition Height="Auto" />
+                            </Grid.RowDefinitions>
+
+                            <!-- Header & Count -->
+                            <StackPanel Grid.Row="0" Margin="0,0,0,10">
+                                <TextBlock Text="Device Selector" FontSize="15" FontWeight="Bold" Foreground="{StaticResource AccentBlue}" />
+                                <TextBlock Text="Check one or more devices to inspect their database." FontSize="11" Foreground="{StaticResource TextMuted}" Margin="0,2,0,0" />
+                            </StackPanel>
+
+                            <!-- Search / Filter Box -->
+                            <TextBox Grid.Row="1" Text="{Binding DeviceFilterText, UpdateSourceTrigger=PropertyChanged}"
+                                     Padding="8,6" Background="#181825" Foreground="{StaticResource TextPrimary}"
+                                     BorderThickness="1" BorderBrush="#45475A" Margin="0,0,0,8" />
+
+                            <!-- Batch Selection Buttons -->
+                            <UniformGrid Grid.Row="2" Columns="3" Margin="0,0,0,8">
+                                <Button Content="All" Command="{Binding SelectAllDevicesCommand}" Padding="4,4" FontSize="11" Margin="0,0,4,0" ToolTip="Select all devices" />
+                                <Button Content="None" Command="{Binding DeselectAllDevicesCommand}" Padding="4,4" FontSize="11" Margin="2,0" ToolTip="Deselect all devices" />
+                                <Button Content="Line Only" Command="{Binding SelectOnlyLineDevicesCommand}" Padding="4,4" FontSize="11" Margin="4,0,0,0" ToolTip="Select only line-powered devices" />
+                            </UniformGrid>
+
+                            <!-- Device Checklist ListBox -->
+                            <ScrollViewer Grid.Row="3" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                                <ItemsControl ItemsSource="{Binding FilteredSelectableDevices}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate DataType="{x:Type models:SelectableDeviceItem}">
+                                            <Border Margin="0,2" Padding="8,6" Background="#1E1E2E" CornerRadius="6" BorderBrush="#313244" BorderThickness="1">
+                                                <DockPanel LastChildFill="True">
+                                                    <!-- Checkbox -->
+                                                    <CheckBox IsChecked="{Binding IsSelected}" VerticalAlignment="Center" Margin="0,0,8,0" DockPanel.Dock="Left" />
+                                                    
+                                                    <!-- Records Count Badge (Docked Right) -->
+                                                    <Border DockPanel.Dock="Right" Background="#313244" CornerRadius="4" Padding="6,2" VerticalAlignment="Center">
+                                                        <TextBlock Text="{Binding RecordCount, StringFormat='{}{0} recs'}" FontSize="10" Foreground="{StaticResource TextMuted}" />
+                                                    </Border>
+
+                                                    <!-- Device Info -->
+                                                    <StackPanel VerticalAlignment="Center">
+                                                        <TextBlock Text="{Binding FriendlyName}" FontWeight="SemiBold" FontSize="12" Foreground="{StaticResource TextPrimary}" TextTrimming="CharacterEllipsis" />
+                                                        <StackPanel Orientation="Horizontal" Margin="0,1,0,0">
+                                                            <TextBlock Text="{Binding Address}" FontSize="11" FontWeight="Bold" Foreground="{StaticResource AccentBlue}" Margin="0,0,6,0" />
+                                                            <TextBlock Text="{Binding CategoryBadge}" FontSize="10" Foreground="{StaticResource TextMuted}" TextTrimming="CharacterEllipsis" />
+                                                        </StackPanel>
+                                                    </StackPanel>
+                                                </DockPanel>
+                                            </Border>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </ScrollViewer>
+
+                            <!-- Summary Footer -->
+                            <Border Grid.Row="4" Background="#181825" CornerRadius="6" Padding="8,6" Margin="0,8,0,0">
+                                <TextBlock Text="{Binding SelectedDevicesCount, StringFormat='{}{0} devices selected for inspection'}" 
+                                           FontSize="11" FontWeight="SemiBold" Foreground="{StaticResource AccentGreen}" HorizontalAlignment="Center" />
+                            </Border>
+                        </Grid>
+                    </Border>
+
+                    <!-- RIGHT: Organized ALDB Cards View -->
+                    <Grid Grid.Column="1">
+                        <Grid.RowDefinitions>
+                            <!-- Search / Filter within records -->
+                            <RowDefinition Height="Auto" />
+                            <!-- Main Cards View -->
+                            <RowDefinition Height="*" />
+                        </Grid.RowDefinitions>
+
+                        <!-- Search Bar inside Records -->
+                        <Border Grid.Row="0" Background="{StaticResource DarkSurfaceLight}" Padding="16,10" BorderBrush="#313244" BorderThickness="0,0,0,1">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="320" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+
+                                <TextBlock Grid.Column="0" Text="🔍 Search Records:" VerticalAlignment="Center" Margin="0,0,10,0" Foreground="{StaticResource TextMuted}" FontWeight="SemiBold" />
+                                <TextBox Grid.Column="1" Text="{Binding AldbSearchText, UpdateSourceTrigger=PropertyChanged}" 
+                                         Padding="8,5" Background="#181825" Foreground="{StaticResource TextPrimary}" 
+                                         BorderThickness="1" BorderBrush="#45475A" />
+                                
+                                <StackPanel Grid.Column="3" Orientation="Horizontal" VerticalAlignment="Center">
+                                    <TextBlock Text="Organized by Controllers (Scenes Driven) &amp; Responders (Scenes Triggering)" FontSize="11" Foreground="{StaticResource TextMuted}" />
+                                </StackPanel>
+                            </Grid>
+                        </Border>
+
+                        <!-- Scrollable Cards Container -->
+                        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Padding="16">
+                            <StackPanel>
+                                <!-- Empty State if no device selected -->
+                                <Border Background="{StaticResource DarkSurfaceLight}" CornerRadius="8" Padding="24" Margin="0,16" HorizontalAlignment="Center" MaxWidth="500">
+                                    <Border.Style>
+                                        <Style TargetType="Border">
+                                            <Setter Property="Visibility" Value="Collapsed" />
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding OrganizedDevices.Count}" Value="0">
+                                                    <Setter Property="Visibility" Value="Visible" />
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </Border.Style>
+                                    <StackPanel HorizontalAlignment="Center">
+                                        <TextBlock Text="👈 No Devices Selected" FontSize="16" FontWeight="Bold" Foreground="{StaticResource AccentAmber}" HorizontalAlignment="Center" Margin="0,0,0,6" />
+                                        <TextBlock Text="Check one or more devices in the selector on the left to inspect their All-Link Database records organized by Controller and Responder roles." 
+                                                   FontSize="12" Foreground="{StaticResource TextMuted}" TextWrapping="Wrap" TextAlignment="Center" />
+                                    </StackPanel>
+                                </Border>
+
+                                <!-- ItemsControl for each Selected Device -->
+                                <ItemsControl ItemsSource="{Binding OrganizedDevices}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate DataType="{x:Type models:OrganizedDeviceAldb}">
+                                            <Border Background="{StaticResource DarkSurfaceLight}" CornerRadius="8" Padding="16" Margin="0,0,0,18" BorderBrush="#45475A" BorderThickness="1">
+                                                <StackPanel>
+                                                    <!-- Device Header -->
+                                                    <DockPanel LastChildFill="False" Margin="0,0,0,12">
+                                                        <!-- Left: Title & Badges -->
+                                                        <StackPanel DockPanel.Dock="Left" Orientation="Horizontal" VerticalAlignment="Center">
+                                                            <TextBlock Text="📦" FontSize="16" VerticalAlignment="Center" Margin="0,0,8,0" />
+                                                            <TextBlock Text="{Binding FriendlyName}" FontSize="16" FontWeight="Bold" Foreground="{StaticResource AccentBlue}" VerticalAlignment="Center" />
+                                                            <Border Background="#181825" CornerRadius="4" Padding="6,2" Margin="10,0,0,0" VerticalAlignment="Center">
+                                                                <TextBlock Text="{Binding Address}" FontSize="12" FontWeight="Bold" Foreground="{StaticResource AccentAmber}" />
+                                                            </Border>
+                                                            <Border Background="#313244" CornerRadius="4" Padding="6,2" Margin="6,0,0,0" VerticalAlignment="Center">
+                                                                <TextBlock Text="{Binding DeviceType}" FontSize="11" Foreground="{StaticResource TextMuted}" />
+                                                            </Border>
+                                                        </StackPanel>
+
+                                                        <!-- Right: Stats Badges -->
+                                                        <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+                                                            <Border Background="#1E1E2E" CornerRadius="4" Padding="8,4" Margin="4,0">
+                                                                <TextBlock Text="{Binding ControllerCount, StringFormat='🎮 {0} Controllers'}" FontSize="11" Foreground="{StaticResource AccentBlue}" FontWeight="SemiBold" />
+                                                            </Border>
+                                                            <Border Background="#1E1E2E" CornerRadius="4" Padding="8,4" Margin="4,0">
+                                                                <TextBlock Text="{Binding ResponderCount, StringFormat='💡 {0} Responders'}" FontSize="11" Foreground="{StaticResource AccentGreen}" FontWeight="SemiBold" />
+                                                            </Border>
+                                                            <Border Background="#1E1E2E" CornerRadius="4" Padding="8,4" Margin="4,0">
+                                                                <TextBlock Text="{Binding TotalRecords, StringFormat='📋 {0} Total Records'}" FontSize="11" Foreground="{StaticResource TextPrimary}" FontWeight="SemiBold" />
+                                                            </Border>
+                                                        </StackPanel>
+                                                    </DockPanel>
+
+                                                    <!-- Direct Device Control Actions -->
+                                                    <Border Background="#181825" CornerRadius="6" Padding="12,8" Margin="0,0,0,12" BorderBrush="#313244" BorderThickness="1">
+                                                        <DockPanel LastChildFill="False">
+                                                            <StackPanel DockPanel.Dock="Left" Orientation="Horizontal" VerticalAlignment="Center">
+                                                                <TextBlock Text="⚡ Direct Controls:" FontWeight="SemiBold" FontSize="11" Foreground="{StaticResource TextMuted}" VerticalAlignment="Center" Margin="0,0,10,0" />
+                                                                <Button Content="💡 ON" Command="{Binding DataContext.ControlDeviceCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                                        CommandParameter="{Binding Address, StringFormat='{}{0}:on'}" Padding="10,4" FontSize="11" Margin="0,0,6,0" Background="#2E4035" Foreground="#A6E3A1" FontWeight="SemiBold" ToolTip="Send direct ON to this device" />
+                                                                <Button Content="🌑 OFF" Command="{Binding DataContext.ControlDeviceCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                                        CommandParameter="{Binding Address, StringFormat='{}{0}:off'}" Padding="10,4" FontSize="11" Margin="0,0,6,0" Background="#3D2930" Foreground="#F38BA8" FontWeight="SemiBold" ToolTip="Send direct OFF to this device" />
+                                                                <Button Content="⚡ Fast On" Command="{Binding DataContext.ControlDeviceCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                                        CommandParameter="{Binding Address, StringFormat='{}{0}:fast_on'}" Padding="8,4" FontSize="10" Margin="0,0,6,0" Background="#2A324B" Foreground="#89B4FA" ToolTip="Send Fast ON" />
+                                                                <Button Content="⚡ Fast Off" Command="{Binding DataContext.ControlDeviceCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                                        CommandParameter="{Binding Address, StringFormat='{}{0}:fast_off'}" Padding="8,4" FontSize="10" Margin="0,0,12,0" Background="#2A324B" Foreground="#89B4FA" ToolTip="Send Fast OFF" />
+                                                            </StackPanel>
+                                                            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+                                                                <TextBlock Text="Dim Preset:" FontSize="11" Foreground="{StaticResource TextMuted}" VerticalAlignment="Center" Margin="0,0,6,0" />
+                                                                <Button Content="25%" Command="{Binding DataContext.ControlDeviceCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                                        CommandParameter="{Binding Address, StringFormat='{}{0}:dim:64'}" Padding="6,3" FontSize="10" Margin="0,0,4,0" Background="#1E1E2E" />
+                                                                <Button Content="50%" Command="{Binding DataContext.ControlDeviceCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                                        CommandParameter="{Binding Address, StringFormat='{}{0}:dim:128'}" Padding="6,3" FontSize="10" Margin="0,0,4,0" Background="#1E1E2E" />
+                                                                <Button Content="75%" Command="{Binding DataContext.ControlDeviceCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                                        CommandParameter="{Binding Address, StringFormat='{}{0}:dim:192'}" Padding="6,3" FontSize="10" Margin="0,0,4,0" Background="#1E1E2E" />
+                                                                <Button Content="100%" Command="{Binding DataContext.ControlDeviceCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                                        CommandParameter="{Binding Address, StringFormat='{}{0}:dim:255'}" Padding="6,3" FontSize="10" Background="#1E1E2E" />
+                                                            </StackPanel>
+                                                        </DockPanel>
+                                                    </Border>
+
+                                                    <!-- CONTROLLER RECORDS SECTION -->
+                                                    <Expander IsExpanded="True" Margin="0,0,0,10">
+                                                        <Expander.Header>
+                                                            <StackPanel Orientation="Horizontal">
+                                                                <TextBlock Text="🎮 Controller Links (Scenes This Device Initiates / Controls)" FontWeight="Bold" FontSize="13" Foreground="{StaticResource AccentBlue}" />
+                                                                <Border Background="#181825" CornerRadius="8" Padding="6,1" Margin="8,0,0,0">
+                                                                    <TextBlock Text="{Binding ControllerRecords.Count}" FontSize="11" FontWeight="Bold" Foreground="{StaticResource AccentBlue}" />
+                                                                </Border>
+                                                            </StackPanel>
+                                                        </Expander.Header>
+                                                        <Border Background="#181825" CornerRadius="6" Padding="8" Margin="0,6,0,0">
+                                                            <StackPanel>
+                                                                <!-- Header Row -->
+                                                                <Grid Margin="6,4" TextBlock.Foreground="{StaticResource TextMuted}" TextBlock.FontWeight="SemiBold" TextBlock.FontSize="11">
+                                                                    <Grid.ColumnDefinitions>
+                                                                        <ColumnDefinition Width="70" />
+                                                                        <ColumnDefinition Width="80" />
+                                                                        <ColumnDefinition Width="220" />
+                                                                        <ColumnDefinition Width="*" />
+                                                                        <ColumnDefinition Width="130" />
+                                                                        <ColumnDefinition Width="40" />
+                                                                    </Grid.ColumnDefinitions>
+                                                                    <TextBlock Grid.Column="0" Text="Mem Addr" />
+                                                                    <TextBlock Grid.Column="1" Text="Scene/Grp" />
+                                                                    <TextBlock Grid.Column="2" Text="Target Device" />
+                                                                    <TextBlock Grid.Column="3" Text="Relationship / Description" />
+                                                                    <TextBlock Grid.Column="4" Text="Raw Data" />
+                                                                    <TextBlock Grid.Column="5" Text="" />
+                                                                </Grid>
+                                                                <Separator Background="#313244" Margin="0,2" />
+
+                                                                <!-- Controller Rows -->
+                                                                <ItemsControl ItemsSource="{Binding ControllerRecords}">
+                                                                    <ItemsControl.ItemTemplate>
+                                                                        <DataTemplate DataType="{x:Type models:OrganizedAldbEntry}">
+                                                                            <Border Padding="6,6" Margin="0,1" Background="#1E1E2E" CornerRadius="4">
+                                                                                <Grid>
+                                                                                    <Grid.ColumnDefinitions>
+                                                                                        <ColumnDefinition Width="70" />
+                                                                                        <ColumnDefinition Width="80" />
+                                                                                        <ColumnDefinition Width="220" />
+                                                                                        <ColumnDefinition Width="*" />
+                                                                                        <ColumnDefinition Width="130" />
+                                                                                        <ColumnDefinition Width="40" />
+                                                                                    </Grid.ColumnDefinitions>
+                                                                                    <TextBlock Grid.Column="0" Text="{Binding MemAddr}" FontSize="11" Foreground="{StaticResource TextMuted}" VerticalAlignment="Center" />
+                                                                                    <Border Grid.Column="1" Background="#89B4FA" CornerRadius="4" Padding="6,2" HorizontalAlignment="Left" VerticalAlignment="Center">
+                                                                                        <TextBlock Text="{Binding Group, StringFormat='Grp {0}'}" FontSize="10" FontWeight="Bold" Foreground="#11111B" />
+                                                                                    </Border>
+                                                                                    <Button Grid.Column="2" Content="{Binding TargetDisplay}" 
+                                                                                            Command="{Binding DataContext.InspectNodeInAldbCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                                                            CommandParameter="{Binding TargetAddress}"
+                                                                                            HorizontalAlignment="Left" VerticalAlignment="Center"
+                                                                                            Background="Transparent" BorderThickness="0" Padding="0"
+                                                                                            FontWeight="SemiBold" FontSize="11" Foreground="{StaticResource AccentBlue}"
+                                                                                            ToolTip="Click to inspect this target device's ALDB database in Tab 2" Cursor="Hand" />
+                                                                                    <TextBlock Grid.Column="3" Text="{Binding DecodedSummary}" FontSize="11" Foreground="{StaticResource TextMuted}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                                                                                    <TextBlock Grid.Column="4" Text="{Binding DataHex}" FontSize="10" Foreground="#6C7086" VerticalAlignment="Center" />
+                                                                                    <Button Grid.Column="5" Content="🗑️" 
+                                                                                            Command="{Binding DataContext.DeleteLinkFromEntryCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                                                            CommandParameter="{Binding}"
+                                                                                            Padding="4,2" FontSize="10" Background="#312229" Foreground="#F38BA8" 
+                                                                                            BorderBrush="#E78284" BorderThickness="1" ToolTip="Delete this reciprocal link" VerticalAlignment="Center" HorizontalAlignment="Right" />
+                                                                                </Grid>
+                                                                            </Border>
+                                                                        </DataTemplate>
+                                                                    </ItemsControl.ItemTemplate>
+                                                                </ItemsControl>
+                                                            </StackPanel>
+                                                        </Border>
+                                                    </Expander>
+
+                                                    <!-- RESPONDER RECORDS SECTION -->
+                                                    <Expander IsExpanded="True" Margin="0,0,0,10">
+                                                        <Expander.Header>
+                                                            <StackPanel Orientation="Horizontal">
+                                                                <TextBlock Text="💡 Responder Links (Scenes / Controllers That Drive This Device)" FontWeight="Bold" FontSize="13" Foreground="{StaticResource AccentGreen}" />
+                                                                <Border Background="#181825" CornerRadius="8" Padding="6,1" Margin="8,0,0,0">
+                                                                    <TextBlock Text="{Binding ResponderRecords.Count}" FontSize="11" FontWeight="Bold" Foreground="{StaticResource AccentGreen}" />
+                                                                </Border>
+                                                            </StackPanel>
+                                                        </Expander.Header>
+                                                        <Border Background="#181825" CornerRadius="6" Padding="8" Margin="0,6,0,0">
+                                                            <StackPanel>
+                                                                <!-- Header Row -->
+                                                                <Grid Margin="6,4" TextBlock.Foreground="{StaticResource TextMuted}" TextBlock.FontWeight="SemiBold" TextBlock.FontSize="11">
+                                                                    <Grid.ColumnDefinitions>
+                                                                        <ColumnDefinition Width="70" />
+                                                                        <ColumnDefinition Width="80" />
+                                                                        <ColumnDefinition Width="220" />
+                                                                        <ColumnDefinition Width="*" />
+                                                                        <ColumnDefinition Width="130" />
+                                                                        <ColumnDefinition Width="40" />
+                                                                    </Grid.ColumnDefinitions>
+                                                                    <TextBlock Grid.Column="0" Text="Mem Addr" />
+                                                                    <TextBlock Grid.Column="1" Text="Scene/Grp" />
+                                                                    <TextBlock Grid.Column="2" Text="Triggered By (Controller)" />
+                                                                    <TextBlock Grid.Column="3" Text="Configuration (On-Level, Ramp, Button)" />
+                                                                    <TextBlock Grid.Column="4" Text="Raw Data" />
+                                                                    <TextBlock Grid.Column="5" Text="" />
+                                                                </Grid>
+                                                                <Separator Background="#313244" Margin="0,2" />
+
+                                                                <!-- Responder Rows -->
+                                                                <ItemsControl ItemsSource="{Binding ResponderRecords}">
+                                                                    <ItemsControl.ItemTemplate>
+                                                                        <DataTemplate DataType="{x:Type models:OrganizedAldbEntry}">
+                                                                            <Border Padding="6,6" Margin="0,1" Background="#1E1E2E" CornerRadius="4">
+                                                                                <Grid>
+                                                                                    <Grid.ColumnDefinitions>
+                                                                                        <ColumnDefinition Width="70" />
+                                                                                        <ColumnDefinition Width="80" />
+                                                                                        <ColumnDefinition Width="220" />
+                                                                                        <ColumnDefinition Width="*" />
+                                                                                        <ColumnDefinition Width="130" />
+                                                                                        <ColumnDefinition Width="40" />
+                                                                                    </Grid.ColumnDefinitions>
+                                                                                    <TextBlock Grid.Column="0" Text="{Binding MemAddr}" FontSize="11" Foreground="{StaticResource TextMuted}" VerticalAlignment="Center" />
+                                                                                    <Border Grid.Column="1" Background="#A6E3A1" CornerRadius="4" Padding="6,2" HorizontalAlignment="Left" VerticalAlignment="Center">
+                                                                                        <TextBlock Text="{Binding Group, StringFormat='Grp {0}'}" FontSize="10" FontWeight="Bold" Foreground="#11111B" />
+                                                                                    </Border>
+                                                                                    <Button Grid.Column="2" Content="{Binding TargetDisplay}" 
+                                                                                            Command="{Binding DataContext.InspectNodeInAldbCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                                                            CommandParameter="{Binding TargetAddress}"
+                                                                                            HorizontalAlignment="Left" VerticalAlignment="Center"
+                                                                                            Background="Transparent" BorderThickness="0" Padding="0"
+                                                                                            FontWeight="SemiBold" FontSize="11" Foreground="{StaticResource AccentGreen}"
+                                                                                            ToolTip="Click to inspect this target device's ALDB database in Tab 2" Cursor="Hand" />
+                                                                                    <TextBlock Grid.Column="3" Text="{Binding DecodedSummary}" FontSize="11" Foreground="{StaticResource AccentAmber}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                                                                                    <TextBlock Grid.Column="4" Text="{Binding DataHex}" FontSize="10" Foreground="#6C7086" VerticalAlignment="Center" />
+                                                                                    <Button Grid.Column="5" Content="🗑️" 
+                                                                                            Command="{Binding DataContext.DeleteLinkFromEntryCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                                                            CommandParameter="{Binding}"
+                                                                                            Padding="4,2" FontSize="10" Background="#312229" Foreground="#F38BA8" 
+                                                                                            BorderBrush="#E78284" BorderThickness="1" ToolTip="Delete this reciprocal link" VerticalAlignment="Center" HorizontalAlignment="Right" />
+                                                                                </Grid>
+                                                                            </Border>
+                                                                        </DataTemplate>
+                                                                    </ItemsControl.ItemTemplate>
+                                                                </ItemsControl>
+                                                            </StackPanel>
+                                                        </Border>
+                                                    </Expander>
+
+                                                    <!-- OTHER / HIGH WATER MARK SECTION -->
+                                                    <Expander IsExpanded="False" Margin="0,0,0,4">
+                                                        <Expander.Header>
+                                                            <StackPanel Orientation="Horizontal">
+                                                                <TextBlock Text="ℹ️ High Water Mark &amp; Inactive Slots" FontWeight="SemiBold" FontSize="11" Foreground="{StaticResource TextMuted}" />
+                                                                <Border Background="#181825" CornerRadius="8" Padding="6,1" Margin="8,0,0,0">
+                                                                    <TextBlock Text="{Binding OtherRecords.Count}" FontSize="10" Foreground="{StaticResource TextMuted}" />
+                                                                </Border>
+                                                            </StackPanel>
+                                                        </Expander.Header>
+                                                        <Border Background="#181825" CornerRadius="6" Padding="8" Margin="0,6,0,0">
+                                                            <ItemsControl ItemsSource="{Binding OtherRecords}">
+                                                                <ItemsControl.ItemTemplate>
+                                                                    <DataTemplate DataType="{x:Type models:OrganizedAldbEntry}">
+                                                                        <Border Padding="6,4" Margin="0,1" Background="#1E1E2E" CornerRadius="4">
+                                                                            <Grid>
+                                                                                <Grid.ColumnDefinitions>
+                                                                                    <ColumnDefinition Width="70" />
+                                                                                    <ColumnDefinition Width="100" />
+                                                                                    <ColumnDefinition Width="*" />
+                                                                                    <ColumnDefinition Width="120" />
+                                                                                </Grid.ColumnDefinitions>
+                                                                                <TextBlock Grid.Column="0" Text="{Binding MemAddr}" FontSize="10" Foreground="{StaticResource TextMuted}" />
+                                                                                <TextBlock Grid.Column="1" Text="{Binding StatusBadge}" FontSize="10" FontWeight="SemiBold" Foreground="{StaticResource AccentAmber}" />
+                                                                                <TextBlock Grid.Column="2" Text="{Binding DecodedSummary}" FontSize="10" Foreground="{StaticResource TextMuted}" />
+                                                                                <TextBlock Grid.Column="3" Text="{Binding DataHex}" FontSize="10" Foreground="#6C7086" />
+                                                                            </Grid>
+                                                                        </Border>
+                                                                    </DataTemplate>
+                                                                </ItemsControl.ItemTemplate>
+                                                            </ItemsControl>
+                                                        </Border>
+                                                    </Expander>
+                                                </StackPanel>
+                                            </Border>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </StackPanel>
+                        </ScrollViewer>
+                    </Grid>
+                </Grid>
+            </TabItem>
+
+            <!-- TAB 2: Textual / Table Representation (ALDB & Network Records) -->
+            <TabItem Header="📋 Network &amp; ALDB Tables">
+                <Grid Background="{StaticResource DarkSurface}">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
+
+                    <!-- Table Filter & Search Toolbar -->
+                    <Border Grid.Row="0" Background="{StaticResource DarkSurfaceLight}" Padding="14,10" BorderBrush="#313244" BorderThickness="0,0,0,1">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="280" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+
+                            <TextBlock Grid.Column="0" Text="🔍 Filter Records:" VerticalAlignment="Center" Margin="0,0,10,0" Foreground="{StaticResource TextMuted}" FontWeight="SemiBold" />
+                            <TextBox Grid.Column="1" Text="{Binding FilterText, UpdateSourceTrigger=PropertyChanged}" 
+                                     Padding="8,5" Background="#181825" Foreground="{StaticResource TextPrimary}" 
+                                     BorderThickness="1" BorderBrush="#45475A" />
+
+                            <StackPanel Grid.Column="3" Orientation="Horizontal" VerticalAlignment="Center">
+                                <TextBlock Text="{Binding FilteredAldbRecords.Count, StringFormat='Showing {0}'}" FontWeight="Bold" Foreground="{StaticResource AccentBlue}" />
+                                <TextBlock Text="{Binding AldbRecords.Count, StringFormat=' of {0} records'}" Foreground="{StaticResource TextMuted}" Margin="0,0,16,0" />
+                                <Button Content="Export CSV" Padding="10,4" FontSize="11" IsEnabled="False" ToolTip="Export database table to CSV" />
+                            </StackPanel>
+                        </Grid>
+                    </Border>
+
+                    <!-- Records DataGrid -->
+                    <DataGrid Grid.Row="1" ItemsSource="{Binding FilteredAldbRecords}" 
+                              AutoGenerateColumns="False" 
+                              CanUserAddRows="False"
+                              IsReadOnly="True"
+                              Background="{StaticResource DarkSurface}"
+                              RowBackground="{StaticResource DarkSurface}"
+                              AlternatingRowBackground="{StaticResource DarkSurfaceLight}"
+                              Foreground="{StaticResource TextPrimary}"
+                              GridLinesVisibility="Horizontal"
+                              HorizontalGridLinesBrush="#313244"
+                              BorderThickness="0">
+                        <DataGrid.Columns>
+                            <DataGridTextColumn Header="Mem Addr" Binding="{Binding MemAddr}" Width="90" />
+                            <DataGridTextColumn Header="Target Device" Binding="{Binding TargetAddress}" Width="120" FontWeight="Bold" />
+                            <DataGridTextColumn Header="Group/Scene" Binding="{Binding Group}" Width="95" />
+                            <DataGridTextColumn Header="Mode / Role" Binding="{Binding RawMode}" Width="150" />
+                            <DataGridTextColumn Header="Status" Binding="{Binding StatusDescription}" Width="110" />
+                            <DataGridCheckBoxColumn Header="High Water Mark" Binding="{Binding HighWaterMark}" Width="115" />
+                            <DataGridTextColumn Header="Data 1" Binding="{Binding Data1}" Width="70" />
+                            <DataGridTextColumn Header="Data 2" Binding="{Binding Data2}" Width="70" />
+                            <DataGridTextColumn Header="Data 3" Binding="{Binding Data3}" Width="70" />
+                            <DataGridTextColumn Header="Summary" Binding="{Binding ModeDescription}" Width="*" />
+                        </DataGrid.Columns>
+                    </DataGrid>
+                </Grid>
+            </TabItem>
+
+            <!-- TAB 3: Event & Communication Log -->
+            <TabItem Header="📜 Event &amp; Bridge Log">
+                <Grid Background="{StaticResource DarkSurface}">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
+
+                    <!-- Log Toolbar -->
+                    <Border Grid.Row="0" Background="{StaticResource DarkSurfaceLight}" Padding="14,10" BorderBrush="#313244" BorderThickness="0,0,0,1">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+
+                            <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
+                                <TextBlock Text="Live Bridge &amp; Hardware Communication Events" FontWeight="Bold" FontSize="13" Foreground="{StaticResource TextPrimary}" />
+                                <Border Background="#45475A" CornerRadius="10" Padding="8,2" Margin="10,0,0,0">
+                                    <TextBlock Text="{Binding LogEntries.Count, StringFormat='{}{0} events'}" FontSize="11" Foreground="{StaticResource AccentBlue}" />
+                                </Border>
+                            </StackPanel>
+
+                            <StackPanel Grid.Column="2" Orientation="Horizontal">
+                                <Button Content="Clear Log" Command="{Binding ClearLogsCommand}" Padding="10,4" Margin="0,0,8,0" />
+                            </StackPanel>
+                        </Grid>
+                    </Border>
+
+                    <!-- Log Table -->
+                    <DataGrid Grid.Row="1" ItemsSource="{Binding LogEntries}"
+                              AutoGenerateColumns="False"
+                              CanUserAddRows="False"
+                              IsReadOnly="True"
+                              Background="{StaticResource DarkSurface}"
+                              RowBackground="{StaticResource DarkSurface}"
+                              AlternatingRowBackground="{StaticResource DarkSurfaceLight}"
+                              Foreground="{StaticResource TextPrimary}"
+                              GridLinesVisibility="Horizontal"
+                              HorizontalGridLinesBrush="#313244"
+                              BorderThickness="0">
+                        <DataGrid.Columns>
+                            <DataGridTextColumn Header="Timestamp" Binding="{Binding TimeString}" Width="110" />
+                            <DataGridTemplateColumn Header="Level" Width="90">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <Border CornerRadius="4" Padding="6,2" HorizontalAlignment="Left" Background="#181825">
+                                            <TextBlock Text="{Binding LevelBadge}" FontWeight="Bold" FontSize="10" Foreground="{Binding LevelColorHex}" />
+                                        </Border>
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
+                            <DataGridTextColumn Header="Source / Component" Binding="{Binding Source}" Width="140" FontWeight="SemiBold" />
+                            <DataGridTextColumn Header="Event Message" Binding="{Binding Message}" Width="*" />
+                        </DataGrid.Columns>
+                    </DataGrid>
+                </Grid>
+            </TabItem>
+
+            <!-- TAB 4: Staged Changes / Pre-Commit Verification (Future-Ready Verification Display) -->
+            <TabItem Header="⚖️ Pending Changes &amp; Verification">
+                <Grid Background="{StaticResource DarkSurface}">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
+
+                    <!-- Staging Actions Banner -->
+                    <Border Grid.Row="0" Background="{StaticResource DarkSurfaceLight}" Padding="16,14" BorderBrush="#313244" BorderThickness="0,0,0,1">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+
+                            <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                                <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
+                                    <TextBlock Text="🛡️ Pre-Commit Change Verification" FontWeight="Bold" FontSize="14" Foreground="{StaticResource AccentAmber}" />
+                                    <Border Background="#45475A" CornerRadius="10" Padding="8,2" Margin="10,0,0,0">
+                                        <TextBlock Text="{Binding StagedChanges.Count, StringFormat='{}{0} staged actions'}" FontSize="11" FontWeight="Bold" Foreground="{StaticResource AccentAmber}" />
+                                    </Border>
+                                </StackPanel>
+                                <TextBlock Text="All device modifications (link additions, deletions, replacements, scene adjustments) are staged here for review before writing across the Insteon powerline." 
+                                           FontSize="12" Foreground="{StaticResource TextMuted}" TextWrapping="Wrap" />
+                            </StackPanel>
+
+                            <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                                <Button Content="+ Stage Sample Action" Command="{Binding StageSampleChangeCommand}" 
+                                        ToolTip="Add a preview change to test the staging and verification display"
+                                        Margin="0,0,8,0" Padding="12,6" />
+                                <Button Content="❌ Discard Staged Changes" Command="{Binding DiscardStagedChangesCommand}" 
+                                        ToolTip="Clear all pending changes without touching hardware"
+                                        Margin="0,0,8,0" Padding="12,6" />
+                                <Button Content="✔️ Commit Changes to Hardware" Command="{Binding CommitStagedChangesCommand}" 
+                                        Style="{StaticResource PrimaryButtonStyle}"
+                                        ToolTip="Transmit verified changes across the Insteon network and update ALDB"
+                                        Padding="14,6" />
+                            </StackPanel>
+                        </Grid>
+                    </Border>
+
+                    <!-- Staged Changes Verification Table -->
+                    <DataGrid Grid.Row="1" ItemsSource="{Binding StagedChanges}"
+                              AutoGenerateColumns="False"
+                              CanUserAddRows="False"
+                              IsReadOnly="True"
+                              Background="{StaticResource DarkSurface}"
+                              RowBackground="{StaticResource DarkSurface}"
+                              AlternatingRowBackground="{StaticResource DarkSurfaceLight}"
+                              Foreground="{StaticResource TextPrimary}"
+                              GridLinesVisibility="Horizontal"
+                              HorizontalGridLinesBrush="#313244"
+                              BorderThickness="0">
+                        <DataGrid.Columns>
+                            <DataGridTextColumn Header="Change ID" Binding="{Binding Id}" Width="85" FontWeight="Bold" />
+                            <DataGridTemplateColumn Header="Impact Risk" Width="95">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <Border CornerRadius="4" Padding="6,2" HorizontalAlignment="Left" Background="#181825">
+                                            <TextBlock Text="{Binding RiskBadge}" FontWeight="Bold" FontSize="10" Foreground="{Binding RiskColorHex}" />
+                                        </Border>
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
+                            <DataGridTextColumn Header="Target Device" Binding="{Binding TargetAddress}" Width="120" FontWeight="Bold" />
+                            <DataGridTextColumn Header="Label / Device" Binding="{Binding TargetLabel}" Width="150" />
+                            <DataGridTextColumn Header="Operation" Binding="{Binding Operation}" Width="150" />
+                            <DataGridTextColumn Header="Current Hardware State" Binding="{Binding CurrentState}" Width="200" />
+                            <DataGridTextColumn Header="Proposed New State" Binding="{Binding ProposedState}" Width="220" FontWeight="SemiBold" />
+                            <DataGridTextColumn Header="Rationale / Details" Binding="{Binding Description}" Width="*" />
+                            <DataGridTextColumn Header="Staged At" Binding="{Binding FormattedTime}" Width="85" />
+                        </DataGrid.Columns>
+                    </DataGrid>
+                </Grid>
+            </TabItem>
+
+            <!-- TAB 4: Insteon Scenes & Live Preset Tuning -->
+            <TabItem Header="🎭 Insteon Scenes &amp; Presets">
+                <Grid Background="{StaticResource DarkSurface}">
+                    <Grid.ColumnDefinitions>
+                        <!-- Left: Scenes Master List (380px) -->
+                        <ColumnDefinition Width="380" />
+                        <!-- Right: Scene Details & Member Presets (*) -->
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+
+                    <!-- Left: Scenes Sidebar -->
+                    <Border Grid.Column="0" Background="{StaticResource DarkSurfaceLight}" BorderBrush="#313244" BorderThickness="0,0,1,0">
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="*" />
+                            </Grid.RowDefinitions>
+
+                            <!-- Search & Refresh Header -->
+                            <Border Grid.Row="0" Background="#181825" Padding="14,12" BorderBrush="#313244" BorderThickness="0,0,0,1">
+                                <Grid>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="Auto" />
+                                    </Grid.RowDefinitions>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+
+                                    <StackPanel Grid.Row="0" Grid.Column="0" Orientation="Horizontal" Margin="0,0,0,8">
+                                        <TextBlock Text="🎭 Active Scenes" FontWeight="Bold" FontSize="14" Foreground="{StaticResource AccentBlue}" />
+                                        <Border Background="#45475A" CornerRadius="10" Padding="8,2" Margin="8,0,0,0">
+                                            <TextBlock Text="{Binding Scenes.Count, StringFormat='{}{0} Total'}" FontSize="11" FontWeight="Bold" Foreground="{StaticResource TextPrimary}" />
+                                        </Border>
+                                    </StackPanel>
+
+                                    <Button Grid.Row="0" Grid.Column="1" Content="🔄 Refresh" Command="{Binding RefreshScenesCommand}" Padding="10,4" FontSize="11" />
+
+                                    <TextBox Grid.Row="1" Grid.ColumnSpan="2" Text="{Binding SceneFilterText, UpdateSourceTrigger=PropertyChanged}" 
+                                             Padding="8,6" Background="{StaticResource DarkSurfaceLight}" Foreground="{StaticResource TextPrimary}" 
+                                             BorderThickness="1" BorderBrush="#45475A" />
+                                </Grid>
+                            </Border>
+
+                            <!-- Scenes List -->
+                            <ListBox Grid.Row="1" ItemsSource="{Binding FilteredScenes}" SelectedItem="{Binding SelectedScene}"
+                                     Background="Transparent" BorderThickness="0" ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                                <ListBox.ItemTemplate>
+                                    <DataTemplate>
+                                        <Border CornerRadius="6" Padding="10,8" Margin="4,2" Background="#1E1E2E" BorderBrush="#313244" BorderThickness="1">
+                                            <Grid>
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="Auto" />
+                                                    <ColumnDefinition Width="*" />
+                                                    <ColumnDefinition Width="Auto" />
+                                                </Grid.ColumnDefinitions>
+
+                                                <!-- Group Badge -->
+                                                <Border Grid.Column="0" Background="#45475A" CornerRadius="4" Padding="6,4" Margin="0,0,10,0" VerticalAlignment="Center">
+                                                    <TextBlock Text="{Binding Group, StringFormat='{}G{0}'}" FontWeight="Bold" FontSize="12" Foreground="{StaticResource AccentAmber}" />
+                                                </Border>
+
+                                                <!-- Scene Title & Controllers -->
+                                                <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                                    <TextBlock Text="{Binding DisplayTitle}" FontWeight="SemiBold" FontSize="13" Foreground="{StaticResource TextPrimary}" TextTrimming="CharacterEllipsis" />
+                                                    <TextBlock Text="{Binding Controllers.Count, StringFormat='{}{0} Controller(s)'}" FontSize="11" Foreground="{StaticResource TextMuted}" />
+                                                </StackPanel>
+
+                                                <!-- Member Count Badge -->
+                                                <Border Grid.Column="2" Background="#313244" CornerRadius="10" Padding="8,3" VerticalAlignment="Center">
+                                                    <TextBlock Text="{Binding MemberCountText}" FontSize="11" Foreground="{StaticResource AccentGreen}" FontWeight="SemiBold" />
+                                                </Border>
+                                            </Grid>
+                                        </Border>
+                                    </DataTemplate>
+                                </ListBox.ItemTemplate>
+                            </ListBox>
+                        </Grid>
+                    </Border>
+
+                    <!-- Right: Scene Details & Fine-Grained Member Tuning -->
+                    <Grid Grid.Column="1" Margin="20">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" /> <!-- Scene Header & Broadcast Controls -->
+                            <RowDefinition Height="Auto" /> <!-- Controllers Summary Banner -->
+                            <RowDefinition Height="*" />    <!-- Member Devices Table & Sliders -->
+                        </Grid.RowDefinitions>
+
+                        <!-- Row 0: Scene Banner & Broadcast Trigger Buttons -->
+                        <Border Grid.Row="0" Background="{StaticResource DarkSurfaceLight}" CornerRadius="8" Padding="16,14" Margin="0,0,0,14" BorderBrush="#45475A" BorderThickness="1">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+
+                                <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                                    <TextBlock Text="{Binding SelectedScene.DisplayTitle, FallbackValue='Select a Scene to Inspect'}" FontSize="18" FontWeight="Bold" Foreground="{StaticResource AccentBlue}" />
+                                    <TextBlock Text="Adjust brightness and ramp rate presets surgically in each responder's EEPROM with zero full-scene rebuilds." FontSize="12" Foreground="{StaticResource TextMuted}" Margin="0,4,0,0" />
+                                </StackPanel>
+
+                                <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                                    <Button Content="⚡ Trigger ON" Command="{Binding TriggerSceneOnCommand}" Style="{StaticResource PrimaryButtonStyle}" Margin="0,0,8,0" Padding="14,8" ToolTip="Broadcast All-Link ON command for this scene group" />
+                                    <Button Content="🌙 Trigger OFF" Command="{Binding TriggerSceneOffCommand}" Margin="0,0,8,0" Padding="14,8" ToolTip="Broadcast All-Link OFF command for this scene group" />
+                                    <Button Content="⚡⚡ Fast ON" Command="{Binding TriggerSceneFastOnCommand}" Margin="0,0,8,0" Padding="10,8" ToolTip="Instantaneous 0ms jump to On-Level" />
+                                    <Button Content="🌙🌙 Fast OFF" Command="{Binding TriggerSceneFastOffCommand}" Padding="10,8" ToolTip="Instantaneous 0ms jump to Off" />
+                                </StackPanel>
+                            </Grid>
+                        </Border>
+
+                        <!-- Row 1: Controllers Summary -->
+                        <Border Grid.Row="1" Background="#181825" CornerRadius="6" Padding="12,8" Margin="0,0,0,14" BorderBrush="#313244" BorderThickness="1">
+                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                <TextBlock Text="🎮 Controllers:" FontWeight="Bold" FontSize="12" Foreground="{StaticResource AccentAmber}" VerticalAlignment="Center" Margin="0,0,10,0" />
+                                <ItemsControl ItemsSource="{Binding SelectedScene.Controllers}">
+                                    <ItemsControl.ItemsPanel>
+                                        <ItemsPanelTemplate>
+                                            <StackPanel Orientation="Horizontal" />
+                                        </ItemsPanelTemplate>
+                                    </ItemsControl.ItemsPanel>
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <Border Background="#313244" CornerRadius="4" Padding="6,2" Margin="0,0,8,0">
+                                                <TextBlock Text="{Binding DisplayName}" FontSize="11" Foreground="{StaticResource TextPrimary}" />
+                                            </Border>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- Row 2: Members Presets List -->
+                        <Border Grid.Row="2" Background="{StaticResource DarkSurfaceLight}" CornerRadius="8" Padding="14" BorderBrush="#313244" BorderThickness="1">
+                            <Grid>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="*" />
+                                </Grid.RowDefinitions>
+
+                                <DockPanel Grid.Row="0" Margin="0,0,0,10">
+                                    <TextBlock Text="💡 Scene Member Presets (Brightness &amp; Ramp Rate)" FontWeight="Bold" FontSize="14" Foreground="{StaticResource TextPrimary}" VerticalAlignment="Center" />
+                                    <TextBlock Text="{Binding SelectedScene.Members.Count, StringFormat='({0} Responder Devices)'}" FontSize="12" Foreground="{StaticResource TextMuted}" Margin="8,0,0,0" VerticalAlignment="Center" />
+                                </DockPanel>
+
+                                <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+                                    <ItemsControl ItemsSource="{Binding SelectedScene.Members}">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <Border Background="#1E1E2E" CornerRadius="6" Padding="14,10" Margin="0,0,0,8" BorderBrush="#313244" BorderThickness="1">
+                                                    <Grid>
+                                                        <Grid.ColumnDefinitions>
+                                                            <!-- Device Name & Address (240px) -->
+                                                            <ColumnDefinition Width="240" />
+                                                            <!-- On-Level / Brightness Slider (320px) -->
+                                                            <ColumnDefinition Width="320" />
+                                                            <!-- Ramp Rate Stepper/Dropdown (220px) -->
+                                                            <ColumnDefinition Width="220" />
+                                                            <!-- Actions (Auto) -->
+                                                            <ColumnDefinition Width="*" />
+                                                        </Grid.ColumnDefinitions>
+
+                                                        <!-- Col 0: Device Identity -->
+                                                        <StackPanel Grid.Column="0" VerticalAlignment="Center" Margin="0,0,14,0">
+                                                            <TextBlock Text="{Binding Label}" FontWeight="Bold" FontSize="13" Foreground="{StaticResource AccentBlue}" TextTrimming="CharacterEllipsis" />
+                                                            <TextBlock Text="{Binding Address, StringFormat='Address: {0}'}" FontSize="11" Foreground="{StaticResource TextMuted}" />
+                                                            <TextBlock Text="{Binding MemAddr, StringFormat='EEPROM Slot: {0}'}" FontSize="10" Foreground="#6C7086" />
+                                                        </StackPanel>
+
+                                                        <!-- Col 1: Brightness Preset Slider -->
+                                                        <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="0,0,18,0">
+                                                            <DockPanel Margin="0,0,0,4">
+                                                                <TextBlock Text="Preset On-Level:" FontSize="11" Foreground="{StaticResource TextMuted}" />
+                                                                <TextBlock Text="{Binding BrightnessPercentText}" FontWeight="Bold" FontSize="11" Foreground="{StaticResource AccentGreen}" HorizontalAlignment="Right" />
+                                                            </DockPanel>
+                                                            <Slider Minimum="0" Maximum="255" Value="{Binding OnLevel, Mode=TwoWay}" SmallChange="5" LargeChange="25" />
+                                                        </StackPanel>
+
+                                                        <!-- Col 2: Ramp Rate Preset -->
+                                                        <StackPanel Grid.Column="2" VerticalAlignment="Center" Margin="0,0,18,0">
+                                                            <DockPanel Margin="0,0,0,4">
+                                                                <TextBlock Text="Ramp Rate:" FontSize="11" Foreground="{StaticResource TextMuted}" />
+                                                                <TextBlock Text="{Binding RampRateSecondsText}" FontWeight="Bold" FontSize="11" Foreground="{StaticResource AccentAmber}" HorizontalAlignment="Right" />
+                                                            </DockPanel>
+                                                            <Slider Minimum="0" Maximum="31" Value="{Binding RampRate, Mode=TwoWay}" SmallChange="1" LargeChange="5" />
+                                                        </StackPanel>
+
+                                                        <!-- Col 3: Actions -->
+                                                        <StackPanel Grid.Column="3" Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+                                                            <Button Content="💡 Test On" Command="{Binding DataContext.ControlDeviceCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                                    CommandParameter="{Binding Address, StringFormat='{}{0}:on'}"
+                                                                    Padding="8,5" FontSize="11" Margin="0,0,6,0" Background="#2E4035" Foreground="#A6E3A1" ToolTip="Turn on this device directly to test brightness" />
+                                                            <Button Content="🌑 Test Off" Command="{Binding DataContext.ControlDeviceCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                                    CommandParameter="{Binding Address, StringFormat='{}{0}:off'}"
+                                                                    Padding="8,5" FontSize="11" Margin="0,0,10,0" Background="#3D2930" Foreground="#F38BA8" ToolTip="Turn off this device" />
+                                                            <Button Content="💾 Save Preset" Click="SaveMemberPresetButton_Click"
+                                                                    Style="{StaticResource PrimaryButtonStyle}" Padding="12,6" FontSize="11"
+                                                                    ToolTip="Surgically write updated On-Level and Ramp Rate to this device's EEPROM (&lt;1.0s)" />
+                                                        </StackPanel>
+                                                    </Grid>
+                                                </Border>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </ScrollViewer>
+                            </Grid>
+                        </Border>
+                    </Grid>
+                </Grid>
+            </TabItem>
+
+            <!-- TAB 5: Network Tools & Link Maintenance -->
+            <TabItem Header="🔧 Network Tools &amp; Maintenance">
+                <ScrollViewer VerticalScrollBarVisibility="Auto" Background="{StaticResource DarkSurface}">
+                    <StackPanel Margin="24" MaxWidth="1050" HorizontalAlignment="Left">
+                        
+                        <!-- CARD 1: Ghost Link Cleaner -->
+                        <Border Background="{StaticResource DarkSurfaceLight}" CornerRadius="8" Padding="20" Margin="0,0,0,20" BorderBrush="#45475A" BorderThickness="1">
+                            <Grid>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                </Grid.RowDefinitions>
+
+                                <StackPanel Grid.Row="0" Margin="0,0,0,8">
+                                    <TextBlock Text="👻 Ghost Link Eradicator (Dead Reference Purge)" FontSize="16" FontWeight="Bold" Foreground="{StaticResource AccentAmber}" />
+                                    <TextBlock Text="Removes orphan links pointing to dead or retired controllers (e.g. 2C.E7.EF, 39.BA.04). Eliminates repetitive All-Link Cleanup retries, instantly freeing 915 MHz RF airtime and speeding up network response." 
+                                               FontSize="12" Foreground="{StaticResource TextMuted}" TextWrapping="Wrap" Margin="0,4,0,0" />
+                                </StackPanel>
+
+                                <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,8,0,12" VerticalAlignment="Center">
+                                    <TextBlock Text="Detected Orphan Targets:" VerticalAlignment="Center" Margin="0,0,10,0" FontWeight="SemiBold" Foreground="{StaticResource TextPrimary}" />
+                                    <ComboBox ItemsSource="{Binding GhostTargets}" SelectedItem="{Binding SelectedGhostTarget}" Width="260" Padding="8,4" />
+                                    <Button Content="🔥 Eradicate Ghost References" Command="{Binding PurgeSelectedGhostTargetCommand}" 
+                                            Style="{StaticResource DangerButtonStyle}" Margin="12,0,0,0" Padding="14,6"
+                                            ToolTip="Safely marks all links targeting this address as deleted across the PLM and all peer switches." />
+                                </StackPanel>
+
+                                <TextBlock Grid.Row="2" Text="* Safe operation: Updates link records without touching other active scenes." FontSize="11" Foreground="#6C7086" FontStyle="Italic" />
+                            </Grid>
+                        </Border>
+
+                        <!-- CARD 2: Device Replacement Wizard ("Clone & Swap") -->
+                        <Border Background="{StaticResource DarkSurfaceLight}" CornerRadius="8" Padding="20" Margin="0,0,0,20" BorderBrush="#45475A" BorderThickness="1">
+                            <Grid>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                </Grid.RowDefinitions>
+
+                                <StackPanel Grid.Row="0" Margin="0,0,0,12">
+                                    <TextBlock Text="🔄 Device Replacement Wizard (Seamless 'Clone &amp; Swap')" FontSize="16" FontWeight="Bold" Foreground="{StaticResource AccentBlue}" />
+                                    <TextBlock Text="Replace a failed or upgraded switch without rebuilding your scenes. Copies all scene links, ramp rates, and on-levels to the new device, and automatically retargets every peer switch in the house to point to the new address." 
+                                               FontSize="12" Foreground="{StaticResource TextMuted}" TextWrapping="Wrap" Margin="0,4,0,0" />
+                                </StackPanel>
+
+                                <Grid Grid.Row="1" Margin="0,0,0,12">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="280" />
+                                        <ColumnDefinition Width="40" />
+                                        <ColumnDefinition Width="280" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+
+                                    <!-- Old Address -->
+                                    <StackPanel Grid.Column="0">
+                                        <DockPanel LastChildFill="False" Margin="0,0,0,4">
+                                            <TextBlock DockPanel.Dock="Left" Text="Old / Defective Device:" FontSize="11" Foreground="{StaticResource TextMuted}" VerticalAlignment="Center" />
+                                            <Button DockPanel.Dock="Right" Content="🎯 Use Graph Node" Command="{Binding ApplySelectedGraphNodeCommand}" CommandParameter="rep_old"
+                                                    IsEnabled="{Binding HasSelectedGraphNode}" Padding="6,2" FontSize="10" Background="#263445" Foreground="#89B4FA" ToolTip="Use currently selected node from graph" />
+                                        </DockPanel>
+                                        <ComboBox ItemsSource="{Binding DeviceLookupChoices}" SelectedItem="{Binding SelectedReplaceOldDevice}"
+                                                  Text="{Binding ReplaceOldDeviceAddress, UpdateSourceTrigger=PropertyChanged}"
+                                                  IsEditable="True" DisplayMemberPath="DisplayText"
+                                                  Padding="8,6" Background="#181825" Foreground="{StaticResource TextPrimary}" />
+                                        <TextBlock Text="{Binding ReplaceOldDeviceValidation}" FontSize="10" Foreground="{StaticResource AccentGreen}" Margin="0,3,0,0" />
+                                    </StackPanel>
+
+                                    <TextBlock Grid.Column="1" Text="➔" FontSize="20" FontWeight="Bold" Foreground="{StaticResource AccentBlue}" VerticalAlignment="Center" HorizontalAlignment="Center" />
+
+                                    <!-- New Address -->
+                                    <StackPanel Grid.Column="2">
+                                        <DockPanel LastChildFill="False" Margin="0,0,0,4">
+                                            <TextBlock DockPanel.Dock="Left" Text="New Replacement Device:" FontSize="11" Foreground="{StaticResource TextMuted}" VerticalAlignment="Center" />
+                                            <Button DockPanel.Dock="Right" Content="🎯 Use Graph Node" Command="{Binding ApplySelectedGraphNodeCommand}" CommandParameter="rep_new"
+                                                    IsEnabled="{Binding HasSelectedGraphNode}" Padding="6,2" FontSize="10" Background="#263445" Foreground="#89B4FA" ToolTip="Use currently selected node from graph" />
+                                        </DockPanel>
+                                        <ComboBox ItemsSource="{Binding DeviceLookupChoices}" SelectedItem="{Binding SelectedReplaceNewDevice}"
+                                                  Text="{Binding ReplaceNewDeviceAddress, UpdateSourceTrigger=PropertyChanged}"
+                                                  IsEditable="True" DisplayMemberPath="DisplayText"
+                                                  Padding="8,6" Background="#181825" Foreground="{StaticResource TextPrimary}" />
+                                        <TextBlock Text="{Binding ReplaceNewDeviceValidation}" FontSize="10" Foreground="{StaticResource AccentGreen}" Margin="0,3,0,0" />
+                                    </StackPanel>
+
+                                    <!-- Action Button -->
+                                    <StackPanel Grid.Column="3" Orientation="Horizontal" VerticalAlignment="Top" Margin="18,18,0,0">
+                                        <CheckBox Content="Clone Scene Links" IsChecked="{Binding ReplaceCopyLinks}" VerticalAlignment="Center" Margin="0,0,14,0" Foreground="{StaticResource TextPrimary}" />
+                                        <Button Content="🔄 Execute Device Swap" Command="{Binding ExecuteDeviceReplaceCommand}" Style="{StaticResource PrimaryButtonStyle}" Padding="14,6" />
+                                    </StackPanel>
+                                </Grid>
+
+                                <TextBlock Grid.Row="2" Text="* Retargets all occurrences in the PLM and all peer switches atomically with rollback protection." FontSize="11" Foreground="#6C7086" FontStyle="Italic" />
+                            </Grid>
+                        </Border>
+
+                        <!-- CARD 3: Atomic Reciprocal Link Creator -->
+                        <Border Background="{StaticResource DarkSurfaceLight}" CornerRadius="8" Padding="20" BorderBrush="#45475A" BorderThickness="1">
+                            <Grid>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                </Grid.RowDefinitions>
+
+                                <StackPanel Grid.Row="0" Margin="0,0,0,12">
+                                    <TextBlock Text="🔗 Atomic Reciprocal Link Creator (Controller &lt;-&gt; Responder)" FontSize="16" FontWeight="Bold" Foreground="{StaticResource AccentGreen}" />
+                                    <TextBlock Text="Creates verified bidirectional Insteon links with 2-phase commit and automatic rollback. Prevents half-links by verifying both hardware tables commit before confirming." 
+                                               FontSize="12" Foreground="{StaticResource TextMuted}" TextWrapping="Wrap" Margin="0,4,0,0" />
+                                </StackPanel>
+
+                                <Grid Grid.Row="1" Margin="0,0,0,12">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="260" />
+                                        <ColumnDefinition Width="46" />
+                                        <ColumnDefinition Width="260" />
+                                        <ColumnDefinition Width="80" />
+                                        <ColumnDefinition Width="80" />
+                                        <ColumnDefinition Width="80" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+
+                                    <!-- Controller -->
+                                    <StackPanel Grid.Column="0" Margin="0,0,6,0">
+                                        <DockPanel LastChildFill="False" Margin="0,0,0,4">
+                                            <TextBlock DockPanel.Dock="Left" Text="Controller Device:" FontSize="11" Foreground="{StaticResource TextMuted}" VerticalAlignment="Center" />
+                                            <Button DockPanel.Dock="Right" Content="🎯 Graph" Command="{Binding ApplySelectedGraphNodeCommand}" CommandParameter="new_ctrl"
+                                                    IsEnabled="{Binding HasSelectedGraphNode}" Padding="5,1" FontSize="10" Background="#263445" Foreground="#89B4FA" ToolTip="Use node from graph" />
+                                        </DockPanel>
+                                        <ComboBox ItemsSource="{Binding DeviceLookupChoices}" SelectedItem="{Binding SelectedNewLinkController}"
+                                                  Text="{Binding NewLinkControllerAddress, UpdateSourceTrigger=PropertyChanged}"
+                                                  IsEditable="True" DisplayMemberPath="DisplayText"
+                                                  Padding="8,6" Background="#181825" Foreground="{StaticResource TextPrimary}" />
+                                        <TextBlock Text="{Binding NewLinkControllerValidation}" FontSize="10" Foreground="{StaticResource AccentGreen}" Margin="0,2,0,0" />
+                                    </StackPanel>
+
+                                    <!-- Swap Button -->
+                                    <Button Grid.Column="1" Content="⇄" Command="{Binding SwapNewLinkAddressesCommand}"
+                                            Padding="4,6" FontSize="14" FontWeight="Bold" Margin="4,18,4,0" Height="34" VerticalAlignment="Top"
+                                            Background="#263445" Foreground="#89B4FA" BorderBrush="#45475A" BorderThickness="1"
+                                            ToolTip="Swap Controller and Responder devices" />
+
+                                    <!-- Responder -->
+                                    <StackPanel Grid.Column="2" Margin="0,0,10,0">
+                                        <DockPanel LastChildFill="False" Margin="0,0,0,4">
+                                            <TextBlock DockPanel.Dock="Left" Text="Responder Device:" FontSize="11" Foreground="{StaticResource TextMuted}" VerticalAlignment="Center" />
+                                            <Button DockPanel.Dock="Right" Content="🎯 Graph" Command="{Binding ApplySelectedGraphNodeCommand}" CommandParameter="new_resp"
+                                                    IsEnabled="{Binding HasSelectedGraphNode}" Padding="5,1" FontSize="10" Background="#263445" Foreground="#89B4FA" ToolTip="Use node from graph" />
+                                        </DockPanel>
+                                        <ComboBox ItemsSource="{Binding DeviceLookupChoices}" SelectedItem="{Binding SelectedNewLinkResponder}"
+                                                  Text="{Binding NewLinkResponderAddress, UpdateSourceTrigger=PropertyChanged}"
+                                                  IsEditable="True" DisplayMemberPath="DisplayText"
+                                                  Padding="8,6" Background="#181825" Foreground="{StaticResource TextPrimary}" />
+                                        <TextBlock Text="{Binding NewLinkResponderValidation}" FontSize="10" Foreground="{StaticResource AccentGreen}" Margin="0,2,0,0" />
+                                    </StackPanel>
+
+                                    <!-- Group -->
+                                    <StackPanel Grid.Column="3" Margin="0,0,8,0">
+                                        <TextBlock Text="Group:" FontSize="11" Foreground="{StaticResource TextMuted}" Margin="0,0,0,4" />
+                                        <TextBox Text="{Binding NewLinkGroup, UpdateSourceTrigger=PropertyChanged}" Padding="8,6" Background="#181825" Foreground="{StaticResource TextPrimary}" BorderThickness="1" BorderBrush="#45475A" />
+                                    </StackPanel>
+
+                                    <!-- On-Level -->
+                                    <StackPanel Grid.Column="4" Margin="0,0,8,0">
+                                        <TextBlock Text="Level:" FontSize="11" Foreground="{StaticResource TextMuted}" Margin="0,0,0,4" />
+                                        <TextBox Text="{Binding NewLinkOnLevel, UpdateSourceTrigger=PropertyChanged}" Padding="8,6" Background="#181825" Foreground="{StaticResource TextPrimary}" BorderThickness="1" BorderBrush="#45475A" />
+                                    </StackPanel>
+
+                                    <!-- Ramp Rate -->
+                                    <StackPanel Grid.Column="5" Margin="0,0,10,0">
+                                        <TextBlock Text="Ramp:" FontSize="11" Foreground="{StaticResource TextMuted}" Margin="0,0,0,4" />
+                                        <TextBox Text="{Binding NewLinkRampRate, UpdateSourceTrigger=PropertyChanged}" Padding="8,6" Background="#181825" Foreground="{StaticResource TextPrimary}" BorderThickness="1" BorderBrush="#45475A" />
+                                    </StackPanel>
+
+                                    <!-- Action Button -->
+                                    <Button Grid.Column="6" Content="➕ Create Verified Link" Command="{Binding CreateReciprocalLinkCommand}" 
+                                            Style="{StaticResource PrimaryButtonStyle}" VerticalAlignment="Top" Margin="0,18,0,0" Padding="14,6" />
+                                </Grid>
+
+                                <TextBlock Grid.Row="2" Text="* Verified on both devices via db_delta increment check." FontSize="11" Foreground="#6C7086" FontStyle="Italic" />
+                            </Grid>
+                        </Border>
+
+                        <!-- CARD 4: Atomic Reciprocal Link Deleter -->
+                        <Border Background="{StaticResource DarkSurfaceLight}" CornerRadius="8" Padding="20" BorderBrush="#45475A" BorderThickness="1">
+                            <Grid>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                </Grid.RowDefinitions>
+
+                                <StackPanel Grid.Row="0" Margin="0,0,0,12">
+                                    <TextBlock Text="🗑️ Atomic Reciprocal Link Deleter (Controller &lt;-&gt; Responder)" FontSize="16" FontWeight="Bold" Foreground="#F38BA8" />
+                                    <TextBlock Text="Atomically removes reciprocal links from both devices (or PLM). Removes half-links, eradicates unwanted automation links, and immediately updates topology and scenes." 
+                                               FontSize="12" Foreground="{StaticResource TextMuted}" TextWrapping="Wrap" Margin="0,4,0,0" />
+                                </StackPanel>
+
+                                <!-- Quick Select Active Link from Network -->
+                                <Grid Grid.Row="1" Margin="0,0,0,12">
+                                    <StackPanel>
+                                        <TextBlock Text="Quick-Select Active Link from Network (autofills addresses &amp; group):" FontSize="11" Foreground="{StaticResource TextMuted}" Margin="0,0,0,4" />
+                                        <ComboBox ItemsSource="{Binding ActiveLinkPairs}" SelectedItem="{Binding SelectedActiveLink}" 
+                                                  DisplayMemberPath="DisplayText"
+                                                  Background="#181825" Foreground="{StaticResource TextPrimary}" Padding="8,6" />
+                                    </StackPanel>
+                                </Grid>
+
+                                <!-- Manual Address / Group Controls -->
+                                <Grid Grid.Row="2" Margin="0,0,0,12">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="260" />
+                                        <ColumnDefinition Width="46" />
+                                        <ColumnDefinition Width="260" />
+                                        <ColumnDefinition Width="90" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+
+                                    <!-- Controller -->
+                                    <StackPanel Grid.Column="0" Margin="0,0,6,0">
+                                        <DockPanel LastChildFill="False" Margin="0,0,0,4">
+                                            <TextBlock DockPanel.Dock="Left" Text="Controller Device:" FontSize="11" Foreground="{StaticResource TextMuted}" VerticalAlignment="Center" />
+                                            <Button DockPanel.Dock="Right" Content="🎯 Graph" Command="{Binding ApplySelectedGraphNodeCommand}" CommandParameter="del_ctrl"
+                                                    IsEnabled="{Binding HasSelectedGraphNode}" Padding="5,1" FontSize="10" Background="#263445" Foreground="#89B4FA" ToolTip="Use node from graph" />
+                                        </DockPanel>
+                                        <ComboBox ItemsSource="{Binding DeviceLookupChoices}" SelectedItem="{Binding SelectedDeleteLinkController}"
+                                                  Text="{Binding DeleteLinkControllerAddress, UpdateSourceTrigger=PropertyChanged}"
+                                                  IsEditable="True" DisplayMemberPath="DisplayText"
+                                                  Padding="8,6" Background="#181825" Foreground="{StaticResource TextPrimary}" />
+                                        <TextBlock Text="{Binding DeleteLinkControllerValidation}" FontSize="10" Foreground="#F38BA8" Margin="0,2,0,0" />
+                                    </StackPanel>
+
+                                    <!-- Swap Button -->
+                                    <Button Grid.Column="1" Content="⇄" Command="{Binding SwapDeleteLinkAddressesCommand}"
+                                            Padding="4,6" FontSize="14" FontWeight="Bold" Margin="4,18,4,0" Height="34" VerticalAlignment="Top"
+                                            Background="#263445" Foreground="#89B4FA" BorderBrush="#45475A" BorderThickness="1"
+                                            ToolTip="Swap Controller and Responder devices" />
+
+                                    <!-- Responder -->
+                                    <StackPanel Grid.Column="2" Margin="0,0,10,0">
+                                        <DockPanel LastChildFill="False" Margin="0,0,0,4">
+                                            <TextBlock DockPanel.Dock="Left" Text="Responder Device:" FontSize="11" Foreground="{StaticResource TextMuted}" VerticalAlignment="Center" />
+                                            <Button DockPanel.Dock="Right" Content="🎯 Graph" Command="{Binding ApplySelectedGraphNodeCommand}" CommandParameter="del_resp"
+                                                    IsEnabled="{Binding HasSelectedGraphNode}" Padding="5,1" FontSize="10" Background="#263445" Foreground="#89B4FA" ToolTip="Use node from graph" />
+                                        </DockPanel>
+                                        <ComboBox ItemsSource="{Binding DeviceLookupChoices}" SelectedItem="{Binding SelectedDeleteLinkResponder}"
+                                                  Text="{Binding DeleteLinkResponderAddress, UpdateSourceTrigger=PropertyChanged}"
+                                                  IsEditable="True" DisplayMemberPath="DisplayText"
+                                                  Padding="8,6" Background="#181825" Foreground="{StaticResource TextPrimary}" />
+                                        <TextBlock Text="{Binding DeleteLinkResponderValidation}" FontSize="10" Foreground="#F38BA8" Margin="0,2,0,0" />
+                                    </StackPanel>
+
+                                    <!-- Group -->
+                                    <StackPanel Grid.Column="3" Margin="0,0,10,0">
+                                        <TextBlock Text="Group (1-255):" FontSize="11" Foreground="{StaticResource TextMuted}" Margin="0,0,0,4" />
+                                        <TextBox Text="{Binding DeleteLinkGroup, UpdateSourceTrigger=PropertyChanged}" Padding="8,6" Background="#181825" Foreground="{StaticResource TextPrimary}" BorderThickness="1" BorderBrush="#45475A" />
+                                    </StackPanel>
+
+                                    <!-- Delete Action Button -->
+                                    <Button Grid.Column="4" Content="🗑️ Delete Reciprocal Link" Command="{Binding DeleteReciprocalLinkCommand}" 
+                                            Background="#3D2930" Foreground="#F38BA8" BorderBrush="#E78284" BorderThickness="1"
+                                            VerticalAlignment="Top" Margin="0,18,0,0" Padding="14,6" FontWeight="SemiBold" />
+                                </Grid>
+
+                                <TextBlock Grid.Row="3" Text="* Verified atomic deletion: Marks records in_use=false on both devices and updates local snapshot." FontSize="11" Foreground="#6C7086" FontStyle="Italic" />
+                            </Grid>
+                        </Border>
+
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+        </TabControl>
+
+        <!-- 4. Bottom Status & Event Log Bar -->
+        <Border Grid.Row="3" Background="#11111B" Padding="12,8" BorderBrush="#313244" BorderThickness="0,1,0,0">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                
+                <TextBlock Grid.Column="0" Text="{Binding StatusMessage}" FontSize="12" Foreground="{StaticResource AccentBlue}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+                <ProgressBar Grid.Column="1" IsIndeterminate="{Binding IsLoading}" Visibility="{Binding IsLoading, Converter={StaticResource BoolToVis}}" Width="120" Height="10" Margin="8,0,0,0" VerticalAlignment="Center" />
+            </Grid>
+        </Border>
+    </Grid>
+</Window>

@@ -1,0 +1,10 @@
+fastapi>=0.110.0
+uvicorn[standard]>=0.28.0
+pydantic>=2.6.0
+pydantic-settings>=2.2.0
+httpx>=0.27.0
+pyinsteon>=1.5.0
+async-timeout>=4.0.0
+pyserial>=3.5
+pyserial-asyncio>=0.6
+python-dotenv>=1.0.1

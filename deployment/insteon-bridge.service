@@ -1,0 +1,30 @@
+[Unit]
+Description=Insteon Network Management Bridge Service
+Documentation=https://github.com/
+After=network.target openhab.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+# Ensure the user belongs to the 'dialout' group to access /dev/ttyUSB0
+User=pi
+Group=pi
+WorkingDirectory=/opt/insteon-bridge
+EnvironmentFile=-/opt/insteon-bridge/.env
+ExecStart=/opt/insteon-bridge/.venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8000
+Restart=on-failure
+RestartSec=5s
+
+# Security sandboxing options
+ProtectSystem=full
+ProtectHome=read-only
+ReadWritePaths=/var/lib/insteon-bridge /opt/insteon-bridge
+PrivateTmp=true
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=insteon-bridge
+
+[Install]
+WantedBy=multi-user.target
