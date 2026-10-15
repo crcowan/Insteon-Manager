@@ -1772,6 +1772,19 @@
           "data2": 0,
           "data3": 0,
           "raw_mode": "Responder (Deleted)"
+        },
+        {
+          "mem_addr": "0x0FC7",
+          "target_address": "3C.6E.04",
+          "group": 1,
+          "is_controller": false,
+          "is_responder": true,
+          "in_use": true,
+          "high_water_mark": false,
+          "data1": 255,
+          "data2": 28,
+          "data3": 1,
+          "raw_mode": "Responder"
         }
       ]
     },
@@ -4427,6 +4440,19 @@
           "data2": 28,
           "data3": 1,
           "raw_mode": "Controller (Deleted)"
+        },
+        {
+          "mem_addr": "0x0F37",
+          "target_address": "18.96.F5",
+          "group": 1,
+          "is_controller": true,
+          "is_responder": false,
+          "in_use": true,
+          "high_water_mark": false,
+          "data1": 255,
+          "data2": 28,
+          "data3": 1,
+          "raw_mode": "Controller"
         }
       ]
     },

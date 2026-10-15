@@ -32,6 +32,79 @@
         <SolidColorBrush x:Key="TextPrimary" Color="#CDD6F4" />
         <SolidColorBrush x:Key="TextMuted" Color="#A6ADC8" />
 
+        <!-- Modern Dark DataGridColumnHeader Style -->
+        <Style TargetType="DataGridColumnHeader">
+            <Setter Property="Background" Value="#263445" />
+            <Setter Property="Foreground" Value="{StaticResource AccentBlue}" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="FontSize" Value="11" />
+            <Setter Property="Padding" Value="10,8" />
+            <Setter Property="BorderThickness" Value="0,0,1,1" />
+            <Setter Property="BorderBrush" Value="#313244" />
+            <Setter Property="HorizontalContentAlignment" Value="Left" />
+            <Setter Property="VerticalContentAlignment" Value="Center" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="DataGridColumnHeader">
+                        <Border Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                              VerticalAlignment="{TemplateBinding VerticalContentAlignment}"
+                                              SnapsToDevicePixels="{TemplateBinding SnapsToDevicePixels}" />
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Background" Value="#313244" />
+                    <Setter Property="Foreground" Value="{StaticResource TextPrimary}" />
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+
+        <!-- Modern Dark DataGridRow Style -->
+        <Style TargetType="DataGridRow">
+            <Setter Property="Background" Value="{StaticResource DarkSurface}" />
+            <Setter Property="Foreground" Value="{StaticResource TextPrimary}" />
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Background" Value="#2A2A3C" />
+                </Trigger>
+                <Trigger Property="IsSelected" Value="True">
+                    <Setter Property="Background" Value="#363A4F" />
+                    <Setter Property="Foreground" Value="#FFFFFF" />
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+
+        <!-- Modern Dark DataGridCell Style -->
+        <Style TargetType="DataGridCell">
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Padding" Value="6,4" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="DataGridCell">
+                        <Border Background="{TemplateBinding Background}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                Padding="{TemplateBinding Padding}"
+                                SnapsToDevicePixels="True">
+                            <ContentPresenter SnapsToDevicePixels="{TemplateBinding SnapsToDevicePixels}" />
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+            <Style.Triggers>
+                <Trigger Property="IsSelected" Value="True">
+                    <Setter Property="Background" Value="#363A4F" />
+                    <Setter Property="Foreground" Value="#FFFFFF" />
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+
         <!-- Base Button Style -->
         <Style TargetType="Button">
             <Setter Property="Padding" Value="14,8" />
@@ -573,52 +646,59 @@
                                     </ItemsControl.ItemContainerStyle>
                                     <ItemsControl.ItemTemplate>
                                         <DataTemplate DataType="{x:Type models:DeviceNode}">
-                                            <!-- Node Card Element (Mouse Drag Handlers) -->
+                                            <!-- Node Card Element (Mouse Drag & Right-Click Handlers) -->
                                             <Border Width="{Binding Width}" Height="{Binding Height}" CornerRadius="8" Padding="10"
                                                     Cursor="SizeAll"
+                                                    Tag="{Binding DataContext, RelativeSource={RelativeSource AncestorType=Window}}"
                                                     MouseLeftButtonDown="Node_MouseLeftButtonDown"
+                                                    MouseRightButtonDown="Node_MouseRightButtonDown"
                                                     MouseMove="Node_MouseMove"
                                                     MouseLeftButtonUp="Node_MouseLeftButtonUp">
                                                 <Border.ContextMenu>
                                                     <ContextMenu Background="#181825" BorderBrush="#45475A" Foreground="{StaticResource TextPrimary}">
                                                         <MenuItem Header="🔗 Set as Controller (Link Creator)"
-                                                                  Command="{Binding DataContext.SetSelectedNodeAsControllerCommand, RelativeSource={RelativeSource AncestorType=Window}}"
-                                                                  CommandParameter="{Binding}" />
+                                                                  Click="MenuItem_SetController_Click"
+                                                                  Command="{Binding PlacementTarget.Tag.SetSelectedNodeAsControllerCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}"
+                                                                  CommandParameter="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource AncestorType=ContextMenu}}" />
                                                         <MenuItem Header="🎯 Set as Responder (Link Creator)"
-                                                                  Command="{Binding DataContext.SetSelectedNodeAsResponderCommand, RelativeSource={RelativeSource AncestorType=Window}}"
-                                                                  CommandParameter="{Binding}" />
+                                                                  Click="MenuItem_SetResponder_Click"
+                                                                  Command="{Binding PlacementTarget.Tag.SetSelectedNodeAsResponderCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}"
+                                                                  CommandParameter="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource AncestorType=ContextMenu}}" />
                                                         <MenuItem Header="🔄 Set as Device to Replace (Wizard)"
-                                                                  Command="{Binding DataContext.SetSelectedNodeAsReplaceOldCommand, RelativeSource={RelativeSource AncestorType=Window}}"
-                                                                  CommandParameter="{Binding}" />
+                                                                  Click="MenuItem_SetReplaceOld_Click"
+                                                                  Command="{Binding PlacementTarget.Tag.SetSelectedNodeAsReplaceOldCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}"
+                                                                  CommandParameter="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource AncestorType=ContextMenu}}" />
                                                         <MenuItem Header="🔍 Inspect in ALDB Inspector (Tab 2)"
-                                                                  Command="{Binding DataContext.InspectNodeInAldbCommand, RelativeSource={RelativeSource AncestorType=Window}}"
-                                                                  CommandParameter="{Binding Address}" />
+                                                                  Click="MenuItem_InspectAldb_Click"
+                                                                  Command="{Binding PlacementTarget.Tag.InspectNodeInAldbCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}"
+                                                                  CommandParameter="{Binding PlacementTarget.DataContext.Address, RelativeSource={RelativeSource AncestorType=ContextMenu}}" />
                                                         <MenuItem Header="📋 Copy Insteon Address"
-                                                                  Command="{Binding DataContext.CopyNodeAddressCommand, RelativeSource={RelativeSource AncestorType=Window}}"
-                                                                  CommandParameter="{Binding Address}" />
+                                                                  Click="MenuItem_CopyAddress_Click"
+                                                                  Command="{Binding PlacementTarget.Tag.CopyNodeAddressCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}"
+                                                                  CommandParameter="{Binding PlacementTarget.DataContext.Address, RelativeSource={RelativeSource AncestorType=ContextMenu}}" />
                                                         <Separator Background="#313244" />
                                                         <MenuItem Header="💡 Turn ON (100%)"
-                                                                  Command="{Binding DataContext.ControlDeviceCommand, RelativeSource={RelativeSource AncestorType=Window}}"
-                                                                  CommandParameter="{Binding Address, StringFormat='{}{0}:on'}" />
+                                                                  Command="{Binding PlacementTarget.Tag.ControlDeviceCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}"
+                                                                  CommandParameter="{Binding PlacementTarget.DataContext.Address, RelativeSource={RelativeSource AncestorType=ContextMenu}, StringFormat='{}{0}:on'}" />
                                                         <MenuItem Header="🌑 Turn OFF"
-                                                                  Command="{Binding DataContext.ControlDeviceCommand, RelativeSource={RelativeSource AncestorType=Window}}"
-                                                                  CommandParameter="{Binding Address, StringFormat='{}{0}:off'}" />
+                                                                  Command="{Binding PlacementTarget.Tag.ControlDeviceCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}"
+                                                                  CommandParameter="{Binding PlacementTarget.DataContext.Address, RelativeSource={RelativeSource AncestorType=ContextMenu}, StringFormat='{}{0}:off'}" />
                                                         <MenuItem Header="⚡ Fast ON"
-                                                                  Command="{Binding DataContext.ControlDeviceCommand, RelativeSource={RelativeSource AncestorType=Window}}"
-                                                                  CommandParameter="{Binding Address, StringFormat='{}{0}:fast_on'}" />
+                                                                  Command="{Binding PlacementTarget.Tag.ControlDeviceCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}"
+                                                                  CommandParameter="{Binding PlacementTarget.DataContext.Address, RelativeSource={RelativeSource AncestorType=ContextMenu}, StringFormat='{}{0}:fast_on'}" />
                                                         <MenuItem Header="⚡ Fast OFF"
-                                                                  Command="{Binding DataContext.ControlDeviceCommand, RelativeSource={RelativeSource AncestorType=Window}}"
-                                                                  CommandParameter="{Binding Address, StringFormat='{}{0}:fast_off'}" />
+                                                                  Command="{Binding PlacementTarget.Tag.ControlDeviceCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}"
+                                                                  CommandParameter="{Binding PlacementTarget.DataContext.Address, RelativeSource={RelativeSource AncestorType=ContextMenu}, StringFormat='{}{0}:fast_off'}" />
                                                         <Separator Background="#313244" />
                                                         <MenuItem Header="🔆 Dim to 25%"
-                                                                  Command="{Binding DataContext.ControlDeviceCommand, RelativeSource={RelativeSource AncestorType=Window}}"
-                                                                  CommandParameter="{Binding Address, StringFormat='{}{0}:dim:64'}" />
+                                                                  Command="{Binding PlacementTarget.Tag.ControlDeviceCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}"
+                                                                  CommandParameter="{Binding PlacementTarget.DataContext.Address, RelativeSource={RelativeSource AncestorType=ContextMenu}, StringFormat='{}{0}:dim:64'}" />
                                                         <MenuItem Header="🔆 Dim to 50%"
-                                                                  Command="{Binding DataContext.ControlDeviceCommand, RelativeSource={RelativeSource AncestorType=Window}}"
-                                                                  CommandParameter="{Binding Address, StringFormat='{}{0}:dim:128'}" />
+                                                                  Command="{Binding PlacementTarget.Tag.ControlDeviceCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}"
+                                                                  CommandParameter="{Binding PlacementTarget.DataContext.Address, RelativeSource={RelativeSource AncestorType=ContextMenu}, StringFormat='{}{0}:dim:128'}" />
                                                         <MenuItem Header="🔆 Dim to 75%"
-                                                                  Command="{Binding DataContext.ControlDeviceCommand, RelativeSource={RelativeSource AncestorType=Window}}"
-                                                                  CommandParameter="{Binding Address, StringFormat='{}{0}:dim:192'}" />
+                                                                  Command="{Binding PlacementTarget.Tag.ControlDeviceCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}"
+                                                                  CommandParameter="{Binding PlacementTarget.DataContext.Address, RelativeSource={RelativeSource AncestorType=ContextMenu}, StringFormat='{}{0}:dim:192'}" />
                                                     </ContextMenu>
                                                 </Border.ContextMenu>
                                                 <Border.Style>
@@ -1461,6 +1541,7 @@
                               HorizontalGridLinesBrush="#313244"
                               BorderThickness="0">
                         <DataGrid.Columns>
+                            <DataGridCheckBoxColumn Header="Apply" Binding="{Binding IsSelected, UpdateSourceTrigger=PropertyChanged}" Width="50" />
                             <DataGridTextColumn Header="Change ID" Binding="{Binding Id}" Width="85" FontWeight="Bold" />
                             <DataGridTemplateColumn Header="Impact Risk" Width="95">
                                 <DataGridTemplateColumn.CellTemplate>
@@ -1471,13 +1552,23 @@
                                     </DataTemplate>
                                 </DataGridTemplateColumn.CellTemplate>
                             </DataGridTemplateColumn>
-                            <DataGridTextColumn Header="Target Device" Binding="{Binding TargetAddress}" Width="120" FontWeight="Bold" />
-                            <DataGridTextColumn Header="Label / Device" Binding="{Binding TargetLabel}" Width="150" />
-                            <DataGridTextColumn Header="Operation" Binding="{Binding Operation}" Width="150" />
-                            <DataGridTextColumn Header="Current Hardware State" Binding="{Binding CurrentState}" Width="200" />
+                            <DataGridTextColumn Header="Target Device" Binding="{Binding TargetAddress}" Width="150" FontWeight="Bold" />
+                            <DataGridTextColumn Header="Label / Device" Binding="{Binding TargetLabel}" Width="160" />
+                            <DataGridTextColumn Header="Operation" Binding="{Binding Operation}" Width="160" />
+                            <DataGridTextColumn Header="Current Hardware State" Binding="{Binding CurrentState}" Width="180" />
                             <DataGridTextColumn Header="Proposed New State" Binding="{Binding ProposedState}" Width="220" FontWeight="SemiBold" />
                             <DataGridTextColumn Header="Rationale / Details" Binding="{Binding Description}" Width="*" />
                             <DataGridTextColumn Header="Staged At" Binding="{Binding FormattedTime}" Width="85" />
+                            <DataGridTemplateColumn Width="45">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <Button Content="✕" ToolTip="Remove from staged changes"
+                                                Command="{Binding DataContext.RemoveStagedChangeCommand, RelativeSource={RelativeSource AncestorType=DataGrid}}"
+                                                CommandParameter="{Binding}"
+                                                Padding="4,2" FontSize="11" Background="Transparent" Foreground="#F38BA8" BorderThickness="0" />
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
                         </DataGrid.Columns>
                     </DataGrid>
                 </Grid>
@@ -1777,10 +1868,13 @@
                                         <TextBlock Text="{Binding ReplaceNewDeviceValidation}" FontSize="10" Foreground="{StaticResource AccentGreen}" Margin="0,3,0,0" />
                                     </StackPanel>
 
-                                    <!-- Action Button -->
+                                    <!-- Action Buttons -->
                                     <StackPanel Grid.Column="3" Orientation="Horizontal" VerticalAlignment="Top" Margin="18,18,0,0">
                                         <CheckBox Content="Clone Scene Links" IsChecked="{Binding ReplaceCopyLinks}" VerticalAlignment="Center" Margin="0,0,14,0" Foreground="{StaticResource TextPrimary}" />
-                                        <Button Content="🔄 Execute Device Swap" Command="{Binding ExecuteDeviceReplaceCommand}" Style="{StaticResource PrimaryButtonStyle}" Padding="14,6" />
+                                        <Button Content="📋 Stage Replacement" Command="{Binding StageDeviceReplaceCommand}" Style="{StaticResource PrimaryButtonStyle}" Padding="12,6" Margin="0,0,8,0"
+                                                ToolTip="Stage replacement in 'Pending Changes &amp; Verification' for review before committing" />
+                                        <Button Content="⚡ Swap Now" Command="{Binding ExecuteDeviceReplaceCommand}" Background="#263445" Foreground="#89B4FA" Padding="10,6"
+                                                ToolTip="Execute device replacement immediately without staging" />
                                     </StackPanel>
                                 </Grid>
 
@@ -1864,9 +1958,15 @@
                                         <TextBox Text="{Binding NewLinkRampRate, UpdateSourceTrigger=PropertyChanged}" Padding="8,6" Background="#181825" Foreground="{StaticResource TextPrimary}" BorderThickness="1" BorderBrush="#45475A" />
                                     </StackPanel>
 
-                                    <!-- Action Button -->
-                                    <Button Grid.Column="6" Content="➕ Create Verified Link" Command="{Binding CreateReciprocalLinkCommand}" 
-                                            Style="{StaticResource PrimaryButtonStyle}" VerticalAlignment="Top" Margin="0,18,0,0" Padding="14,6" />
+                                    <!-- Action Buttons -->
+                                    <StackPanel Grid.Column="6" Orientation="Horizontal" VerticalAlignment="Top" Margin="0,18,0,0">
+                                        <Button Content="📋 Stage Link for Verification" Command="{Binding StageReciprocalLinkCommand}" 
+                                                Style="{StaticResource PrimaryButtonStyle}" Padding="12,6" Margin="0,0,8,0"
+                                                ToolTip="Stage link in 'Pending Changes &amp; Verification' for safety review before writing to hardware" />
+                                        <Button Content="⚡ Create Now" Command="{Binding CreateReciprocalLinkCommand}" 
+                                                Background="#263445" Foreground="#89B4FA" Padding="10,6"
+                                                ToolTip="Immediately create link on hardware/simulator without staging" />
+                                    </StackPanel>
                                 </Grid>
 
                                 <TextBlock Grid.Row="2" Text="* Verified on both devices via db_delta increment check." FontSize="11" Foreground="#6C7086" FontStyle="Italic" />
@@ -1947,10 +2047,16 @@
                                         <TextBox Text="{Binding DeleteLinkGroup, UpdateSourceTrigger=PropertyChanged}" Padding="8,6" Background="#181825" Foreground="{StaticResource TextPrimary}" BorderThickness="1" BorderBrush="#45475A" />
                                     </StackPanel>
 
-                                    <!-- Delete Action Button -->
-                                    <Button Grid.Column="4" Content="🗑️ Delete Reciprocal Link" Command="{Binding DeleteReciprocalLinkCommand}" 
-                                            Background="#3D2930" Foreground="#F38BA8" BorderBrush="#E78284" BorderThickness="1"
-                                            VerticalAlignment="Top" Margin="0,18,0,0" Padding="14,6" FontWeight="SemiBold" />
+                                    <!-- Delete Action Buttons -->
+                                    <StackPanel Grid.Column="4" Orientation="Horizontal" VerticalAlignment="Top" Margin="0,18,0,0">
+                                        <Button Content="📋 Stage Deletion" Command="{Binding StageDeleteLinkCommand}" 
+                                                Style="{StaticResource DangerButtonStyle}" Padding="12,6" Margin="0,0,8,0"
+                                                ToolTip="Stage deletion in 'Pending Changes &amp; Verification' for review before writing to hardware" />
+                                        <Button Content="🗑️ Delete Now" Command="{Binding DeleteReciprocalLinkCommand}" 
+                                                Background="#3D2930" Foreground="#F38BA8" BorderBrush="#E78284" BorderThickness="1"
+                                                Padding="10,6" FontWeight="SemiBold"
+                                                ToolTip="Immediately delete reciprocal link on hardware/simulator without staging" />
+                                    </StackPanel>
                                 </Grid>
 
                                 <TextBlock Grid.Row="3" Text="* Verified atomic deletion: Marks records in_use=false on both devices and updates local snapshot." FontSize="11" Foreground="#6C7086" FontStyle="Italic" />

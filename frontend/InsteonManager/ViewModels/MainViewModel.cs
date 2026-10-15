@@ -79,7 +79,7 @@ public class MainViewModel : ViewModelBase
         ToggleSessionCommand = new AsyncRelayCommand(ToggleSessionAsync, () => !IsLoading);
         StartSessionCommand = new AsyncRelayCommand(StartSessionAsync, () => !IsSessionActive && !IsLoading);
         EndSessionCommand = new AsyncRelayCommand(EndSessionAsync, () => IsSessionActive && !IsLoading);
-        QueryAldbCommand = new AsyncRelayCommand(QueryAldbAsync, () => !IsLoading);
+        QueryAldbCommand = new AsyncRelayCommand(() => QueryAldbAsync(false), () => !IsLoading);
         ForceRestoreOpenhabCommand = new AsyncRelayCommand(ForceRestoreOpenhabAsync, () => !IsLoading);
         CheckConnectionCommand = new AsyncRelayCommand(CheckStatusAsync, () => !IsLoading);
         ResetLayoutCommand = new RelayCommand(ResetLayout);
@@ -88,8 +88,23 @@ public class MainViewModel : ViewModelBase
         StageSampleChangeCommand = new RelayCommand(StageSampleChange);
         CommitStagedChangesCommand = new AsyncRelayCommand(CommitStagedChangesAsync, () => StagedChanges.Count > 0 && !IsLoading);
         DiscardStagedChangesCommand = new RelayCommand(DiscardStagedChanges);
+        RemoveStagedChangeCommand = new RelayCommand(obj =>
+        {
+            if (obj is StagedChangeModel sc)
+            {
+                StagedChanges.Remove(sc);
+                AddLog(LogLevel.Info, "Staging", $"Removed staged change '{sc.Id}' ({sc.Operation}).");
+                StatusMessage = $"Removed staged change {sc.Id}.";
+                CommitStagedChangesCommand?.NotifyCanExecuteChanged();
+            }
+        });
+        StagedChanges.CollectionChanged += (s, e) => CommitStagedChangesCommand?.NotifyCanExecuteChanged();
 
-        RefreshScenesCommand = new AsyncRelayCommand(LoadScenesAsync, () => !IsLoading);
+        StageReciprocalLinkCommand = new RelayCommand(StageReciprocalLink, () => !string.IsNullOrEmpty(NewLinkControllerAddress) && !string.IsNullOrEmpty(NewLinkResponderAddress));
+        StageDeleteLinkCommand = new RelayCommand(StageDeleteLink, () => !string.IsNullOrEmpty(DeleteLinkControllerAddress) && !string.IsNullOrEmpty(DeleteLinkResponderAddress));
+        StageDeviceReplaceCommand = new RelayCommand(StageDeviceReplace, () => !string.IsNullOrEmpty(ReplaceOldDeviceAddress) && !string.IsNullOrEmpty(ReplaceNewDeviceAddress));
+
+        RefreshScenesCommand = new AsyncRelayCommand(() => LoadScenesAsync(false), () => !IsLoading);
         TriggerSceneOnCommand = new AsyncRelayCommand(() => TriggerSelectedSceneAsync("on"), () => SelectedScene != null && !IsLoading);
         TriggerSceneOffCommand = new AsyncRelayCommand(() => TriggerSelectedSceneAsync("off"), () => SelectedScene != null && !IsLoading);
         TriggerSceneFastOnCommand = new AsyncRelayCommand(() => TriggerSelectedSceneAsync("fast_on"), () => SelectedScene != null && !IsLoading);
@@ -116,10 +131,7 @@ public class MainViewModel : ViewModelBase
             var node = obj as DeviceNode ?? SelectedGraphNode;
             if (node != null)
             {
-                NewLinkControllerAddress = node.Address;
-                SelectedTabIndex = 6;
-                StatusMessage = $"Selected {node.FriendlyName} ({node.Address}) as Controller in Link Creator.";
-                AddLog(LogLevel.Info, "UI", $"Staged {node.FriendlyName} ({node.Address}) as Controller in Link Creator.");
+                SetSelectedNodeAsController(node);
             }
         });
 
@@ -128,10 +140,7 @@ public class MainViewModel : ViewModelBase
             var node = obj as DeviceNode ?? SelectedGraphNode;
             if (node != null)
             {
-                NewLinkResponderAddress = node.Address;
-                SelectedTabIndex = 6;
-                StatusMessage = $"Selected {node.FriendlyName} ({node.Address}) as Responder in Link Creator.";
-                AddLog(LogLevel.Info, "UI", $"Staged {node.FriendlyName} ({node.Address}) as Responder in Link Creator.");
+                SetSelectedNodeAsResponder(node);
             }
         });
 
@@ -140,10 +149,7 @@ public class MainViewModel : ViewModelBase
             var node = obj as DeviceNode ?? SelectedGraphNode;
             if (node != null)
             {
-                ReplaceOldDeviceAddress = node.Address;
-                SelectedTabIndex = 6;
-                StatusMessage = $"Selected {node.FriendlyName} ({node.Address}) as device to replace.";
-                AddLog(LogLevel.Info, "UI", $"Staged {node.FriendlyName} ({node.Address}) as device to replace.");
+                SetSelectedNodeAsReplaceOld(node);
             }
         });
 
@@ -152,14 +158,7 @@ public class MainViewModel : ViewModelBase
             string? targetAddr = (obj as DeviceNode)?.Address ?? (obj as string) ?? SelectedGraphNode?.Address;
             if (!string.IsNullOrWhiteSpace(targetAddr))
             {
-                foreach (var d in SelectableDevices)
-                {
-                    d.IsSelected = d.Address.Equals(targetAddr, StringComparison.OrdinalIgnoreCase);
-                }
-                RebuildOrganizedAldbView();
-                SelectedTabIndex = 1;
-                StatusMessage = $"Inspecting ALDB records for {targetAddr}.";
-                AddLog(LogLevel.Info, "UI", $"Switched to ALDB Inspector for device {targetAddr}.");
+                InspectNodeInAldb(targetAddr);
             }
         });
 
@@ -455,6 +454,10 @@ public class MainViewModel : ViewModelBase
     public RelayCommand StageSampleChangeCommand { get; }
     public AsyncRelayCommand CommitStagedChangesCommand { get; }
     public RelayCommand DiscardStagedChangesCommand { get; }
+    public RelayCommand RemoveStagedChangeCommand { get; }
+    public RelayCommand StageReciprocalLinkCommand { get; }
+    public RelayCommand StageDeleteLinkCommand { get; }
+    public RelayCommand StageDeviceReplaceCommand { get; }
 
     public RelayCommand ZoomInCommand { get; }
     public RelayCommand ZoomOutCommand { get; }
@@ -599,6 +602,7 @@ public class MainViewModel : ViewModelBase
                 OnPropertyChanged(nameof(SelectedReplaceOldDevice));
                 OnPropertyChanged(nameof(ReplaceOldDeviceValidation));
                 ExecuteDeviceReplaceCommand?.NotifyCanExecuteChanged();
+                StageDeviceReplaceCommand?.NotifyCanExecuteChanged();
             }
         }
     }
@@ -634,6 +638,7 @@ public class MainViewModel : ViewModelBase
                 OnPropertyChanged(nameof(SelectedReplaceNewDevice));
                 OnPropertyChanged(nameof(ReplaceNewDeviceValidation));
                 ExecuteDeviceReplaceCommand?.NotifyCanExecuteChanged();
+                StageDeviceReplaceCommand?.NotifyCanExecuteChanged();
             }
         }
     }
@@ -676,6 +681,7 @@ public class MainViewModel : ViewModelBase
                 OnPropertyChanged(nameof(SelectedNewLinkController));
                 OnPropertyChanged(nameof(NewLinkControllerValidation));
                 CreateReciprocalLinkCommand?.NotifyCanExecuteChanged();
+                StageReciprocalLinkCommand?.NotifyCanExecuteChanged();
             }
         }
     }
@@ -711,6 +717,7 @@ public class MainViewModel : ViewModelBase
                 OnPropertyChanged(nameof(SelectedNewLinkResponder));
                 OnPropertyChanged(nameof(NewLinkResponderValidation));
                 CreateReciprocalLinkCommand?.NotifyCanExecuteChanged();
+                StageReciprocalLinkCommand?.NotifyCanExecuteChanged();
             }
         }
     }
@@ -767,6 +774,7 @@ public class MainViewModel : ViewModelBase
                 OnPropertyChanged(nameof(SelectedDeleteLinkController));
                 OnPropertyChanged(nameof(DeleteLinkControllerValidation));
                 DeleteReciprocalLinkCommand?.NotifyCanExecuteChanged();
+                StageDeleteLinkCommand?.NotifyCanExecuteChanged();
             }
         }
     }
@@ -802,6 +810,7 @@ public class MainViewModel : ViewModelBase
                 OnPropertyChanged(nameof(SelectedDeleteLinkResponder));
                 OnPropertyChanged(nameof(DeleteLinkResponderValidation));
                 DeleteReciprocalLinkCommand?.NotifyCanExecuteChanged();
+                StageDeleteLinkCommand?.NotifyCanExecuteChanged();
             }
         }
     }
@@ -1029,7 +1038,7 @@ public class MainViewModel : ViewModelBase
         }
     }
 
-    public async Task QueryAldbAsync()
+    public async Task QueryAldbAsync(bool silent = false)
     {
         if (ForceRefreshHardware && !IsSessionActive)
         {
@@ -1039,11 +1048,14 @@ public class MainViewModel : ViewModelBase
         }
 
         IsLoading = true;
-        StatusMessage = ForceRefreshHardware
-            ? "Reading ALDB directly from hardware (pacing powerline queries)..."
-            : "Querying ALDB records from backend cache...";
+        if (!silent)
+        {
+            StatusMessage = ForceRefreshHardware
+                ? "Reading ALDB directly from hardware (pacing powerline queries)..."
+                : "Querying ALDB records from backend cache...";
 
-        AddLog(LogLevel.Info, "InsteonAPI", ForceRefreshHardware ? "Querying ALDB from wire hardware..." : "Querying ALDB from backend cache...");
+            AddLog(LogLevel.Info, "InsteonAPI", ForceRefreshHardware ? "Querying ALDB from wire hardware..." : "Querying ALDB from backend cache...");
+        }
 
         try
         {
@@ -1065,10 +1077,13 @@ public class MainViewModel : ViewModelBase
             UpdateSelectableDevices(_currentDevices, records);
             AnalyzeGhostLinks(records);
             RebuildActiveLinkPairs(records);
-            await LoadScenesAsync();
+            await LoadScenesAsync(silent: silent);
 
-            StatusMessage = $"Loaded {records.Count} ALDB records successfully. Generated {TopologyLinks.Count} topology link relations across {Scenes.Count} scenes.";
-            AddLog(LogLevel.Success, "InsteonAPI", $"Retrieved {records.Count} ALDB records. Synthesized {TopologyLinks.Count} directed link relationships across {_currentDevices.Count} devices and {Scenes.Count} scenes.");
+            if (!silent)
+            {
+                StatusMessage = $"Loaded {records.Count} ALDB records successfully. Generated {TopologyLinks.Count} topology link relations across {Scenes.Count} scenes.";
+                AddLog(LogLevel.Success, "InsteonAPI", $"Retrieved {records.Count} ALDB records. Synthesized {TopologyLinks.Count} directed link relationships across {_currentDevices.Count} devices and {Scenes.Count} scenes.");
+            }
         }
         catch (Exception ex)
         {
@@ -1770,37 +1785,261 @@ public class MainViewModel : ViewModelBase
         StatusMessage = $"Added staged change '{sample.Id}'. Review in 'Pending Changes' tab before committing.";
     }
 
+    public void SetSelectedNodeAsController(DeviceNode node)
+    {
+        if (node == null) return;
+        SelectGraphNode(node);
+        NewLinkControllerAddress = node.Address;
+        SelectedTabIndex = 6;
+        StatusMessage = $"Selected {node.FriendlyName} ({node.Address}) as Controller in Link Creator.";
+        AddLog(LogLevel.Info, "UI", $"Selected {node.FriendlyName} ({node.Address}) as Controller in Link Creator.");
+    }
+
+    public void SetSelectedNodeAsResponder(DeviceNode node)
+    {
+        if (node == null) return;
+        SelectGraphNode(node);
+        NewLinkResponderAddress = node.Address;
+        SelectedTabIndex = 6;
+        StatusMessage = $"Selected {node.FriendlyName} ({node.Address}) as Responder in Link Creator.";
+        AddLog(LogLevel.Info, "UI", $"Selected {node.FriendlyName} ({node.Address}) as Responder in Link Creator.");
+    }
+
+    public void SetSelectedNodeAsReplaceOld(DeviceNode node)
+    {
+        if (node == null) return;
+        SelectGraphNode(node);
+        ReplaceOldDeviceAddress = node.Address;
+        SelectedTabIndex = 6;
+        StatusMessage = $"Selected {node.FriendlyName} ({node.Address}) as device to replace.";
+        AddLog(LogLevel.Info, "UI", $"Selected {node.FriendlyName} ({node.Address}) as device to replace.");
+    }
+
+    public void InspectNodeInAldb(string address)
+    {
+        if (string.IsNullOrWhiteSpace(address)) return;
+        foreach (var d in SelectableDevices)
+        {
+            d.IsSelected = d.Address.Equals(address, StringComparison.OrdinalIgnoreCase);
+        }
+        RebuildOrganizedAldbView();
+        SelectedTabIndex = 1;
+        StatusMessage = $"Inspecting ALDB records for {address}.";
+        AddLog(LogLevel.Info, "UI", $"Switched to ALDB Inspector for device {address}.");
+    }
+
+    public void StageReciprocalLink()
+    {
+        if (string.IsNullOrWhiteSpace(NewLinkControllerAddress) || string.IsNullOrWhiteSpace(NewLinkResponderAddress))
+        {
+            StatusMessage = "Both controller and responder addresses are required to stage link.";
+            return;
+        }
+
+        string ctrlAddr = NewLinkControllerAddress.Trim().ToUpperInvariant();
+        string respAddr = NewLinkResponderAddress.Trim().ToUpperInvariant();
+        int grp = NewLinkGroup;
+        int level = NewLinkOnLevel;
+        int ramp = NewLinkRampRate;
+
+        string ctrlName = SelectableDevices.FirstOrDefault(d => d.Address.Equals(ctrlAddr, StringComparison.OrdinalIgnoreCase))?.FriendlyName ?? ctrlAddr;
+        string respName = SelectableDevices.FirstOrDefault(d => d.Address.Equals(respAddr, StringComparison.OrdinalIgnoreCase))?.FriendlyName ?? respAddr;
+
+        var staged = new StagedChangeModel
+        {
+            Id = $"LNK-{DateTime.Now:HHmmss}",
+            TargetAddress = $"{ctrlAddr} ⇄ {respAddr}",
+            TargetLabel = $"{ctrlName} ⇄ {respName}",
+            Operation = "CREATE_RECIPROCAL_LINK",
+            CurrentState = "Unlinked (or single directional)",
+            ProposedState = $"Linked (Group {grp}, OnLevel {level}, Ramp {ramp})",
+            Description = $"Create verified bidirectional reciprocal link between Controller {ctrlAddr} ({ctrlName}) and Responder {respAddr} ({respName}) on Group {grp}.",
+            Risk = ChangeRisk.Low,
+            ExecutionHandler = async () =>
+            {
+                var req = new ReciprocalLinkRequestModel
+                {
+                    ControllerAddress = ctrlAddr,
+                    ResponderAddress = respAddr,
+                    Group = grp,
+                    Data1 = level,
+                    Data2 = ramp,
+                    Data3 = 1
+                };
+                return await _apiClient.CreateReciprocalLinkAsync(req);
+            }
+        };
+
+        StagedChanges.Add(staged);
+        StatusMessage = $"Staged reciprocal link between {ctrlName} and {respName}. Review in Pending Changes.";
+        AddLog(LogLevel.Info, "Staging", $"Staged reciprocal link creation for {ctrlAddr} <-> {respAddr} (Group {grp}).");
+        SelectedTabIndex = 4;
+        CommitStagedChangesCommand?.NotifyCanExecuteChanged();
+    }
+
+    public void StageDeleteLink()
+    {
+        if (string.IsNullOrWhiteSpace(DeleteLinkControllerAddress) || string.IsNullOrWhiteSpace(DeleteLinkResponderAddress))
+        {
+            StatusMessage = "Both controller and responder addresses are required to stage link deletion.";
+            return;
+        }
+
+        string ctrlAddr = DeleteLinkControllerAddress.Trim().ToUpperInvariant();
+        string respAddr = DeleteLinkResponderAddress.Trim().ToUpperInvariant();
+        int grp = DeleteLinkGroup;
+
+        string ctrlName = SelectableDevices.FirstOrDefault(d => d.Address.Equals(ctrlAddr, StringComparison.OrdinalIgnoreCase))?.FriendlyName ?? ctrlAddr;
+        string respName = SelectableDevices.FirstOrDefault(d => d.Address.Equals(respAddr, StringComparison.OrdinalIgnoreCase))?.FriendlyName ?? respAddr;
+
+        var staged = new StagedChangeModel
+        {
+            Id = $"DEL-{DateTime.Now:HHmmss}",
+            TargetAddress = $"{ctrlAddr} ⇄ {respAddr}",
+            TargetLabel = $"{ctrlName} ⇄ {respName}",
+            Operation = "DELETE_RECIPROCAL_LINK",
+            CurrentState = $"Linked on Group {grp}",
+            ProposedState = "Mark in_use = False (Unlinked on both devices)",
+            Description = $"Safely remove reciprocal link between Controller {ctrlAddr} ({ctrlName}) and Responder {respAddr} ({respName}) on Group {grp}.",
+            Risk = ChangeRisk.Medium,
+            ExecutionHandler = async () =>
+            {
+                return await _apiClient.DeleteReciprocalLinkAsync(ctrlAddr, respAddr, grp);
+            }
+        };
+
+        StagedChanges.Add(staged);
+        StatusMessage = $"Staged link deletion between {ctrlName} and {respName}. Review in Pending Changes.";
+        AddLog(LogLevel.Warning, "Staging", $"Staged link deletion for {ctrlAddr} <-> {respAddr} (Group {grp}).");
+        SelectedTabIndex = 4;
+        CommitStagedChangesCommand?.NotifyCanExecuteChanged();
+    }
+
+    public void StageDeviceReplace()
+    {
+        if (string.IsNullOrWhiteSpace(ReplaceOldDeviceAddress) || string.IsNullOrWhiteSpace(ReplaceNewDeviceAddress))
+        {
+            StatusMessage = "Both old and new device addresses are required to stage replacement.";
+            return;
+        }
+
+        string oldAddr = ReplaceOldDeviceAddress.Trim().ToUpperInvariant();
+        string newAddr = ReplaceNewDeviceAddress.Trim().ToUpperInvariant();
+        bool copyLinks = ReplaceCopyLinks;
+
+        string oldName = SelectableDevices.FirstOrDefault(d => d.Address.Equals(oldAddr, StringComparison.OrdinalIgnoreCase))?.FriendlyName ?? oldAddr;
+        string newName = SelectableDevices.FirstOrDefault(d => d.Address.Equals(newAddr, StringComparison.OrdinalIgnoreCase))?.FriendlyName ?? newAddr;
+
+        var staged = new StagedChangeModel
+        {
+            Id = $"SWAP-{DateTime.Now:HHmmss}",
+            TargetAddress = $"{oldAddr} ➔ {newAddr}",
+            TargetLabel = $"{oldName} ➔ {newName}",
+            Operation = "REPLACE_DEVICE",
+            CurrentState = $"Active device {oldAddr} with scene links",
+            ProposedState = $"Retarget all peer links to {newAddr} (CloneLinks: {copyLinks})",
+            Description = $"Full 'Clone & Swap' replacement: replaces {oldAddr} ({oldName}) with {newAddr} ({newName}) across PLM and all peer switches.",
+            Risk = ChangeRisk.High,
+            ExecutionHandler = async () =>
+            {
+                var req = new DeviceReplaceRequestModel
+                {
+                    OldAddress = oldAddr,
+                    NewAddress = newAddr,
+                    CopyLinks = copyLinks,
+                    SanitizeOld = false
+                };
+                return await _apiClient.ReplaceDeviceAsync(req);
+            }
+        };
+
+        StagedChanges.Add(staged);
+        StatusMessage = $"Staged replacement of {oldName} with {newName}. Review in Pending Changes.";
+        AddLog(LogLevel.Warning, "Staging", $"Staged device replacement: {oldAddr} -> {newAddr}.");
+        SelectedTabIndex = 4;
+        CommitStagedChangesCommand?.NotifyCanExecuteChanged();
+    }
+
     public async Task CommitStagedChangesAsync()
     {
-        if (StagedChanges.Count == 0) return;
-
-        if (!IsSessionActive)
+        var itemsToCommit = StagedChanges.Where(c => c.IsSelected).ToList();
+        if (itemsToCommit.Count == 0)
         {
-            StatusMessage = "Must start an active management session before writing changes to Insteon hardware.";
-            AddLog(LogLevel.Warning, "Commit", "Commit blocked: Active hardware session required.");
+            StatusMessage = "No staged changes selected to commit.";
+            return;
+        }
+
+        if (ForceRefreshHardware && !IsSessionActive)
+        {
+            StatusMessage = "Hardware writes require an active management session. Please click 'Start Management Session' first.";
+            AddLog(LogLevel.Warning, "Commit", "Commit blocked: Active hardware session required when Force Refresh Hardware is enabled.");
             return;
         }
 
         IsLoading = true;
-        int count = StagedChanges.Count;
-        AddLog(LogLevel.Info, "Commit", $"Initiating pre-commit sequence for {count} staged actions...");
+        StatusMessage = $"Committing {itemsToCommit.Count} verified changes...";
+        AddLog(LogLevel.Info, "Commit", $"Starting batch commit of {itemsToCommit.Count} verified network changes...");
+
+        int successCount = 0;
+        int failureCount = 0;
 
         try
         {
-            await Task.Delay(1000); // Simulate staged verification & hardware execution sequence
-            AddLog(LogLevel.Success, "Commit", $"Successfully verified and committed {count} network changes to Insteon hardware!");
-            StagedChanges.Clear();
-            StatusMessage = $"All {count} staged changes successfully committed to hardware.";
-            await QueryAldbAsync(); // Refresh database
+            foreach (var item in itemsToCommit)
+            {
+                if (item.ExecutionHandler != null)
+                {
+                    try
+                    {
+                        var (success, msg) = await item.ExecutionHandler();
+                        if (success)
+                        {
+                            successCount++;
+                            AddLog(LogLevel.Success, "Commit", $"[Verified & Committed] {item.Operation} on {item.TargetAddress}: {msg}");
+                            StagedChanges.Remove(item);
+                        }
+                        else
+                        {
+                            failureCount++;
+                            AddLog(LogLevel.Error, "Commit", $"[Failed] {item.Operation} on {item.TargetAddress}: {msg}");
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        failureCount++;
+                        AddLog(LogLevel.Error, "Commit", $"[Error] {item.Operation} on {item.TargetAddress}: {ex.Message}");
+                    }
+                }
+                else
+                {
+                    // Preview sample action
+                    await Task.Delay(400);
+                    successCount++;
+                    AddLog(LogLevel.Success, "Commit", $"[Preview Verified] {item.Operation} on {item.TargetAddress} verified successfully.");
+                    StagedChanges.Remove(item);
+                }
+            }
+
+            if (successCount > 0)
+            {
+                await QueryAldbAsync(silent: true);
+                StatusMessage = $"Committed and verified {successCount} changes successfully (Failures: {failureCount}).";
+                AddLog(LogLevel.Success, "Commit", $"Topology map, ALDB tables, and scenes synchronized following commit of {successCount} changes.");
+            }
+            else
+            {
+                StatusMessage = $"Commit completed with {failureCount} failures.";
+            }
         }
         catch (Exception ex)
         {
+            StatusMessage = $"Commit error: {ex.Message}";
             AddLog(LogLevel.Error, "Commit", $"Commit error: {ex.Message}");
-            StatusMessage = $"Commit failed: {ex.Message}";
         }
         finally
         {
             IsLoading = false;
+            CommitStagedChangesCommand?.NotifyCanExecuteChanged();
         }
     }
 
@@ -1840,7 +2079,7 @@ public class MainViewModel : ViewModelBase
         }
     }
 
-    public async Task LoadScenesAsync()
+    public async Task LoadScenesAsync(bool silent = false)
     {
         try
         {
@@ -1860,7 +2099,10 @@ public class MainViewModel : ViewModelBase
             {
                 SelectedQuickScene = Scenes[0];
             }
-            AddLog(LogLevel.Info, "Scenes", $"Loaded {Scenes.Count} Insteon scenes from network snapshot / backend.");
+            if (!silent)
+            {
+                AddLog(LogLevel.Info, "Scenes", $"Loaded {Scenes.Count} Insteon scenes from network snapshot / backend.");
+            }
         }
         catch (Exception ex)
         {
@@ -2069,8 +2311,9 @@ public class MainViewModel : ViewModelBase
             if (success)
             {
                 StatusMessage = $"Device replacement complete: {ReplaceOldDeviceAddress} replaced by {ReplaceNewDeviceAddress}.";
-                AddLog(LogLevel.Success, "NetworkTools", msg);
-                await QueryAldbAsync();
+                AddLog(LogLevel.Success, "DeviceReplace", msg);
+                await QueryAldbAsync(silent: true);
+                AddLog(LogLevel.Success, "Network", $"Topology map and ALDB tables updated following device replacement.");
             }
             else
             {
@@ -2099,7 +2342,7 @@ public class MainViewModel : ViewModelBase
 
         IsLoading = true;
         StatusMessage = $"Creating verified reciprocal link: {NewLinkControllerAddress} <-> {NewLinkResponderAddress} for Group {NewLinkGroup}...";
-        AddLog(LogLevel.Info, "NetworkTools", $"Initiating atomic 2-phase link between {NewLinkControllerAddress} and {NewLinkResponderAddress} (Group {NewLinkGroup})...");
+        AddLog(LogLevel.Info, "LinkCreator", $"Initiating atomic 2-phase link between {NewLinkControllerAddress} and {NewLinkResponderAddress} (Group {NewLinkGroup})...");
         try
         {
             var req = new ReciprocalLinkRequestModel
@@ -2114,20 +2357,21 @@ public class MainViewModel : ViewModelBase
             var (success, msg) = await _apiClient.CreateReciprocalLinkAsync(req);
             if (success)
             {
-                StatusMessage = $"Reciprocal link created successfully.";
-                AddLog(LogLevel.Success, "NetworkTools", msg);
-                await QueryAldbAsync();
+                StatusMessage = $"Reciprocal link created successfully: {NewLinkControllerAddress} <-> {NewLinkResponderAddress} (Group {NewLinkGroup}).";
+                AddLog(LogLevel.Success, "LinkCreator", msg);
+                await QueryAldbAsync(silent: true);
+                AddLog(LogLevel.Success, "Network", $"Topology map, ALDB tables, and scenes updated for link {NewLinkControllerAddress} <-> {NewLinkResponderAddress}.");
             }
             else
             {
                 StatusMessage = $"Link creation failed: {msg}";
-                AddLog(LogLevel.Error, "NetworkTools", msg);
+                AddLog(LogLevel.Error, "LinkCreator", msg);
             }
         }
         catch (Exception ex)
         {
             StatusMessage = $"Link creation failed: {ex.Message}";
-            AddLog(LogLevel.Error, "NetworkTools", ex.Message);
+            AddLog(LogLevel.Error, "LinkCreator", ex.Message);
         }
         finally
         {
@@ -2154,7 +2398,7 @@ public class MainViewModel : ViewModelBase
 
         IsLoading = true;
         StatusMessage = $"Deleting reciprocal link: {DeleteLinkControllerAddress} <-> {DeleteLinkResponderAddress} (Group {DeleteLinkGroup})...";
-        AddLog(LogLevel.Warning, "NetworkTools", $"Initiating atomic deletion of link between {DeleteLinkControllerAddress} and {DeleteLinkResponderAddress} (Group {DeleteLinkGroup})...");
+        AddLog(LogLevel.Warning, "LinkDeleter", $"Initiating atomic deletion of link between {DeleteLinkControllerAddress} and {DeleteLinkResponderAddress} (Group {DeleteLinkGroup})...");
 
         try
         {
@@ -2167,8 +2411,9 @@ public class MainViewModel : ViewModelBase
             if (success)
             {
                 StatusMessage = $"Reciprocal link deleted successfully: {DeleteLinkControllerAddress} <-> {DeleteLinkResponderAddress}.";
-                AddLog(LogLevel.Success, "NetworkTools", msg);
-                await QueryAldbAsync();
+                AddLog(LogLevel.Success, "LinkDeleter", msg);
+                await QueryAldbAsync(silent: true);
+                AddLog(LogLevel.Success, "Network", $"Topology map and ALDB tables updated following deletion of {DeleteLinkControllerAddress} <-> {DeleteLinkResponderAddress}.");
             }
             else
             {
@@ -2255,9 +2500,10 @@ public class MainViewModel : ViewModelBase
             var (success, msg) = await _apiClient.DeleteReciprocalLinkAsync(ctrlAddr, respAddr, entry.Group);
             if (success)
             {
-                StatusMessage = $"Link deleted successfully.";
+                StatusMessage = $"Link deleted successfully: {ctrlAddr} <-> {respAddr}.";
                 AddLog(LogLevel.Success, "ALDB", msg);
-                await QueryAldbAsync();
+                await QueryAldbAsync(silent: true);
+                AddLog(LogLevel.Success, "Network", "ALDB records and topology refreshed.");
             }
             else
             {

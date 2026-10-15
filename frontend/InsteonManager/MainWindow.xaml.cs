@@ -106,6 +106,18 @@ public partial class MainWindow : Window
         }
     }
 
+    private void Node_MouseRightButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        if (sender is FrameworkElement element && element.DataContext is DeviceNode node)
+        {
+            if (DataContext is MainViewModel vm)
+            {
+                vm.SelectGraphNode(node);
+            }
+            // Do not set e.Handled = true so that the ContextMenu opens normally
+        }
+    }
+
     private void Node_MouseMove(object sender, MouseEventArgs e)
     {
         if (_isDragging && _draggedNode != null && sender is FrameworkElement)
@@ -226,6 +238,80 @@ public partial class MainWindow : Window
         if (sender is Button btn && btn.DataContext is SceneMemberModel member && DataContext is MainViewModel vm)
         {
             await vm.UpdateMemberPresetAsync(member);
+        }
+    }
+
+    private DeviceNode? GetNodeFromMenuItem(object sender)
+    {
+        if (sender is MenuItem mi)
+        {
+            if (mi.CommandParameter is DeviceNode dn1) return dn1;
+            if (mi.DataContext is DeviceNode dn2) return dn2;
+            if (mi.Parent is ContextMenu cm && cm.PlacementTarget is FrameworkElement fe && fe.DataContext is DeviceNode dn3)
+                return dn3;
+        }
+        return null;
+    }
+
+    private void MenuItem_SetController_Click(object sender, RoutedEventArgs e)
+    {
+        if (DataContext is MainViewModel vm)
+        {
+            var node = GetNodeFromMenuItem(sender) ?? vm.SelectedGraphNode;
+            if (node != null)
+            {
+                vm.SetSelectedNodeAsController(node);
+            }
+        }
+    }
+
+    private void MenuItem_SetResponder_Click(object sender, RoutedEventArgs e)
+    {
+        if (DataContext is MainViewModel vm)
+        {
+            var node = GetNodeFromMenuItem(sender) ?? vm.SelectedGraphNode;
+            if (node != null)
+            {
+                vm.SetSelectedNodeAsResponder(node);
+            }
+        }
+    }
+
+    private void MenuItem_SetReplaceOld_Click(object sender, RoutedEventArgs e)
+    {
+        if (DataContext is MainViewModel vm)
+        {
+            var node = GetNodeFromMenuItem(sender) ?? vm.SelectedGraphNode;
+            if (node != null)
+            {
+                vm.SetSelectedNodeAsReplaceOld(node);
+            }
+        }
+    }
+
+    private void MenuItem_InspectAldb_Click(object sender, RoutedEventArgs e)
+    {
+        if (DataContext is MainViewModel vm)
+        {
+            var node = GetNodeFromMenuItem(sender) ?? vm.SelectedGraphNode;
+            if (node != null)
+            {
+                vm.InspectNodeInAldb(node.Address);
+            }
+        }
+    }
+
+    private void MenuItem_CopyAddress_Click(object sender, RoutedEventArgs e)
+    {
+        if (DataContext is MainViewModel vm)
+        {
+            var node = GetNodeFromMenuItem(sender) ?? vm.SelectedGraphNode;
+            if (node != null)
+            {
+                Clipboard.SetText(node.Address);
+                vm.StatusMessage = $"Copied {node.Address} to clipboard.";
+                vm.AddLog(LogLevel.Info, "UI", $"Copied {node.Address} to clipboard.");
+            }
         }
     }
 }
