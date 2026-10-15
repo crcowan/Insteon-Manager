@@ -59,6 +59,23 @@ public class MainViewModel : ViewModelBase
         FilteredScenes = new ObservableCollection<SceneModel>();
         GhostTargets = new ObservableCollection<string>();
         ActiveLinkPairs = new ObservableCollection<ActiveLinkPairModel>();
+        MissingDefaultLinks = new ObservableCollection<MissingDefaultLinkItemModel>();
+
+        DeviceCategoryOptions = new ObservableCollection<DeviceCategoryOption>
+        {
+            new() { Name = "Dimmer Switch 2477D", Cat = 1, Subcat = 32, Description = "Dimmable Wall Switch / Keypad" },
+            new() { Name = "On/Off Switch 2477S", Cat = 2, Subcat = 42, Description = "Relay Switch (Non-Dimmable)" },
+            new() { Name = "KeypadLinc 6-Button 2487S", Cat = 1, Subcat = 27, Description = "Keypad Dimmer (6-Button)" },
+            new() { Name = "KeypadLinc 8-Button 2486D", Cat = 1, Subcat = 28, Description = "Keypad Dimmer (8-Button)" },
+            new() { Name = "LampLinc Dimmer 2457D2", Cat = 1, Subcat = 14, Description = "Plug-in Lamp Dimmer Module" },
+            new() { Name = "ApplianceLinc Relay 2456S3", Cat = 2, Subcat = 9, Description = "Plug-in Appliance On/Off Module" },
+            new() { Name = "OutletLinc Dimmer 2472D", Cat = 1, Subcat = 33, Description = "In-Wall Receptacle Dimmer" },
+            new() { Name = "In-LineLinc Relay 2475SDB", Cat = 2, Subcat = 22, Description = "Hardwired In-Line Relay" },
+            new() { Name = "FanLinc Dual-Load 2449U", Cat = 1, Subcat = 46, Description = "Ceiling Fan & Light Controller" },
+            new() { Name = "Battery Sensor / Remote", Cat = 16, Subcat = 1, Description = "Wireless Sensor / Remote" },
+            new() { Name = "Generic / Custom Insteon Device", Cat = 1, Subcat = 0, Description = "Custom Category" }
+        };
+        _selectedDeviceCategory = DeviceCategoryOptions[0];
 
         // Heartbeat timer (every 30 seconds while session is active)
         _heartbeatTimer = new DispatcherTimer
@@ -103,6 +120,13 @@ public class MainViewModel : ViewModelBase
         StageReciprocalLinkCommand = new RelayCommand(StageReciprocalLink, () => !string.IsNullOrEmpty(NewLinkControllerAddress) && !string.IsNullOrEmpty(NewLinkResponderAddress));
         StageDeleteLinkCommand = new RelayCommand(StageDeleteLink, () => !string.IsNullOrEmpty(DeleteLinkControllerAddress) && !string.IsNullOrEmpty(DeleteLinkResponderAddress));
         StageDeviceReplaceCommand = new RelayCommand(StageDeviceReplace, () => !string.IsNullOrEmpty(ReplaceOldDeviceAddress) && !string.IsNullOrEmpty(ReplaceNewDeviceAddress));
+
+        AuditDefaultLinksCommand = new AsyncRelayCommand(() => AuditDefaultLinksAsync(false), () => !IsLoading);
+        StageDefaultLinkForDeviceCommand = new RelayCommand(obj => StageDefaultLinkForDevice(obj));
+        FixDefaultLinkForDeviceCommand = new AsyncRelayCommand<object>(FixDefaultLinkForDeviceAsync, _ => !IsLoading);
+        StageFixAllDefaultLinksCommand = new RelayCommand(StageFixAllDefaultLinks, () => MissingDefaultLinks.Count > 0 && !IsLoading);
+        StageAddDeviceCommand = new RelayCommand(StageAddDevice, () => InsteonAddressHelper.IsValid(NewDeviceAddress));
+        AddDeviceNowCommand = new AsyncRelayCommand(AddDeviceNowAsync, () => InsteonAddressHelper.IsValid(NewDeviceAddress) && !IsLoading);
 
         RefreshScenesCommand = new AsyncRelayCommand(() => LoadScenesAsync(false), () => !IsLoading);
         TriggerSceneOnCommand = new AsyncRelayCommand(() => TriggerSelectedSceneAsync("on"), () => SelectedScene != null && !IsLoading);
@@ -489,6 +513,13 @@ public class MainViewModel : ViewModelBase
     public RelayCommand SwapDeleteLinkAddressesCommand { get; }
     public RelayCommand ApplySelectedGraphNodeCommand { get; }
 
+    public AsyncRelayCommand AuditDefaultLinksCommand { get; }
+    public RelayCommand StageDefaultLinkForDeviceCommand { get; }
+    public AsyncRelayCommand<object> FixDefaultLinkForDeviceCommand { get; }
+    public RelayCommand StageFixAllDefaultLinksCommand { get; }
+    public RelayCommand StageAddDeviceCommand { get; }
+    public AsyncRelayCommand AddDeviceNowCommand { get; }
+
     public ObservableCollection<DeviceLookupItem> DeviceLookupChoices { get; } = new();
 
     private int _selectedTabIndex = 0;
@@ -506,6 +537,57 @@ public class MainViewModel : ViewModelBase
     public ObservableCollection<SceneModel> Scenes { get; }
     public ObservableCollection<SceneModel> FilteredScenes { get; }
     public ObservableCollection<string> GhostTargets { get; }
+    public ObservableCollection<MissingDefaultLinkItemModel> MissingDefaultLinks { get; }
+    public ObservableCollection<DeviceCategoryOption> DeviceCategoryOptions { get; }
+
+    public int MissingDefaultLinksCount => MissingDefaultLinks.Count;
+    public bool HasMissingDefaultLinks => MissingDefaultLinks.Count > 0;
+    public string DefaultLinkAuditStatusText => HasMissingDefaultLinks
+        ? $"⚠️ {MissingDefaultLinks.Count} devices missing default PLM links"
+        : "✅ All devices have default PLM links";
+
+    public string PlmModemAddress => "53.C1.42";
+
+    private string _newDeviceAddress = string.Empty;
+    public string NewDeviceAddress
+    {
+        get => _newDeviceAddress;
+        set
+        {
+            var normalized = InsteonAddressHelper.Normalize(value);
+            if (SetProperty(ref _newDeviceAddress, normalized))
+            {
+                OnPropertyChanged(nameof(NewDeviceValidation));
+                StageAddDeviceCommand?.NotifyCanExecuteChanged();
+                AddDeviceNowCommand?.NotifyCanExecuteChanged();
+            }
+        }
+    }
+
+    private string _newDeviceName = string.Empty;
+    public string NewDeviceName
+    {
+        get => _newDeviceName;
+        set => SetProperty(ref _newDeviceName, value);
+    }
+
+    private DeviceCategoryOption? _selectedDeviceCategory;
+    public DeviceCategoryOption? SelectedDeviceCategory
+    {
+        get => _selectedDeviceCategory;
+        set => SetProperty(ref _selectedDeviceCategory, value);
+    }
+
+    private bool _newDeviceCreateDefaultLinks = true;
+    public bool NewDeviceCreateDefaultLinks
+    {
+        get => _newDeviceCreateDefaultLinks;
+        set => SetProperty(ref _newDeviceCreateDefaultLinks, value);
+    }
+
+    public string NewDeviceValidation => InsteonAddressHelper.IsValid(NewDeviceAddress)
+        ? "✓ Valid Insteon Address"
+        : (string.IsNullOrEmpty(NewDeviceAddress) ? "" : "⚠ Invalid address (format: XX.YY.ZZ)");
 
     private DeviceNode? _selectedGraphNode;
     public DeviceNode? SelectedGraphNode
@@ -1078,6 +1160,7 @@ public class MainViewModel : ViewModelBase
             AnalyzeGhostLinks(records);
             RebuildActiveLinkPairs(records);
             await LoadScenesAsync(silent: silent);
+            await AuditDefaultLinksAsync(silent: silent);
 
             if (!silent)
             {
@@ -1404,6 +1487,8 @@ public class MainViewModel : ViewModelBase
 
         foreach (var dev in selected)
         {
+            var missing = MissingDefaultLinks.FirstOrDefault(m => m.DeviceAddress.Equals(dev.Address, StringComparison.OrdinalIgnoreCase));
+
             var org = new OrganizedDeviceAldb
             {
                 Address = dev.Address,
@@ -1411,6 +1496,9 @@ public class MainViewModel : ViewModelBase
                 DeviceType = dev.DeviceType,
                 IsBattery = dev.IsBattery,
                 IsModem = dev.Address == "53.C1.42" || dev.Address.Contains("PLM", StringComparison.OrdinalIgnoreCase),
+                HasMissingDefaultLink = (missing != null),
+                DefaultLinkIssue = missing?.IssueSummary ?? string.Empty,
+                DefaultLinkRecommendation = missing?.Recommendation ?? string.Empty,
             };
 
             // Get records owned by this device
@@ -2652,5 +2740,350 @@ public class MainViewModel : ViewModelBase
             AddLog(LogLevel.Error, "SceneTrigger", $"Trigger error: {ex.Message}");
         }
     }
+
+    public async Task AuditDefaultLinksAsync(bool silent = false)
+    {
+        try
+        {
+            var audit = await _apiClient.AuditDefaultLinksAsync();
+            MissingDefaultLinks.Clear();
+            if (audit != null)
+            {
+                foreach (var item in audit.Items)
+                {
+                    MissingDefaultLinks.Add(item);
+                }
+            }
+
+            OnPropertyChanged(nameof(MissingDefaultLinksCount));
+            OnPropertyChanged(nameof(HasMissingDefaultLinks));
+            OnPropertyChanged(nameof(DefaultLinkAuditStatusText));
+            StageFixAllDefaultLinksCommand?.NotifyCanExecuteChanged();
+
+            // Sync with organized device cards
+            foreach (var org in OrganizedDevices)
+            {
+                var missing = MissingDefaultLinks.FirstOrDefault(m => m.DeviceAddress.Equals(org.Address, StringComparison.OrdinalIgnoreCase));
+                org.HasMissingDefaultLink = (missing != null);
+                org.DefaultLinkIssue = missing?.IssueSummary ?? string.Empty;
+                org.DefaultLinkRecommendation = missing?.Recommendation ?? string.Empty;
+            }
+
+            if (!silent)
+            {
+                if (MissingDefaultLinks.Count > 0)
+                {
+                    StatusMessage = $"Default Link Audit: {MissingDefaultLinks.Count} devices missing reciprocal PLM links.";
+                    AddLog(LogLevel.Warning, "PLMAudit", $"Found {MissingDefaultLinks.Count} devices missing default reciprocal PLM links.");
+                }
+                else
+                {
+                    StatusMessage = "Default Link Audit: All devices have verified default reciprocal links with PLM.";
+                    AddLog(LogLevel.Success, "PLMAudit", "All network devices have verified default reciprocal links with PLM modem.");
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            if (!silent)
+            {
+                StatusMessage = $"Default link audit error: {ex.Message}";
+                AddLog(LogLevel.Error, "PLMAudit", $"Audit error: {ex.Message}");
+            }
+        }
+    }
+
+    public void StageDefaultLinkForDevice(object? target, bool switchTab = true)
+    {
+        string? devAddr = null;
+        string? devName = null;
+        string? issue = null;
+
+        if (target is MissingDefaultLinkItemModel item)
+        {
+            devAddr = item.DeviceAddress;
+            devName = item.DeviceName;
+            issue = item.IssueSummary;
+        }
+        else if (target is OrganizedDeviceAldb org)
+        {
+            devAddr = org.Address;
+            devName = org.FriendlyName;
+            issue = org.DefaultLinkIssue;
+        }
+        else if (target is string addrStr)
+        {
+            devAddr = InsteonAddressHelper.Normalize(addrStr);
+            devName = SelectableDevices.FirstOrDefault(d => d.Address.Equals(devAddr, StringComparison.OrdinalIgnoreCase))?.FriendlyName ?? devAddr;
+        }
+
+        if (string.IsNullOrWhiteSpace(devAddr)) return;
+
+        string plm = PlmModemAddress;
+        string name = string.IsNullOrWhiteSpace(devName) ? devAddr : devName;
+
+        // Check if already staged
+        if (StagedChanges.Any(c => c.TargetAddress.Contains(devAddr) && c.Operation == "CREATE_DEFAULT_PLM_LINK"))
+        {
+            StatusMessage = $"Default link for {name} ({devAddr}) is already staged.";
+            if (switchTab) SelectedTabIndex = 4;
+            return;
+        }
+
+        var staged = new StagedChangeModel
+        {
+            Id = $"DEF-{DateTime.Now:HHmmss}-{StagedChanges.Count + 1}",
+            TargetAddress = $"{plm} ⇄ {devAddr}",
+            TargetLabel = $"PLM Modem ⇄ {name}",
+            Operation = "CREATE_DEFAULT_PLM_LINK",
+            CurrentState = issue ?? "Missing default Group 1 link pair with PLM",
+            ProposedState = $"Reciprocal Group 1 Link Pair with PLM ({plm})",
+            Description = $"Establish default reciprocal All-Link Group 1 records between PLM ({plm}) and {name} ({devAddr}) for status reporting and remote control.",
+            Risk = ChangeRisk.Low,
+            ExecutionHandler = async () =>
+            {
+                // Link 1: PLM (Controller) <-> Device (Responder) on Group 1
+                var req1 = new ReciprocalLinkRequestModel
+                {
+                    ControllerAddress = plm,
+                    ResponderAddress = devAddr,
+                    Group = 1,
+                    Data1 = 255,
+                    Data2 = 28,
+                    Data3 = 1
+                };
+                var (s1, m1) = await _apiClient.CreateReciprocalLinkAsync(req1);
+                if (!s1) return (false, $"PLM->Device link failed: {m1}");
+
+                // Link 2: Device (Controller) <-> PLM (Responder) on Group 1
+                var req2 = new ReciprocalLinkRequestModel
+                {
+                    ControllerAddress = devAddr,
+                    ResponderAddress = plm,
+                    Group = 1,
+                    Data1 = 255,
+                    Data2 = 28,
+                    Data3 = 1
+                };
+                var (s2, m2) = await _apiClient.CreateReciprocalLinkAsync(req2);
+                if (!s2) return (false, $"Device->PLM link failed: {m2}");
+
+                return (true, $"Reciprocal default Group 1 link pair established between PLM {plm} and {devAddr}.");
+            }
+        };
+
+        StagedChanges.Add(staged);
+        StatusMessage = $"Staged default PLM link pair for {name} ({devAddr}). Review in Pending Changes.";
+        AddLog(LogLevel.Info, "Staging", $"Staged default PLM link pair: {plm} <-> {devAddr} (Group 1).");
+        if (switchTab) SelectedTabIndex = 4;
+        CommitStagedChangesCommand?.NotifyCanExecuteChanged();
+    }
+
+    public async Task FixDefaultLinkForDeviceAsync(object? target)
+    {
+        string? devAddr = null;
+        string? devName = null;
+
+        if (target is MissingDefaultLinkItemModel item)
+        {
+            devAddr = item.DeviceAddress;
+            devName = item.DeviceName;
+        }
+        else if (target is OrganizedDeviceAldb org)
+        {
+            devAddr = org.Address;
+            devName = org.FriendlyName;
+        }
+        else if (target is string addrStr)
+        {
+            devAddr = InsteonAddressHelper.Normalize(addrStr);
+            devName = SelectableDevices.FirstOrDefault(d => d.Address.Equals(devAddr, StringComparison.OrdinalIgnoreCase))?.FriendlyName ?? devAddr;
+        }
+
+        if (string.IsNullOrWhiteSpace(devAddr)) return;
+
+        IsLoading = true;
+        string plm = PlmModemAddress;
+        string name = string.IsNullOrWhiteSpace(devName) ? devAddr : devName;
+        StatusMessage = $"Creating default PLM link pair for {name} ({devAddr})...";
+        AddLog(LogLevel.Info, "DefaultLink", $"Establishing default reciprocal Group 1 links between PLM {plm} and {devAddr}...");
+
+        try
+        {
+            // Link 1: PLM (Controller) <-> Device (Responder) on Group 1
+            var req1 = new ReciprocalLinkRequestModel
+            {
+                ControllerAddress = plm,
+                ResponderAddress = devAddr,
+                Group = 1,
+                Data1 = 255,
+                Data2 = 28,
+                Data3 = 1
+            };
+            var (s1, m1) = await _apiClient.CreateReciprocalLinkAsync(req1);
+            if (!s1)
+            {
+                StatusMessage = $"Failed to create PLM->Device link: {m1}";
+                AddLog(LogLevel.Error, "DefaultLink", m1);
+                return;
+            }
+
+            // Link 2: Device (Controller) <-> PLM (Responder) on Group 1
+            var req2 = new ReciprocalLinkRequestModel
+            {
+                ControllerAddress = devAddr,
+                ResponderAddress = plm,
+                Group = 1,
+                Data1 = 255,
+                Data2 = 28,
+                Data3 = 1
+            };
+            var (s2, m2) = await _apiClient.CreateReciprocalLinkAsync(req2);
+            if (!s2)
+            {
+                StatusMessage = $"Failed to create Device->PLM link: {m2}";
+                AddLog(LogLevel.Error, "DefaultLink", m2);
+                return;
+            }
+
+            StatusMessage = $"Default PLM links created successfully for {name}.";
+            AddLog(LogLevel.Success, "DefaultLink", $"Verified reciprocal default links created between PLM {plm} and {devAddr}.");
+            await QueryAldbAsync(silent: true);
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = $"Error creating default links: {ex.Message}";
+            AddLog(LogLevel.Error, "DefaultLink", ex.Message);
+        }
+        finally
+        {
+            IsLoading = false;
+        }
+    }
+
+    public void StageFixAllDefaultLinks()
+    {
+        var missingList = MissingDefaultLinks.ToList();
+        if (missingList.Count == 0)
+        {
+            StatusMessage = "No devices missing default PLM links.";
+            return;
+        }
+
+        int count = 0;
+        foreach (var item in missingList)
+        {
+            StageDefaultLinkForDevice(item, switchTab: false);
+            count++;
+        }
+
+        StatusMessage = $"Staged {count} default PLM link pairs in Pending Changes.";
+        AddLog(LogLevel.Info, "Staging", $"Batch-staged default reciprocal PLM links for {count} devices.");
+        SelectedTabIndex = 4;
+        CommitStagedChangesCommand?.NotifyCanExecuteChanged();
+    }
+
+    public void StageAddDevice()
+    {
+        if (!InsteonAddressHelper.IsValid(NewDeviceAddress))
+        {
+            StatusMessage = "Valid Insteon address required to stage new device.";
+            return;
+        }
+
+        string cleanAddr = InsteonAddressHelper.Normalize(NewDeviceAddress);
+        string name = string.IsNullOrWhiteSpace(NewDeviceName) ? $"Device {cleanAddr}" : NewDeviceName.Trim();
+        var catOption = SelectedDeviceCategory ?? DeviceCategoryOptions.FirstOrDefault();
+        int cat = catOption?.Cat ?? 1;
+        int subcat = catOption?.Subcat ?? 0;
+        bool createDefault = NewDeviceCreateDefaultLinks;
+
+        var staged = new StagedChangeModel
+        {
+            Id = $"DEV-{DateTime.Now:HHmmss}",
+            TargetAddress = cleanAddr,
+            TargetLabel = name,
+            Operation = "ADD_DEVICE",
+            CurrentState = "Unregistered device",
+            ProposedState = $"Add to network as {catOption?.Name ?? "Insteon Device"} (CreateDefaultLinks: {createDefault})",
+            Description = $"Register new device {cleanAddr} ({name}) into network and automatically create default reciprocal Group 1 links with PLM {PlmModemAddress}.",
+            Risk = ChangeRisk.Low,
+            ExecutionHandler = async () =>
+            {
+                var req = new DeviceAddRequestModel
+                {
+                    Address = cleanAddr,
+                    Description = name,
+                    Cat = cat,
+                    Subcat = subcat,
+                    CreateDefaultLinks = createDefault
+                };
+                var (success, msg, _) = await _apiClient.AddDeviceAsync(req);
+                return (success, msg);
+            }
+        };
+
+        StagedChanges.Add(staged);
+        StatusMessage = $"Staged device registration for {name} ({cleanAddr}). Review in Pending Changes.";
+        AddLog(LogLevel.Info, "Staging", $"Staged new device registration: {cleanAddr} ({name}).");
+        SelectedTabIndex = 4;
+        CommitStagedChangesCommand?.NotifyCanExecuteChanged();
+    }
+
+    public async Task AddDeviceNowAsync()
+    {
+        if (!InsteonAddressHelper.IsValid(NewDeviceAddress))
+        {
+            StatusMessage = "Valid Insteon address required.";
+            return;
+        }
+
+        string cleanAddr = InsteonAddressHelper.Normalize(NewDeviceAddress);
+        string name = string.IsNullOrWhiteSpace(NewDeviceName) ? $"Device {cleanAddr}" : NewDeviceName.Trim();
+        var catOption = SelectedDeviceCategory ?? DeviceCategoryOptions.FirstOrDefault();
+        int cat = catOption?.Cat ?? 1;
+        int subcat = catOption?.Subcat ?? 0;
+        bool createDefault = NewDeviceCreateDefaultLinks;
+
+        IsLoading = true;
+        StatusMessage = $"Adding device {cleanAddr} ({name})...";
+        AddLog(LogLevel.Info, "DeviceAdd", $"Registering new device {cleanAddr} ({name}) with category {catOption?.Name}...");
+
+        try
+        {
+            var req = new DeviceAddRequestModel
+            {
+                Address = cleanAddr,
+                Description = name,
+                Cat = cat,
+                Subcat = subcat,
+                CreateDefaultLinks = createDefault
+            };
+            var (success, msg, _) = await _apiClient.AddDeviceAsync(req);
+            if (success)
+            {
+                StatusMessage = msg;
+                AddLog(LogLevel.Success, "DeviceAdd", msg);
+                NewDeviceAddress = string.Empty;
+                NewDeviceName = string.Empty;
+                await QueryAldbAsync(silent: true);
+            }
+            else
+            {
+                StatusMessage = $"Failed to add device: {msg}";
+                AddLog(LogLevel.Error, "DeviceAdd", msg);
+            }
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = $"Error adding device: {ex.Message}";
+            AddLog(LogLevel.Error, "DeviceAdd", ex.Message);
+        }
+        finally
+        {
+            IsLoading = false;
+        }
+    }
 }
+
 

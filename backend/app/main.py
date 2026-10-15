@@ -23,6 +23,8 @@ from app.models import (
     ReciprocalLinkRequest,
     DeviceReplaceRequest,
     DeviceControlRequest,
+    DeviceAddRequest,
+    DefaultLinkAuditResponse,
 )
 from app.openhab import openhab_client
 from app.insteon import insteon_manager
@@ -357,5 +359,26 @@ async def purge_ghost_links(target_address: str):
     except Exception as exc:
         logger.error(f"Error purging ghost links for {target_address}: {exc}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(exc))
+
+
+@app.get("/insteon/audit/default-links", response_model=DefaultLinkAuditResponse)
+async def audit_default_links():
+    """Audit all network devices against PLM to detect missing or broken reciprocal Group 1 default links."""
+    try:
+        return transaction_service.audit_default_links()
+    except Exception as exc:
+        logger.error(f"Error auditing default links: {exc}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@app.post("/insteon/devices/add", response_model=GenericResponse)
+async def add_device(req: DeviceAddRequest):
+    """Add a new device to the Insteon network and automatically create default reciprocal links with the PLM."""
+    try:
+        return await transaction_service.add_device(req)
+    except Exception as exc:
+        logger.error(f"Error adding device {req.address}: {exc}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(exc))
+
 
 

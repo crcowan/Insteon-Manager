@@ -323,6 +323,37 @@ public class InsteonApiClient
             return (false, $"Device control error: {ex.Message}");
         }
     }
+
+    public async Task<DefaultLinkAuditResponseModel?> AuditDefaultLinksAsync()
+    {
+        try
+        {
+            return await _httpClient.GetFromJsonAsync<DefaultLinkAuditResponseModel>($"{_baseUrl}/insteon/audit/default-links");
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    public async Task<(bool Success, string Message, string? Address)> AddDeviceAsync(DeviceAddRequestModel req)
+    {
+        try
+        {
+            var response = await _httpClient.PostAsJsonAsync($"{_baseUrl}/insteon/devices/add", req);
+            var content = await response.Content.ReadAsStringAsync();
+            if (response.IsSuccessStatusCode)
+            {
+                var res = JsonSerializer.Deserialize<GenericApiResponse>(content);
+                return (res?.Success ?? true, res?.Message ?? $"Device {req.Address} added successfully", req.Address);
+            }
+            return (false, $"HTTP {(int)response.StatusCode}: {content}", null);
+        }
+        catch (Exception ex)
+        {
+            return (false, $"Error adding device: {ex.Message}", null);
+        }
+    }
 }
 
 

@@ -84,6 +84,9 @@ public class OrganizedDeviceAldb
     public string DeviceType { get; set; } = string.Empty;
     public bool IsModem { get; set; }
     public bool IsBattery { get; set; }
+    public bool HasMissingDefaultLink { get; set; }
+    public string DefaultLinkIssue { get; set; } = string.Empty;
+    public string DefaultLinkRecommendation { get; set; } = string.Empty;
     public int TotalRecords => ControllerRecords.Count + ResponderRecords.Count + OtherRecords.Count;
     public int ControllerCount => ControllerRecords.Count;
     public int ResponderCount => ResponderRecords.Count;
@@ -95,6 +98,84 @@ public class OrganizedDeviceAldb
     public string DisplayTitle => string.IsNullOrWhiteSpace(FriendlyName) || FriendlyName.Equals($"Device {Address}", System.StringComparison.OrdinalIgnoreCase)
         ? Address
         : $"{FriendlyName} ({Address})";
+}
+
+public class MissingDefaultLinkItemModel
+{
+    [System.Text.Json.Serialization.JsonPropertyName("device_address")]
+    public string DeviceAddress { get; set; } = string.Empty;
+
+    [System.Text.Json.Serialization.JsonPropertyName("device_name")]
+    public string DeviceName { get; set; } = string.Empty;
+
+    [System.Text.Json.Serialization.JsonPropertyName("device_type")]
+    public string DeviceType { get; set; } = string.Empty;
+
+    [System.Text.Json.Serialization.JsonPropertyName("missing_device_to_plm")]
+    public bool MissingDeviceToPlm { get; set; }
+
+    [System.Text.Json.Serialization.JsonPropertyName("missing_plm_to_device")]
+    public bool MissingPlmToDevice { get; set; }
+
+    [System.Text.Json.Serialization.JsonPropertyName("issue_summary")]
+    public string IssueSummary { get; set; } = string.Empty;
+
+    [System.Text.Json.Serialization.JsonPropertyName("recommendation")]
+    public string Recommendation { get; set; } = string.Empty;
+
+    public string DirectionBadge => (MissingDeviceToPlm && MissingPlmToDevice) 
+        ? "🚨 Both Directions Missing" 
+        : (MissingDeviceToPlm ? "⚠️ Missing Dev ➔ PLM (Status Updates)" : "⚠️ Missing PLM ➔ Dev (Control)");
+
+    public string DisplayTitle => $"{DeviceName} ({DeviceAddress})";
+}
+
+public class DefaultLinkAuditResponseModel
+{
+    [System.Text.Json.Serialization.JsonPropertyName("plm_address")]
+    public string PlmAddress { get; set; } = string.Empty;
+
+    [System.Text.Json.Serialization.JsonPropertyName("total_devices")]
+    public int TotalDevices { get; set; }
+
+    [System.Text.Json.Serialization.JsonPropertyName("healthy_count")]
+    public int HealthyCount { get; set; }
+
+    [System.Text.Json.Serialization.JsonPropertyName("missing_count")]
+    public int MissingCount { get; set; }
+
+    [System.Text.Json.Serialization.JsonPropertyName("items")]
+    public List<MissingDefaultLinkItemModel> Items { get; set; } = new();
+}
+
+public class DeviceAddRequestModel
+{
+    [System.Text.Json.Serialization.JsonPropertyName("address")]
+    public string Address { get; set; } = string.Empty;
+
+    [System.Text.Json.Serialization.JsonPropertyName("description")]
+    public string Description { get; set; } = "Insteon Device";
+
+    [System.Text.Json.Serialization.JsonPropertyName("cat")]
+    public int Cat { get; set; } = 1;
+
+    [System.Text.Json.Serialization.JsonPropertyName("subcat")]
+    public int Subcat { get; set; } = 0;
+
+    [System.Text.Json.Serialization.JsonPropertyName("firmware")]
+    public int Firmware { get; set; } = 0;
+
+    [System.Text.Json.Serialization.JsonPropertyName("create_default_links")]
+    public bool CreateDefaultLinks { get; set; } = true;
+}
+
+public class DeviceCategoryOption
+{
+    public string Name { get; set; } = string.Empty;
+    public int Cat { get; set; }
+    public int Subcat { get; set; }
+    public string Description { get; set; } = string.Empty;
+    public override string ToString() => Name;
 }
 
 public class OrganizedAldbEntry

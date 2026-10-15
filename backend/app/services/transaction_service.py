@@ -16,6 +16,9 @@ from app.models import (
     ReciprocalLinkRequest,
     DeviceReplaceRequest,
     GenericResponse,
+    DeviceAddRequest,
+    MissingDefaultLinkItem,
+    DefaultLinkAuditResponse,
 )
 
 logger = logging.getLogger("insteon_tx")
@@ -454,5 +457,167 @@ class TransactionService:
                     deleted_count += 1
         return deleted_count
 
+    def audit_default_links(self) -> DefaultLinkAuditResponse:
+        """Scan all known devices against the PLM to detect missing or broken default Group 1 links."""
+        snapshot = self._load_snapshot()
+        plm_addr = snapshot.get("plm", {}).get("address", "53.C1.42").upper()
+        plm_records = [r for r in snapshot.get("plm", {}).get("records", []) if r.get("in_use")]
+
+        devices = snapshot.get("devices", [])
+        items: List[MissingDefaultLinkItem] = []
+
+        for dev in devices:
+            dev_addr = dev.get("address", "").upper()
+            if dev_addr == plm_addr:
+                continue
+
+            dev_name = dev.get("label") or dev.get("description", f"Device {dev_addr}")
+            dev_type = dev.get("description", "Insteon Device")
+            dev_records = [r for r in dev.get("records", []) if r.get("in_use")]
+
+            # 1. Device as Controller to PLM on Group 1
+            dev_ctrl_group1 = any(
+                r.get("target_address", "").upper() == plm_addr and r.get("is_controller") and r.get("group") == 1
+                for r in dev_records
+            )
+            # PLM as Responder to Device on Group 1
+            plm_resp_group1 = any(
+                r.get("target_address", "").upper() == dev_addr and (r.get("is_responder") or not r.get("is_controller")) and r.get("group") == 1
+                for r in plm_records
+            )
+            has_device_to_plm = dev_ctrl_group1 and plm_resp_group1
+
+            # 2. PLM as Controller to Device on Group 0 or 1
+            plm_ctrl_group = any(
+                r.get("target_address", "").upper() == dev_addr and r.get("is_controller") and r.get("group") in (0, 1)
+                for r in plm_records
+            )
+            # Device as Responder to PLM on Group 0 or 1
+            dev_resp_group = any(
+                r.get("target_address", "").upper() == plm_addr and (r.get("is_responder") or not r.get("is_controller")) and r.get("group") in (0, 1)
+                for r in dev_records
+            )
+            has_plm_to_device = plm_ctrl_group and dev_resp_group
+
+            if not has_device_to_plm or not has_plm_to_device:
+                missing_d2p = not has_device_to_plm
+                missing_p2d = not has_plm_to_device
+
+                if missing_d2p and missing_p2d:
+                    summary = "Missing Default Link Pair (Both Directions)"
+                    rec = f"Device {dev_addr} ({dev_name}) is completely unlinked from PLM {plm_addr}. Manual paddle presses and remote commands will fail. Recommend staging default reciprocal Group 1 link pair."
+                elif missing_d2p:
+                    summary = "Missing Device-to-PLM Controller Link (Group 1)"
+                    rec = f"Device {dev_addr} ({dev_name}) cannot report paddle presses or state updates to PLM {plm_addr}. Recommend creating Group 1 responder link in PLM and controller link in device."
+                else:
+                    summary = "Missing PLM-to-Device Control Link (Group 1)"
+                    rec = f"PLM {plm_addr} cannot send All-Link broadcast commands to device {dev_addr} ({dev_name}). Recommend creating Group 1 controller link in PLM and responder link in device."
+
+                items.append(
+                    MissingDefaultLinkItem(
+                        device_address=dev_addr,
+                        device_name=dev_name,
+                        device_type=dev_type,
+                        missing_device_to_plm=missing_d2p,
+                        missing_plm_to_device=missing_p2d,
+                        issue_summary=summary,
+                        recommendation=rec,
+                    )
+                )
+
+        total_count = len([d for d in devices if d.get("address", "").upper() != plm_addr])
+        missing_count = len(items)
+        healthy_count = max(0, total_count - missing_count)
+
+        return DefaultLinkAuditResponse(
+            plm_address=plm_addr,
+            total_devices=total_count,
+            healthy_count=healthy_count,
+            missing_count=missing_count,
+            items=items,
+        )
+
+    async def add_device(self, req: DeviceAddRequest) -> GenericResponse:
+        """Add a new Insteon device and automatically create default reciprocal links with the PLM."""
+        import re
+        snapshot = self._load_snapshot()
+        clean_addr = req.address.strip().upper()
+
+        if not re.match(r"^[0-9A-F]{2}\.[0-9A-F]{2}\.[0-9A-F]{2}$", clean_addr):
+            return GenericResponse(
+                success=False,
+                message=f"Invalid Insteon address format '{clean_addr}'. Expected format: XX.YY.ZZ (e.g. 1A.2B.3C)."
+            )
+
+        plm_addr = snapshot.get("plm", {}).get("address", "53.C1.42").upper()
+        if clean_addr == plm_addr:
+            return GenericResponse(success=False, message=f"Address {clean_addr} is the PLM modem address.")
+
+        existing = [d for d in snapshot.get("devices", []) if d.get("address", "").upper() == clean_addr]
+        if existing:
+            return GenericResponse(success=False, message=f"Device {clean_addr} already exists in the network.")
+
+        from app.insteon import insteon_manager
+        if insteon_manager.is_connected and PYINSTEON_AVAILABLE:
+            try:
+                addr_obj = Address(clean_addr)
+                pyinsteon.devices.set_id(addr_obj, req.cat or 1, req.subcat or 0, req.firmware or 0)
+            except Exception as ex:
+                logger.warning(f"Could not register device with live pyinsteon: {ex}")
+
+        # Add device to snapshot
+        new_dev = {
+            "address": clean_addr,
+            "cat": req.cat or 1,
+            "subcat": req.subcat or 0,
+            "firmware": req.firmware or 0,
+            "description": req.description or "Insteon Device",
+            "label": req.description or "Insteon Device",
+            "is_battery": False,
+            "records_count": 0,
+            "records": [],
+            "status": "OK",
+            "db_delta": 1,
+        }
+        snapshot.setdefault("devices", []).append(new_dev)
+        self._save_snapshot(snapshot)
+
+        default_links_created = False
+        if req.create_default_links:
+            # 1. PLM (Controller) <-> Device (Responder) on Group 1
+            await self.create_reciprocal_link(
+                ReciprocalLinkRequest(
+                    controller_address=plm_addr,
+                    responder_address=clean_addr,
+                    group=1,
+                    data1=255,
+                    data2=28,
+                    data3=1,
+                )
+            )
+            # 2. Device (Controller) <-> PLM (Responder) on Group 1
+            await self.create_reciprocal_link(
+                ReciprocalLinkRequest(
+                    controller_address=clean_addr,
+                    responder_address=plm_addr,
+                    group=1,
+                    data1=255,
+                    data2=28,
+                    data3=1,
+                )
+            )
+            default_links_created = True
+
+        msg = f"Device {clean_addr} ({req.description}) added successfully."
+        if default_links_created:
+            msg += f" Default reciprocal Group 1 link pair with PLM {plm_addr} created."
+
+        return GenericResponse(
+            success=True,
+            message=msg,
+            data={"address": clean_addr, "default_links_created": default_links_created, "plm_address": plm_addr}
+        )
+
 
 transaction_service = TransactionService()
+

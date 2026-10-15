@@ -135,3 +135,30 @@ class DeviceControlRequest(BaseModel):
     ramp_rate: Optional[int] = Field(default=None, ge=0, le=255, description="Optional ramp rate")
     button: Optional[int] = Field(default=1, ge=1, le=8, description="Button/Sub-channel (1-8)")
 
+
+class DeviceAddRequest(BaseModel):
+    address: str = Field(description="Insteon address of new device (e.g. '4A.12.3F')")
+    description: Optional[str] = Field(default="Insteon Device", description="Device friendly name or description")
+    cat: Optional[int] = Field(default=1, description="Device Category (e.g. 1=Dimmable, 2=Switched)")
+    subcat: Optional[int] = Field(default=0, description="Device Subcategory")
+    firmware: Optional[int] = Field(default=0, description="Firmware version")
+    create_default_links: bool = Field(default=True, description="Automatically establish reciprocal default links with PLM")
+
+
+class MissingDefaultLinkItem(BaseModel):
+    device_address: str
+    device_name: str
+    device_type: str = "Insteon Device"
+    missing_device_to_plm: bool = False
+    missing_plm_to_device: bool = False
+    issue_summary: str
+    recommendation: str
+
+
+class DefaultLinkAuditResponse(BaseModel):
+    plm_address: str
+    total_devices: int
+    healthy_count: int
+    missing_count: int
+    items: List[MissingDefaultLinkItem] = []
+
