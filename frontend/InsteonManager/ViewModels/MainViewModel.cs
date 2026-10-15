@@ -117,7 +117,7 @@ public class MainViewModel : ViewModelBase
             if (node != null)
             {
                 NewLinkControllerAddress = node.Address;
-                SelectedTabIndex = 4;
+                SelectedTabIndex = 6;
                 StatusMessage = $"Selected {node.FriendlyName} ({node.Address}) as Controller in Link Creator.";
                 AddLog(LogLevel.Info, "UI", $"Staged {node.FriendlyName} ({node.Address}) as Controller in Link Creator.");
             }
@@ -129,7 +129,7 @@ public class MainViewModel : ViewModelBase
             if (node != null)
             {
                 NewLinkResponderAddress = node.Address;
-                SelectedTabIndex = 4;
+                SelectedTabIndex = 6;
                 StatusMessage = $"Selected {node.FriendlyName} ({node.Address}) as Responder in Link Creator.";
                 AddLog(LogLevel.Info, "UI", $"Staged {node.FriendlyName} ({node.Address}) as Responder in Link Creator.");
             }
@@ -141,7 +141,7 @@ public class MainViewModel : ViewModelBase
             if (node != null)
             {
                 ReplaceOldDeviceAddress = node.Address;
-                SelectedTabIndex = 4;
+                SelectedTabIndex = 6;
                 StatusMessage = $"Selected {node.FriendlyName} ({node.Address}) as device to replace.";
                 AddLog(LogLevel.Info, "UI", $"Staged {node.FriendlyName} ({node.Address}) as device to replace.");
             }
@@ -569,6 +569,23 @@ public class MainViewModel : ViewModelBase
         set => SetProperty(ref _selectedGhostTarget, value);
     }
 
+    private DeviceLookupItem? EnsureLookupChoice(string normalizedAddress)
+    {
+        if (string.IsNullOrWhiteSpace(normalizedAddress)) return null;
+        var match = DeviceLookupChoices.FirstOrDefault(d => d.Address.Equals(normalizedAddress, StringComparison.OrdinalIgnoreCase));
+        if (match == null && InsteonAddressHelper.IsValid(normalizedAddress))
+        {
+            match = new DeviceLookupItem
+            {
+                Address = normalizedAddress,
+                FriendlyName = $"Device {normalizedAddress}",
+                DeviceType = "Custom"
+            };
+            DeviceLookupChoices.Add(match);
+        }
+        return match;
+    }
+
     private string _replaceOldDeviceAddress = string.Empty;
     public string ReplaceOldDeviceAddress
     {
@@ -578,7 +595,7 @@ public class MainViewModel : ViewModelBase
             var normalized = InsteonAddressHelper.Normalize(value);
             if (SetProperty(ref _replaceOldDeviceAddress, normalized))
             {
-                _selectedReplaceOldDevice = DeviceLookupChoices.FirstOrDefault(d => d.Address.Equals(normalized, StringComparison.OrdinalIgnoreCase));
+                _selectedReplaceOldDevice = EnsureLookupChoice(normalized);
                 OnPropertyChanged(nameof(SelectedReplaceOldDevice));
                 OnPropertyChanged(nameof(ReplaceOldDeviceValidation));
                 ExecuteDeviceReplaceCommand?.NotifyCanExecuteChanged();
@@ -592,9 +609,12 @@ public class MainViewModel : ViewModelBase
         get => _selectedReplaceOldDevice;
         set
         {
-            if (SetProperty(ref _selectedReplaceOldDevice, value) && value != null)
+            if (SetProperty(ref _selectedReplaceOldDevice, value))
             {
-                ReplaceOldDeviceAddress = value.Address;
+                if (value != null && !string.IsNullOrWhiteSpace(value.Address) && !value.Address.Equals(ReplaceOldDeviceAddress, StringComparison.OrdinalIgnoreCase))
+                {
+                    ReplaceOldDeviceAddress = value.Address;
+                }
             }
         }
     }
@@ -610,7 +630,7 @@ public class MainViewModel : ViewModelBase
             var normalized = InsteonAddressHelper.Normalize(value);
             if (SetProperty(ref _replaceNewDeviceAddress, normalized))
             {
-                _selectedReplaceNewDevice = DeviceLookupChoices.FirstOrDefault(d => d.Address.Equals(normalized, StringComparison.OrdinalIgnoreCase));
+                _selectedReplaceNewDevice = EnsureLookupChoice(normalized);
                 OnPropertyChanged(nameof(SelectedReplaceNewDevice));
                 OnPropertyChanged(nameof(ReplaceNewDeviceValidation));
                 ExecuteDeviceReplaceCommand?.NotifyCanExecuteChanged();
@@ -624,9 +644,12 @@ public class MainViewModel : ViewModelBase
         get => _selectedReplaceNewDevice;
         set
         {
-            if (SetProperty(ref _selectedReplaceNewDevice, value) && value != null)
+            if (SetProperty(ref _selectedReplaceNewDevice, value))
             {
-                ReplaceNewDeviceAddress = value.Address;
+                if (value != null && !string.IsNullOrWhiteSpace(value.Address) && !value.Address.Equals(ReplaceNewDeviceAddress, StringComparison.OrdinalIgnoreCase))
+                {
+                    ReplaceNewDeviceAddress = value.Address;
+                }
             }
         }
     }
@@ -649,7 +672,7 @@ public class MainViewModel : ViewModelBase
             var normalized = InsteonAddressHelper.Normalize(value);
             if (SetProperty(ref _newLinkControllerAddress, normalized))
             {
-                _selectedNewLinkController = DeviceLookupChoices.FirstOrDefault(d => d.Address.Equals(normalized, StringComparison.OrdinalIgnoreCase));
+                _selectedNewLinkController = EnsureLookupChoice(normalized);
                 OnPropertyChanged(nameof(SelectedNewLinkController));
                 OnPropertyChanged(nameof(NewLinkControllerValidation));
                 CreateReciprocalLinkCommand?.NotifyCanExecuteChanged();
@@ -663,9 +686,12 @@ public class MainViewModel : ViewModelBase
         get => _selectedNewLinkController;
         set
         {
-            if (SetProperty(ref _selectedNewLinkController, value) && value != null)
+            if (SetProperty(ref _selectedNewLinkController, value))
             {
-                NewLinkControllerAddress = value.Address;
+                if (value != null && !string.IsNullOrWhiteSpace(value.Address) && !value.Address.Equals(NewLinkControllerAddress, StringComparison.OrdinalIgnoreCase))
+                {
+                    NewLinkControllerAddress = value.Address;
+                }
             }
         }
     }
@@ -681,7 +707,7 @@ public class MainViewModel : ViewModelBase
             var normalized = InsteonAddressHelper.Normalize(value);
             if (SetProperty(ref _newLinkResponderAddress, normalized))
             {
-                _selectedNewLinkResponder = DeviceLookupChoices.FirstOrDefault(d => d.Address.Equals(normalized, StringComparison.OrdinalIgnoreCase));
+                _selectedNewLinkResponder = EnsureLookupChoice(normalized);
                 OnPropertyChanged(nameof(SelectedNewLinkResponder));
                 OnPropertyChanged(nameof(NewLinkResponderValidation));
                 CreateReciprocalLinkCommand?.NotifyCanExecuteChanged();
@@ -695,9 +721,12 @@ public class MainViewModel : ViewModelBase
         get => _selectedNewLinkResponder;
         set
         {
-            if (SetProperty(ref _selectedNewLinkResponder, value) && value != null)
+            if (SetProperty(ref _selectedNewLinkResponder, value))
             {
-                NewLinkResponderAddress = value.Address;
+                if (value != null && !string.IsNullOrWhiteSpace(value.Address) && !value.Address.Equals(NewLinkResponderAddress, StringComparison.OrdinalIgnoreCase))
+                {
+                    NewLinkResponderAddress = value.Address;
+                }
             }
         }
     }
@@ -734,7 +763,7 @@ public class MainViewModel : ViewModelBase
             var normalized = InsteonAddressHelper.Normalize(value);
             if (SetProperty(ref _deleteLinkControllerAddress, normalized))
             {
-                _selectedDeleteLinkController = DeviceLookupChoices.FirstOrDefault(d => d.Address.Equals(normalized, StringComparison.OrdinalIgnoreCase));
+                _selectedDeleteLinkController = EnsureLookupChoice(normalized);
                 OnPropertyChanged(nameof(SelectedDeleteLinkController));
                 OnPropertyChanged(nameof(DeleteLinkControllerValidation));
                 DeleteReciprocalLinkCommand?.NotifyCanExecuteChanged();
@@ -748,9 +777,12 @@ public class MainViewModel : ViewModelBase
         get => _selectedDeleteLinkController;
         set
         {
-            if (SetProperty(ref _selectedDeleteLinkController, value) && value != null)
+            if (SetProperty(ref _selectedDeleteLinkController, value))
             {
-                DeleteLinkControllerAddress = value.Address;
+                if (value != null && !string.IsNullOrWhiteSpace(value.Address) && !value.Address.Equals(DeleteLinkControllerAddress, StringComparison.OrdinalIgnoreCase))
+                {
+                    DeleteLinkControllerAddress = value.Address;
+                }
             }
         }
     }
@@ -766,7 +798,7 @@ public class MainViewModel : ViewModelBase
             var normalized = InsteonAddressHelper.Normalize(value);
             if (SetProperty(ref _deleteLinkResponderAddress, normalized))
             {
-                _selectedDeleteLinkResponder = DeviceLookupChoices.FirstOrDefault(d => d.Address.Equals(normalized, StringComparison.OrdinalIgnoreCase));
+                _selectedDeleteLinkResponder = EnsureLookupChoice(normalized);
                 OnPropertyChanged(nameof(SelectedDeleteLinkResponder));
                 OnPropertyChanged(nameof(DeleteLinkResponderValidation));
                 DeleteReciprocalLinkCommand?.NotifyCanExecuteChanged();
@@ -780,9 +812,12 @@ public class MainViewModel : ViewModelBase
         get => _selectedDeleteLinkResponder;
         set
         {
-            if (SetProperty(ref _selectedDeleteLinkResponder, value) && value != null)
+            if (SetProperty(ref _selectedDeleteLinkResponder, value))
             {
-                DeleteLinkResponderAddress = value.Address;
+                if (value != null && !string.IsNullOrWhiteSpace(value.Address) && !value.Address.Equals(DeleteLinkResponderAddress, StringComparison.OrdinalIgnoreCase))
+                {
+                    DeleteLinkResponderAddress = value.Address;
+                }
             }
         }
     }
@@ -1308,6 +1343,38 @@ public class MainViewModel : ViewModelBase
         foreach (var item in items)
         {
             DeviceLookupChoices.Add(item);
+        }
+
+        // Restore staged selections if addresses are already present
+        if (!string.IsNullOrEmpty(NewLinkControllerAddress))
+        {
+            _selectedNewLinkController = EnsureLookupChoice(NewLinkControllerAddress);
+            OnPropertyChanged(nameof(SelectedNewLinkController));
+        }
+        if (!string.IsNullOrEmpty(NewLinkResponderAddress))
+        {
+            _selectedNewLinkResponder = EnsureLookupChoice(NewLinkResponderAddress);
+            OnPropertyChanged(nameof(SelectedNewLinkResponder));
+        }
+        if (!string.IsNullOrEmpty(DeleteLinkControllerAddress))
+        {
+            _selectedDeleteLinkController = EnsureLookupChoice(DeleteLinkControllerAddress);
+            OnPropertyChanged(nameof(SelectedDeleteLinkController));
+        }
+        if (!string.IsNullOrEmpty(DeleteLinkResponderAddress))
+        {
+            _selectedDeleteLinkResponder = EnsureLookupChoice(DeleteLinkResponderAddress);
+            OnPropertyChanged(nameof(SelectedDeleteLinkResponder));
+        }
+        if (!string.IsNullOrEmpty(ReplaceOldDeviceAddress))
+        {
+            _selectedReplaceOldDevice = EnsureLookupChoice(ReplaceOldDeviceAddress);
+            OnPropertyChanged(nameof(SelectedReplaceOldDevice));
+        }
+        if (!string.IsNullOrEmpty(ReplaceNewDeviceAddress))
+        {
+            _selectedReplaceNewDevice = EnsureLookupChoice(ReplaceNewDeviceAddress);
+            OnPropertyChanged(nameof(SelectedReplaceNewDevice));
         }
     }
 

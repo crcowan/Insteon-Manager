@@ -100,6 +100,192 @@
                 </MultiDataTrigger>
             </Style.Triggers>
         </Style>
+
+        <!-- ComboBox ToggleButton Template -->
+        <ControlTemplate x:Key="ComboBoxToggleButtonTemplate" TargetType="ToggleButton">
+            <Border x:Name="TemplateRoot"
+                    Background="{TemplateBinding Background}"
+                    BorderBrush="{TemplateBinding BorderBrush}"
+                    BorderThickness="{TemplateBinding BorderThickness}"
+                    CornerRadius="6">
+                <Border Width="24" HorizontalAlignment="Right" Background="Transparent">
+                    <Path HorizontalAlignment="Center" VerticalAlignment="Center"
+                          Data="M 0 0 L 4 4 L 8 0 Z" Fill="{StaticResource AccentBlue}" />
+                </Border>
+            </Border>
+            <ControlTemplate.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter TargetName="TemplateRoot" Property="BorderBrush" Value="{StaticResource AccentBlue}" />
+                    <Setter TargetName="TemplateRoot" Property="Background" Value="#222234" />
+                </Trigger>
+                <Trigger Property="IsChecked" Value="True">
+                    <Setter TargetName="TemplateRoot" Property="BorderBrush" Value="{StaticResource AccentAmber}" />
+                </Trigger>
+                <Trigger Property="IsEnabled" Value="False">
+                    <Setter TargetName="TemplateRoot" Property="Opacity" Value="0.4" />
+                </Trigger>
+            </ControlTemplate.Triggers>
+        </ControlTemplate>
+
+        <!-- ComboBoxItem Style -->
+        <Style TargetType="ComboBoxItem">
+            <Setter Property="SnapsToDevicePixels" Value="True" />
+            <Setter Property="Padding" Value="10,6" />
+            <Setter Property="Background" Value="#1E1E2E" />
+            <Setter Property="Foreground" Value="{StaticResource TextPrimary}" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ComboBoxItem">
+                        <Border x:Name="Bd"
+                                Background="{TemplateBinding Background}"
+                                BorderThickness="0"
+                                Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Left" VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsHighlighted" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="#313244" />
+                                <Setter Property="Foreground" Value="{StaticResource AccentBlue}" />
+                            </Trigger>
+                            <Trigger Property="IsSelected" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="#263445" />
+                                <Setter Property="Foreground" Value="{StaticResource AccentGreen}" />
+                                <Setter Property="FontWeight" Value="SemiBold" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- Modern Dark ComboBox Style -->
+        <Style TargetType="ComboBox">
+            <Setter Property="SnapsToDevicePixels" Value="True" />
+            <Setter Property="OverridesDefaultStyle" Value="True" />
+            <Setter Property="ScrollViewer.HorizontalScrollBarVisibility" Value="Auto" />
+            <Setter Property="ScrollViewer.VerticalScrollBarVisibility" Value="Auto" />
+            <Setter Property="ScrollViewer.CanContentScroll" Value="True" />
+            <Setter Property="MinHeight" Value="32" />
+            <Setter Property="Foreground" Value="{StaticResource TextPrimary}" />
+            <Setter Property="Background" Value="#181825" />
+            <Setter Property="BorderBrush" Value="#45475A" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Padding" Value="10,5,28,5" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ComboBox">
+                        <Grid x:Name="MainGrid" SnapsToDevicePixels="True">
+                            <ToggleButton x:Name="ToggleButton"
+                                          Background="{TemplateBinding Background}"
+                                          BorderBrush="{TemplateBinding BorderBrush}"
+                                          BorderThickness="{TemplateBinding BorderThickness}"
+                                          Focusable="False"
+                                          IsChecked="{Binding IsDropDownOpen, Mode=TwoWay, RelativeSource={RelativeSource TemplatedParent}}"
+                                          ClickMode="Press"
+                                          Template="{StaticResource ComboBoxToggleButtonTemplate}" />
+                            <ContentPresenter x:Name="ContentSite"
+                                              IsHitTestVisible="False"
+                                              Content="{TemplateBinding SelectionBoxItem}"
+                                              ContentTemplate="{TemplateBinding SelectionBoxItemTemplate}"
+                                              ContentTemplateSelector="{TemplateBinding ItemTemplateSelector}"
+                                              Margin="{TemplateBinding Padding}"
+                                              HorizontalAlignment="Left"
+                                              VerticalAlignment="Center" />
+                            <Popup x:Name="PART_Popup"
+                                   AllowsTransparency="True"
+                                   IsOpen="{Binding IsDropDownOpen, RelativeSource={RelativeSource TemplatedParent}}"
+                                   Placement="Bottom"
+                                   PopupAnimation="Slide">
+                                <Border x:Name="DropDownBorder"
+                                        MinWidth="{Binding ActualWidth, ElementName=MainGrid}"
+                                        MaxHeight="{TemplateBinding MaxDropDownHeight}"
+                                        Background="#1E1E2E"
+                                        BorderBrush="#45475A"
+                                        BorderThickness="1"
+                                        CornerRadius="6"
+                                        Margin="0,2,0,0">
+                                    <Border.Effect>
+                                        <DropShadowEffect BlurRadius="10" ShadowDepth="3" Opacity="0.5" Color="#000000" />
+                                    </Border.Effect>
+                                    <ScrollViewer x:Name="DropDownScrollViewer" Margin="0,2">
+                                        <ItemsPresenter KeyboardNavigation.DirectionalNavigation="Contained" />
+                                    </ScrollViewer>
+                                </Border>
+                            </Popup>
+                        </Grid>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="HasItems" Value="False">
+                                <Setter TargetName="DropDownBorder" Property="MinHeight" Value="56" />
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Opacity" Value="0.4" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- Single-Row Non-Wrapping TabControl Style -->
+        <Style TargetType="TabControl">
+            <Setter Property="OverridesDefaultStyle" Value="True" />
+            <Setter Property="SnapsToDevicePixels" Value="True" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="TabControl">
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="*" />
+                            </Grid.RowDefinitions>
+                            <!-- Single-row non-wrapping tab strip with horizontal scroll -->
+                            <ScrollViewer Grid.Row="0"
+                                          HorizontalScrollBarVisibility="Auto"
+                                          VerticalScrollBarVisibility="Disabled"
+                                          Focusable="False"
+                                          Margin="0,0,0,4">
+                                <StackPanel IsItemsHost="True" Orientation="Horizontal" />
+                            </ScrollViewer>
+                            <!-- Tab Content -->
+                            <Border Grid.Row="1"
+                                    Background="{TemplateBinding Background}"
+                                    BorderBrush="{TemplateBinding BorderBrush}"
+                                    BorderThickness="{TemplateBinding BorderThickness}">
+                                <ContentPresenter ContentSource="SelectedContent" />
+                            </Border>
+                        </Grid>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- Modern TabItem Style -->
+        <Style TargetType="TabItem">
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="TabItem">
+                        <Border Name="Border" Background="{StaticResource DarkSurface}" CornerRadius="6,6,0,0" Margin="0,0,4,0" Padding="14,8" BorderBrush="#313244" BorderThickness="1,1,1,0" Cursor="Hand">
+                            <ContentPresenter ContentSource="Header" VerticalAlignment="Center" HorizontalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsSelected" Value="True">
+                                <Setter TargetName="Border" Property="Background" Value="{StaticResource DarkSurfaceLight}" />
+                                <Setter TargetName="Border" Property="BorderBrush" Value="{StaticResource AccentBlue}" />
+                                <Setter Property="Foreground" Value="{StaticResource AccentBlue}" />
+                            </Trigger>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Border" Property="Background" Value="#263445" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+            <Setter Property="Foreground" Value="{StaticResource TextPrimary}" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="FontSize" Value="12" />
+        </Style>
     </Window.Resources>
 
     <Grid>
@@ -115,7 +301,7 @@
         </Grid.RowDefinitions>
 
         <!-- 1. Top App Bar -->
-        <Border Grid.Row="0" Background="{StaticResource DarkSurface}" Padding="16,12" BorderBrush="#313244" BorderThickness="0,0,0,1">
+        <Border Grid.Row="0" Background="{StaticResource DarkSurface}" Padding="14,10" BorderBrush="#313244" BorderThickness="0,0,0,1">
             <Grid>
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="Auto" />
@@ -132,7 +318,7 @@
                 <!-- Backend Connection Bar -->
                 <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
                     <TextBlock Text="Pi Backend URL:" VerticalAlignment="Center" Margin="0,0,8,0" Foreground="{StaticResource TextMuted}" />
-                    <TextBox Text="{Binding BackendUrl, UpdateSourceTrigger=PropertyChanged}" Width="220" Padding="8,4" Background="{StaticResource DarkSurfaceLight}" Foreground="{StaticResource TextPrimary}" BorderThickness="1" BorderBrush="#45475A" />
+                    <TextBox Text="{Binding BackendUrl, UpdateSourceTrigger=PropertyChanged}" Width="180" Padding="8,4" Background="{StaticResource DarkSurfaceLight}" Foreground="{StaticResource TextPrimary}" BorderThickness="1" BorderBrush="#45475A" />
                     <Button Content="Test Link" Command="{Binding CheckConnectionCommand}" Margin="8,0,0,0" Padding="10,4" />
                     <Button Content="Force Restore openHAB" Command="{Binding ForceRestoreOpenhabCommand}" Style="{StaticResource DangerButtonStyle}" Margin="8,0,0,0" Padding="10,4" ToolTip="Emergency recovery to re-enable openHAB Insteon Thing" />
                 </StackPanel>
@@ -140,7 +326,7 @@
         </Border>
 
         <!-- 2. Session Control & Lock Status Bar -->
-        <Border Grid.Row="1" Background="#11111B" Padding="16,12" BorderBrush="#313244" BorderThickness="0,0,0,1">
+        <Border Grid.Row="1" Background="#11111B" Padding="14,8" BorderBrush="#313244" BorderThickness="0,0,0,1">
             <DockPanel LastChildFill="False">
                 <!-- Actions (Docked Right for layout priority) -->
                 <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
@@ -209,27 +395,6 @@
 
         <!-- 3. Main Workspace: Tabs -->
         <TabControl Grid.Row="2" SelectedIndex="{Binding SelectedTabIndex}" Background="Transparent" BorderThickness="0" Margin="12,8,12,8">
-            <TabControl.Resources>
-                <Style TargetType="TabItem">
-                    <Setter Property="Template">
-                        <Setter.Value>
-                            <ControlTemplate TargetType="TabItem">
-                                <Border Name="Border" Background="{StaticResource DarkSurface}" CornerRadius="6,6,0,0" Margin="0,0,4,0" Padding="16,8">
-                                    <ContentPresenter ContentSource="Header" />
-                                </Border>
-                                <ControlTemplate.Triggers>
-                                    <Trigger Property="IsSelected" Value="True">
-                                        <Setter TargetName="Border" Property="Background" Value="{StaticResource DarkSurfaceLight}" />
-                                    </Trigger>
-                                </ControlTemplate.Triggers>
-                            </ControlTemplate>
-                        </Setter.Value>
-                    </Setter>
-                    <Setter Property="Foreground" Value="{StaticResource TextPrimary}" />
-                    <Setter Property="FontWeight" Value="SemiBold" />
-                </Style>
-            </TabControl.Resources>
-
             <!-- TAB 1: Network Topology Graph (Canvas with Dynamic Links & Draggable Nodes) -->
             <TabItem Header="🗺️ Network Topology Map">
                 <Grid Background="{StaticResource DarkSurface}">
@@ -241,67 +406,80 @@
                     <!-- Left: Interactive Graph Map Column with Quick Actions Bar -->
                     <Grid Grid.Column="0">
                         <Grid.RowDefinitions>
-                            <!-- Row 0: Quick Scene & Selected Node Control Bar -->
+                            <!-- Row 0: Quick Scene & Selected Node Control Bar (2-Row Layout) -->
                             <RowDefinition Height="Auto" />
                             <!-- Row 1: Scrollable Canvas with Zoom & Pan Support -->
                             <RowDefinition Height="*" />
                         </Grid.RowDefinitions>
 
                         <!-- TOP TOOLBAR: Quick Scene & Selected Node Control Bar -->
-                        <Border Grid.Row="0" Background="#181825" BorderBrush="#313244" BorderThickness="0,0,0,1" Padding="12,8">
-                            <DockPanel LastChildFill="False">
-                                <!-- LEFT: Quick Scene Trigger -->
-                                <StackPanel DockPanel.Dock="Left" Orientation="Horizontal" VerticalAlignment="Center">
-                                    <TextBlock Text="🎬 Quick Scene:" FontWeight="Bold" FontSize="12" Foreground="{StaticResource AccentAmber}" VerticalAlignment="Center" Margin="0,0,8,0" />
-                                    <ComboBox ItemsSource="{Binding Scenes}" SelectedItem="{Binding SelectedQuickScene}" DisplayMemberPath="Name"
-                                              Width="200" Padding="6,4" Background="#1E1E2E" Foreground="{StaticResource TextPrimary}" Margin="0,0,10,0"
-                                              ToolTip="Select a scene to trigger live across the network" />
-                                    <Button Content="💡 On" Command="{Binding QuickTriggerSceneCommand}" CommandParameter="on"
-                                            Padding="8,4" FontSize="11" Margin="0,0,4,0" Background="#2E4035" Foreground="#A6E3A1" FontWeight="SemiBold" ToolTip="Broadcast All-Link ON for selected scene" />
-                                    <Button Content="🌑 Off" Command="{Binding QuickTriggerSceneCommand}" CommandParameter="off"
-                                            Padding="8,4" FontSize="11" Margin="0,0,4,0" Background="#3D2930" Foreground="#F38BA8" FontWeight="SemiBold" ToolTip="Broadcast All-Link OFF for selected scene" />
-                                    <Button Content="⚡ Fast On" Command="{Binding QuickTriggerSceneCommand}" CommandParameter="fast_on"
-                                            Padding="6,4" FontSize="10" Margin="0,0,4,0" Background="#2A324B" Foreground="#89B4FA" ToolTip="Broadcast Fast ON for selected scene" />
-                                    <Button Content="⚡ Fast Off" Command="{Binding QuickTriggerSceneCommand}" CommandParameter="fast_off"
-                                            Padding="6,4" FontSize="10" Margin="0,0,16,0" Background="#2A324B" Foreground="#89B4FA" ToolTip="Broadcast Fast OFF for selected scene" />
-                                </StackPanel>
+                        <Border Grid.Row="0" Background="#181825" BorderBrush="#313244" BorderThickness="0,0,0,1" Padding="12,6">
+                            <Grid>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                </Grid.RowDefinitions>
 
-                                <!-- RIGHT: Selected Device Live Controls & Staging -->
-                                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
-                                    <TextBlock Text="💡 Selected Node:" FontWeight="Bold" FontSize="12" Foreground="{StaticResource AccentBlue}" VerticalAlignment="Center" Margin="0,0,6,0" />
-                                    <Border Background="#1E1E2E" CornerRadius="4" Padding="8,4" Margin="0,0,8,0" VerticalAlignment="Center">
-                                        <TextBlock Text="{Binding SelectedGraphNodeTitle}" FontWeight="SemiBold" FontSize="11" Foreground="{StaticResource TextPrimary}" TextTrimming="CharacterEllipsis" MaxWidth="180" />
-                                    </Border>
-                                    
-                                    <!-- Staging Actions -->
-                                    <Button Content="🔗 Controller" Command="{Binding SetSelectedNodeAsControllerCommand}"
-                                            IsEnabled="{Binding HasSelectedGraphNode}" Padding="6,4" FontSize="10" Margin="0,0,3,0"
-                                            Background="#263445" Foreground="{StaticResource AccentBlue}" FontWeight="SemiBold"
-                                            ToolTip="Stage selected node as Controller in Link Creator (Tab 5)" />
-                                    <Button Content="🎯 Responder" Command="{Binding SetSelectedNodeAsResponderCommand}"
-                                            IsEnabled="{Binding HasSelectedGraphNode}" Padding="6,4" FontSize="10" Margin="0,0,3,0"
-                                            Background="#263445" Foreground="{StaticResource AccentGreen}" FontWeight="SemiBold"
-                                            ToolTip="Stage selected node as Responder in Link Creator (Tab 5)" />
-                                    <Button Content="🔍 ALDB" Command="{Binding InspectNodeInAldbCommand}"
-                                            IsEnabled="{Binding HasSelectedGraphNode}" Padding="6,4" FontSize="10" Margin="0,0,8,0"
-                                            Background="#3A3225" Foreground="{StaticResource AccentAmber}" FontWeight="SemiBold"
-                                            ToolTip="Inspect this device's ALDB database in Tab 2" />
+                                <!-- ROW 0: Quick Scene Bar -->
+                                <DockPanel Grid.Row="0" Margin="0,0,0,6" LastChildFill="False">
+                                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                        <TextBlock Text="🎬 Quick Scene:" FontWeight="Bold" FontSize="12" Foreground="{StaticResource AccentAmber}" VerticalAlignment="Center" Margin="0,0,8,0" />
+                                        <ComboBox ItemsSource="{Binding Scenes}" SelectedItem="{Binding SelectedQuickScene}" DisplayMemberPath="Name"
+                                                  Width="220" Padding="6,4" Background="#1E1E2E" Foreground="{StaticResource TextPrimary}" Margin="0,0,10,0"
+                                                  ToolTip="Select a scene to trigger live across the network" />
+                                        <Button Content="💡 On" Command="{Binding QuickTriggerSceneCommand}" CommandParameter="on"
+                                                Padding="8,4" FontSize="11" Margin="0,0,4,0" Background="#2E4035" Foreground="#A6E3A1" FontWeight="SemiBold" ToolTip="Broadcast All-Link ON for selected scene" />
+                                        <Button Content="🌑 Off" Command="{Binding QuickTriggerSceneCommand}" CommandParameter="off"
+                                                Padding="8,4" FontSize="11" Margin="0,0,4,0" Background="#3D2930" Foreground="#F38BA8" FontWeight="SemiBold" ToolTip="Broadcast All-Link OFF for selected scene" />
+                                        <Button Content="⚡ Fast On" Command="{Binding QuickTriggerSceneCommand}" CommandParameter="fast_on"
+                                                Padding="6,4" FontSize="10" Margin="0,0,4,0" Background="#2A324B" Foreground="#89B4FA" ToolTip="Broadcast Fast ON for selected scene" />
+                                        <Button Content="⚡ Fast Off" Command="{Binding QuickTriggerSceneCommand}" CommandParameter="fast_off"
+                                                Padding="6,4" FontSize="10" Margin="0,0,16,0" Background="#2A324B" Foreground="#89B4FA" ToolTip="Broadcast Fast OFF for selected scene" />
+                                    </StackPanel>
+                                </DockPanel>
 
-                                    <!-- Quick Controls -->
-                                    <Button Content="💡 On" Command="{Binding ControlSelectedNodeCommand}" CommandParameter="on"
-                                            IsEnabled="{Binding HasSelectedGraphNode}"
-                                            Padding="7,4" FontSize="11" Margin="0,0,3,0" Background="#2E4035" Foreground="#A6E3A1" FontWeight="SemiBold" ToolTip="Turn ON selected device" />
-                                    <Button Content="🌑 Off" Command="{Binding ControlSelectedNodeCommand}" CommandParameter="off"
-                                            IsEnabled="{Binding HasSelectedGraphNode}"
-                                            Padding="7,4" FontSize="11" Margin="0,0,6,0" Background="#3D2930" Foreground="#F38BA8" FontWeight="SemiBold" ToolTip="Turn OFF selected device" />
-                                    <TextBlock Text="Dim:" FontSize="10" Foreground="{StaticResource TextMuted}" VerticalAlignment="Center" Margin="0,0,4,0" />
-                                    <Slider Value="{Binding SelectedNodeBrightness}" Minimum="0" Maximum="100" Width="70" VerticalAlignment="Center" Margin="0,0,4,0" IsEnabled="{Binding HasSelectedGraphNode}" />
-                                    <TextBlock Text="{Binding SelectedNodeBrightness, StringFormat='{}{0}%'}" FontSize="10" Foreground="{StaticResource AccentGreen}" Width="30" VerticalAlignment="Center" Margin="0,0,4,0" />
-                                    <Button Content="🔆" Command="{Binding ControlSelectedNodeCommand}" CommandParameter="dim"
-                                            IsEnabled="{Binding HasSelectedGraphNode}"
-                                            Padding="6,4" FontSize="10" Background="#3A3225" Foreground="{StaticResource AccentAmber}" FontWeight="SemiBold" ToolTip="Set dim brightness level" />
-                                </StackPanel>
-                            </DockPanel>
+                                <!-- ROW 1: Selected Device Node Live Controls & Staging Bar -->
+                                <DockPanel Grid.Row="1" LastChildFill="False">
+                                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                        <TextBlock Text="💡 Selected Node:" FontWeight="Bold" FontSize="12" Foreground="{StaticResource AccentBlue}" VerticalAlignment="Center" Margin="0,0,6,0" />
+                                        <Border Background="#1E1E2E" CornerRadius="4" Padding="8,4" Margin="0,0,10,0" VerticalAlignment="Center" BorderBrush="#313244" BorderThickness="1">
+                                            <TextBlock Text="{Binding SelectedGraphNodeTitle}" FontWeight="SemiBold" FontSize="11" Foreground="{StaticResource TextPrimary}" TextTrimming="CharacterEllipsis" MaxWidth="220" />
+                                        </Border>
+                                        
+                                        <!-- Staging Actions -->
+                                        <Button Content="🔗 Controller" Command="{Binding SetSelectedNodeAsControllerCommand}"
+                                                IsEnabled="{Binding HasSelectedGraphNode}" Padding="6,4" FontSize="10" Margin="0,0,3,0"
+                                                Background="#263445" Foreground="{StaticResource AccentBlue}" FontWeight="SemiBold"
+                                                ToolTip="Stage selected node as Controller in Link Creator (Network Tools)" />
+                                        <Button Content="🎯 Responder" Command="{Binding SetSelectedNodeAsResponderCommand}"
+                                                IsEnabled="{Binding HasSelectedGraphNode}" Padding="6,4" FontSize="10" Margin="0,0,3,0"
+                                                Background="#263445" Foreground="{StaticResource AccentGreen}" FontWeight="SemiBold"
+                                                ToolTip="Stage selected node as Responder in Link Creator (Network Tools)" />
+                                        <Button Content="🔄 Replace Old" Command="{Binding SetSelectedNodeAsReplaceOldCommand}"
+                                                IsEnabled="{Binding HasSelectedGraphNode}" Padding="6,4" FontSize="10" Margin="0,0,3,0"
+                                                Background="#263445" Foreground="#F5C2E7" FontWeight="SemiBold"
+                                                ToolTip="Stage selected node as device to replace in Wizard (Network Tools)" />
+                                        <Button Content="🔍 ALDB" Command="{Binding InspectNodeInAldbCommand}"
+                                                IsEnabled="{Binding HasSelectedGraphNode}" Padding="6,4" FontSize="10" Margin="0,0,12,0"
+                                                Background="#3A3225" Foreground="{StaticResource AccentAmber}" FontWeight="SemiBold"
+                                                ToolTip="Inspect this device's ALDB database in Tab 2" />
+
+                                        <!-- Quick Controls -->
+                                        <Button Content="💡 On" Command="{Binding ControlSelectedNodeCommand}" CommandParameter="on"
+                                                IsEnabled="{Binding HasSelectedGraphNode}"
+                                                Padding="7,4" FontSize="11" Margin="0,0,3,0" Background="#2E4035" Foreground="#A6E3A1" FontWeight="SemiBold" ToolTip="Turn ON selected device" />
+                                        <Button Content="🌑 Off" Command="{Binding ControlSelectedNodeCommand}" CommandParameter="off"
+                                                IsEnabled="{Binding HasSelectedGraphNode}"
+                                                Padding="7,4" FontSize="11" Margin="0,0,6,0" Background="#3D2930" Foreground="#F38BA8" FontWeight="SemiBold" ToolTip="Turn OFF selected device" />
+                                        <TextBlock Text="Dim:" FontSize="10" Foreground="{StaticResource TextMuted}" VerticalAlignment="Center" Margin="0,0,4,0" />
+                                        <Slider Value="{Binding SelectedNodeBrightness}" Minimum="0" Maximum="100" Width="70" VerticalAlignment="Center" Margin="0,0,4,0" IsEnabled="{Binding HasSelectedGraphNode}" />
+                                        <TextBlock Text="{Binding SelectedNodeBrightness, StringFormat='{}{0}%'}" FontSize="10" Foreground="{StaticResource AccentGreen}" Width="30" VerticalAlignment="Center" Margin="0,0,4,0" />
+                                        <Button Content="🔆" Command="{Binding ControlSelectedNodeCommand}" CommandParameter="dim"
+                                                IsEnabled="{Binding HasSelectedGraphNode}"
+                                                Padding="6,4" FontSize="10" Background="#3A3225" Foreground="{StaticResource AccentAmber}" FontWeight="SemiBold" ToolTip="Set dim brightness level" />
+                                    </StackPanel>
+                                </DockPanel>
+                            </Grid>
                         </Border>
 
                         <!-- Scrollable Graph Canvas with Zoom & Pan Support -->
@@ -397,8 +575,6 @@
                                         <DataTemplate DataType="{x:Type models:DeviceNode}">
                                             <!-- Node Card Element (Mouse Drag Handlers) -->
                                             <Border Width="{Binding Width}" Height="{Binding Height}" CornerRadius="8" Padding="10"
-                                                    Background="{StaticResource DarkSurfaceLight}"
-                                                    BorderBrush="{StaticResource AccentBlue}" BorderThickness="2"
                                                     Cursor="SizeAll"
                                                     MouseLeftButtonDown="Node_MouseLeftButtonDown"
                                                     MouseMove="Node_MouseMove"
@@ -447,16 +623,24 @@
                                                 </Border.ContextMenu>
                                                 <Border.Style>
                                                     <Style TargetType="Border">
+                                                        <Setter Property="Background" Value="{StaticResource DarkSurfaceLight}" />
+                                                        <Setter Property="BorderBrush" Value="{StaticResource AccentBlue}" />
+                                                        <Setter Property="BorderThickness" Value="2" />
                                                         <Style.Triggers>
                                                             <!-- Distinct Style for PLM Modem Hub -->
                                                             <DataTrigger Binding="{Binding IsModem}" Value="True">
                                                                 <Setter Property="Background" Value="#1E1E38" />
                                                                 <Setter Property="BorderBrush" Value="#F5C2E7" />
                                                             </DataTrigger>
-                                                            <!-- Highlight Border when Selected -->
+                                                            <!-- Highlight Border with Amber Glow when Selected -->
                                                             <DataTrigger Binding="{Binding IsSelected}" Value="True">
                                                                 <Setter Property="BorderBrush" Value="{StaticResource AccentAmber}" />
-                                                                <Setter Property="BorderThickness" Value="3" />
+                                                                <Setter Property="BorderThickness" Value="3.5" />
+                                                                <Setter Property="Effect">
+                                                                    <Setter.Value>
+                                                                        <DropShadowEffect Color="#F9E2AF" BlurRadius="14" ShadowDepth="0" Opacity="0.85" />
+                                                                    </Setter.Value>
+                                                                </Setter>
                                                             </DataTrigger>
                                                         </Style.Triggers>
                                                     </Style>
@@ -1573,8 +1757,7 @@
                                                     IsEnabled="{Binding HasSelectedGraphNode}" Padding="6,2" FontSize="10" Background="#263445" Foreground="#89B4FA" ToolTip="Use currently selected node from graph" />
                                         </DockPanel>
                                         <ComboBox ItemsSource="{Binding DeviceLookupChoices}" SelectedItem="{Binding SelectedReplaceOldDevice}"
-                                                  Text="{Binding ReplaceOldDeviceAddress, UpdateSourceTrigger=PropertyChanged}"
-                                                  IsEditable="True" DisplayMemberPath="DisplayText"
+                                                  DisplayMemberPath="DisplayText"
                                                   Padding="8,6" Background="#181825" Foreground="{StaticResource TextPrimary}" />
                                         <TextBlock Text="{Binding ReplaceOldDeviceValidation}" FontSize="10" Foreground="{StaticResource AccentGreen}" Margin="0,3,0,0" />
                                     </StackPanel>
@@ -1589,8 +1772,7 @@
                                                     IsEnabled="{Binding HasSelectedGraphNode}" Padding="6,2" FontSize="10" Background="#263445" Foreground="#89B4FA" ToolTip="Use currently selected node from graph" />
                                         </DockPanel>
                                         <ComboBox ItemsSource="{Binding DeviceLookupChoices}" SelectedItem="{Binding SelectedReplaceNewDevice}"
-                                                  Text="{Binding ReplaceNewDeviceAddress, UpdateSourceTrigger=PropertyChanged}"
-                                                  IsEditable="True" DisplayMemberPath="DisplayText"
+                                                  DisplayMemberPath="DisplayText"
                                                   Padding="8,6" Background="#181825" Foreground="{StaticResource TextPrimary}" />
                                         <TextBlock Text="{Binding ReplaceNewDeviceValidation}" FontSize="10" Foreground="{StaticResource AccentGreen}" Margin="0,3,0,0" />
                                     </StackPanel>
@@ -1640,8 +1822,7 @@
                                                     IsEnabled="{Binding HasSelectedGraphNode}" Padding="5,1" FontSize="10" Background="#263445" Foreground="#89B4FA" ToolTip="Use node from graph" />
                                         </DockPanel>
                                         <ComboBox ItemsSource="{Binding DeviceLookupChoices}" SelectedItem="{Binding SelectedNewLinkController}"
-                                                  Text="{Binding NewLinkControllerAddress, UpdateSourceTrigger=PropertyChanged}"
-                                                  IsEditable="True" DisplayMemberPath="DisplayText"
+                                                  DisplayMemberPath="DisplayText"
                                                   Padding="8,6" Background="#181825" Foreground="{StaticResource TextPrimary}" />
                                         <TextBlock Text="{Binding NewLinkControllerValidation}" FontSize="10" Foreground="{StaticResource AccentGreen}" Margin="0,2,0,0" />
                                     </StackPanel>
@@ -1660,8 +1841,7 @@
                                                     IsEnabled="{Binding HasSelectedGraphNode}" Padding="5,1" FontSize="10" Background="#263445" Foreground="#89B4FA" ToolTip="Use node from graph" />
                                         </DockPanel>
                                         <ComboBox ItemsSource="{Binding DeviceLookupChoices}" SelectedItem="{Binding SelectedNewLinkResponder}"
-                                                  Text="{Binding NewLinkResponderAddress, UpdateSourceTrigger=PropertyChanged}"
-                                                  IsEditable="True" DisplayMemberPath="DisplayText"
+                                                  DisplayMemberPath="DisplayText"
                                                   Padding="8,6" Background="#181825" Foreground="{StaticResource TextPrimary}" />
                                         <TextBlock Text="{Binding NewLinkResponderValidation}" FontSize="10" Foreground="{StaticResource AccentGreen}" Margin="0,2,0,0" />
                                     </StackPanel>
@@ -1737,8 +1917,7 @@
                                                     IsEnabled="{Binding HasSelectedGraphNode}" Padding="5,1" FontSize="10" Background="#263445" Foreground="#89B4FA" ToolTip="Use node from graph" />
                                         </DockPanel>
                                         <ComboBox ItemsSource="{Binding DeviceLookupChoices}" SelectedItem="{Binding SelectedDeleteLinkController}"
-                                                  Text="{Binding DeleteLinkControllerAddress, UpdateSourceTrigger=PropertyChanged}"
-                                                  IsEditable="True" DisplayMemberPath="DisplayText"
+                                                  DisplayMemberPath="DisplayText"
                                                   Padding="8,6" Background="#181825" Foreground="{StaticResource TextPrimary}" />
                                         <TextBlock Text="{Binding DeleteLinkControllerValidation}" FontSize="10" Foreground="#F38BA8" Margin="0,2,0,0" />
                                     </StackPanel>
@@ -1757,8 +1936,7 @@
                                                     IsEnabled="{Binding HasSelectedGraphNode}" Padding="5,1" FontSize="10" Background="#263445" Foreground="#89B4FA" ToolTip="Use node from graph" />
                                         </DockPanel>
                                         <ComboBox ItemsSource="{Binding DeviceLookupChoices}" SelectedItem="{Binding SelectedDeleteLinkResponder}"
-                                                  Text="{Binding DeleteLinkResponderAddress, UpdateSourceTrigger=PropertyChanged}"
-                                                  IsEditable="True" DisplayMemberPath="DisplayText"
+                                                  DisplayMemberPath="DisplayText"
                                                   Padding="8,6" Background="#181825" Foreground="{StaticResource TextPrimary}" />
                                         <TextBlock Text="{Binding DeleteLinkResponderValidation}" FontSize="10" Foreground="#F38BA8" Margin="0,2,0,0" />
                                     </StackPanel>

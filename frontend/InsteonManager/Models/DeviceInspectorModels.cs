@@ -157,10 +157,23 @@ public static class InsteonAddressHelper
     public static string Normalize(string? raw)
     {
         if (string.IsNullOrWhiteSpace(raw)) return string.Empty;
-        var clean = raw.Trim().Replace(":", "").Replace(".", "").Replace("-", "").Replace(" ", "").ToUpperInvariant();
-        if (clean.Length == 6 && clean.All(c => "0123456789ABCDEF".Contains(c)))
+
+        // 1. Check if raw contains an embedded Insteon address pattern e.g. "Device (3C.6E.04) [Dimmer]"
+        var match = System.Text.RegularExpressions.Regex.Match(raw, @"\b([0-9A-Fa-f]{2}[.: -]?[0-9A-Fa-f]{2}[.: -]?[0-9A-Fa-f]{2})\b");
+        if (match.Success)
         {
-            return $"{clean.Substring(0, 2)}.{clean.Substring(2, 2)}.{clean.Substring(4, 2)}";
+            var clean = match.Value.Replace(":", "").Replace(".", "").Replace("-", "").Replace(" ", "").ToUpperInvariant();
+            if (clean.Length == 6 && clean.All(c => "0123456789ABCDEF".Contains(c)))
+            {
+                return $"{clean.Substring(0, 2)}.{clean.Substring(2, 2)}.{clean.Substring(4, 2)}";
+            }
+        }
+
+        // 2. Direct clean of bare address
+        var directClean = raw.Trim().Replace(":", "").Replace(".", "").Replace("-", "").Replace(" ", "").ToUpperInvariant();
+        if (directClean.Length == 6 && directClean.All(c => "0123456789ABCDEF".Contains(c)))
+        {
+            return $"{directClean.Substring(0, 2)}.{directClean.Substring(2, 2)}.{directClean.Substring(4, 2)}";
         }
         return raw.Trim().ToUpperInvariant();
     }

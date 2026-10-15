@@ -224,6 +224,8 @@ class SceneService:
         if not snapshot:
             raise RuntimeError("No network snapshot available to locate member record.")
 
+        clean_addr = address.strip().upper()
+        target_dev = None
         matching_recs = []
         for dev in snapshot.get("devices", []):
             if dev.get("address", "").upper() == clean_addr:
