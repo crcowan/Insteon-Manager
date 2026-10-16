@@ -39,3 +39,7 @@ $RECYCLE.BIN/
 
 # Brain / agent temporary files if any in workspace
 scratch/
+
+# Build artifacts & distributions
+dist/
+

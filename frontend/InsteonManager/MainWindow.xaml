@@ -8,6 +8,7 @@
         xmlns:models="clr-namespace:InsteonManager.Models"
         mc:Ignorable="d"
         Title="Insteon Network Management Bridge" 
+        Icon="icon.ico"
         Height="850" Width="1280"
         MinHeight="650" MinWidth="950"
         WindowStartupLocation="CenterScreen"
@@ -384,7 +385,8 @@
 
                 <!-- App Title -->
                 <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
-                    <TextBlock Text="⚡ Insteon Network Bridge" FontSize="18" FontWeight="Bold" Foreground="{StaticResource AccentBlue}" VerticalAlignment="Center" />
+                    <Image Source="icon.png" Width="26" Height="26" Margin="0,0,10,0" RenderOptions.BitmapScalingMode="HighQuality" VerticalAlignment="Center" />
+                    <TextBlock Text="Insteon Network Bridge" FontSize="18" FontWeight="Bold" Foreground="{StaticResource AccentBlue}" VerticalAlignment="Center" />
                     <TextBlock Text=" (Raspberry Pi &lt;-&gt; openHAB 5.1)" FontSize="13" Foreground="{StaticResource TextMuted}" Margin="8,0,0,0" VerticalAlignment="Center" />
                 </StackPanel>
 
