@@ -199,9 +199,15 @@ public class MainViewModel : ViewModelBase
             string? addr = (obj as DeviceNode)?.Address ?? (obj as string) ?? SelectedGraphNode?.Address;
             if (!string.IsNullOrWhiteSpace(addr))
             {
-                Clipboard.SetText(addr);
-                StatusMessage = $"Copied Insteon address {addr} to clipboard.";
-                AddLog(LogLevel.Info, "UI", $"Copied {addr} to clipboard.");
+                if (ClipboardHelper.TrySetText(addr))
+                {
+                    StatusMessage = $"Copied Insteon address {addr} to clipboard.";
+                    AddLog(LogLevel.Info, "UI", $"Copied {addr} to clipboard.");
+                }
+                else
+                {
+                    StatusMessage = $"Unable to access clipboard to copy {addr}.";
+                }
             }
         });
 

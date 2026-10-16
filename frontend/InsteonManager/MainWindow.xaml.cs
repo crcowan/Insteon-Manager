@@ -2,6 +2,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using InsteonManager.Models;
+using InsteonManager.Services;
 using InsteonManager.ViewModels;
 
 namespace InsteonManager;
@@ -308,9 +309,15 @@ public partial class MainWindow : Window
             var node = GetNodeFromMenuItem(sender) ?? vm.SelectedGraphNode;
             if (node != null)
             {
-                Clipboard.SetText(node.Address);
-                vm.StatusMessage = $"Copied {node.Address} to clipboard.";
-                vm.AddLog(LogLevel.Info, "UI", $"Copied {node.Address} to clipboard.");
+                if (ClipboardHelper.TrySetText(node.Address))
+                {
+                    vm.StatusMessage = $"Copied {node.Address} to clipboard.";
+                    vm.AddLog(LogLevel.Info, "UI", $"Copied {node.Address} to clipboard.");
+                }
+                else
+                {
+                    vm.StatusMessage = $"Unable to access clipboard to copy {node.Address}.";
+                }
             }
         }
     }

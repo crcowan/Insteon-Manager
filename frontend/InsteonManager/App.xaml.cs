@@ -15,7 +15,12 @@ public partial class App : Application
     {
         DispatcherUnhandledException += (s, e) =>
         {
-            File.WriteAllText(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "crash_dispatcher.log"), e.Exception.ToString());
+            try
+            {
+                File.WriteAllText(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "crash_dispatcher.log"), e.Exception.ToString());
+            }
+            catch { }
+            e.Handled = true;
         };
 
         AppDomain.CurrentDomain.UnhandledException += (s, e) =>
