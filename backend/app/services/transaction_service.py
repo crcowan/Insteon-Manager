@@ -19,6 +19,8 @@ from app.models import (
     DeviceAddRequest,
     MissingDefaultLinkItem,
     DefaultLinkAuditResponse,
+    NetworkIssueItem,
+    NetworkAnalysisResponse,
 )
 
 logger = logging.getLogger("insteon_tx")
@@ -616,6 +618,309 @@ class TransactionService:
             success=True,
             message=msg,
             data={"address": clean_addr, "default_links_created": default_links_created, "plm_address": plm_addr}
+        )
+
+    def analyze_network(self) -> NetworkAnalysisResponse:
+        """Deep-dive diagnostic analysis of the entire Insteon network.
+        
+        Identifies:
+        - Broken half-links (missing reciprocal controller/responder on target)
+        - Self-referential loopback links
+        - Dead device ghost references
+        - Missing default Group 1 links with PLM
+        - Corrupted Group 0 links
+        - Redundant duplicate records
+        """
+        snapshot = self._load_snapshot()
+        plm = snapshot.get("plm", {})
+        plm_addr = plm.get("address", "53.C1.42").upper()
+        devices = snapshot.get("devices", [])
+        
+        all_dev_map = {d.get("address", "").upper(): d for d in devices if d.get("address")}
+        all_dev_map[plm_addr] = plm
+
+        def get_device_name(addr: str) -> str:
+            d = all_dev_map.get(addr.upper(), {})
+            if addr.upper() == plm_addr:
+                return "USB PowerLinc Modem (PLM)"
+            return d.get("label") or d.get("description") or f"Device {addr}"
+
+        def is_keypad(addr: str) -> bool:
+            d = all_dev_map.get(addr.upper(), {})
+            name = (d.get("label") or d.get("description") or "").lower()
+            return "keypad" in name or "remote" in name
+
+        total_active_records = 0
+        issues: List[NetworkIssueItem] = []
+        active_links = []
+
+        for owner_addr, dev in all_dev_map.items():
+            recs = dev.get("records", [])
+            seen_owner_keys = set()
+            for r in recs:
+                mem = r.get("mem_addr")
+                in_use = r.get("in_use", False)
+                hwm = r.get("high_water_mark", False)
+                grp = r.get("group", 0)
+                tgt = r.get("target_address", "").upper()
+                is_ctrl = r.get("is_controller", False)
+                is_resp = r.get("is_responder", False)
+                d1 = r.get("data1", 255)
+                d2 = r.get("data2", 28)
+                d3 = r.get("data3", 1)
+
+                if hwm or not in_use:
+                    continue
+
+                total_active_records += 1
+                role = "Controller" if is_ctrl else "Responder"
+                owner_name = get_device_name(owner_addr)
+                tgt_name = get_device_name(tgt)
+
+                # 1. Check Loopback / Self-Referential
+                if tgt == owner_addr:
+                    issues.append(NetworkIssueItem(
+                        id=f"loopback_{owner_addr}_{mem}",
+                        issue_type="loopback",
+                        severity="warning",
+                        owner_address=owner_addr,
+                        owner_name=owner_name,
+                        mem_addr=mem,
+                        target_address=tgt,
+                        target_name=tgt_name,
+                        group=grp,
+                        role=role,
+                        summary=f"Self-referential loopback link on {owner_name} ({owner_addr})",
+                        explanation=f"Slot {mem} points back to its own device address as {role} for Group {grp}. Insteon devices cannot control or respond to themselves; this is a phantom link.",
+                        recommended_action="delete_record",
+                        fix_label="🗑️ Delete Phantom Slot",
+                        secondary_action=None,
+                        secondary_label=None,
+                        can_auto_fix=True,
+                        data1=d1, data2=d2, data3=d3
+                    ))
+                    continue
+
+                # 2. Check Ghost Target (device not in network)
+                if tgt not in all_dev_map and tgt != "00.00.00":
+                    issues.append(NetworkIssueItem(
+                        id=f"ghost_{owner_addr}_{mem}",
+                        issue_type="ghost",
+                        severity="error",
+                        owner_address=owner_addr,
+                        owner_name=owner_name,
+                        mem_addr=mem,
+                        target_address=tgt,
+                        target_name=f"Decommissioned Device ({tgt})",
+                        group=grp,
+                        role=role,
+                        summary=f"Ghost reference to decommissioned device {tgt}",
+                        explanation=f"{owner_name} has an active {role} link pointing to {tgt}, which does not exist in the network. Every button press causes unacknowledged retries across the powerline.",
+                        recommended_action="delete_record",
+                        fix_label="🗑️ Delete Ghost Slot",
+                        secondary_action=None,
+                        secondary_label=None,
+                        can_auto_fix=True,
+                        data1=d1, data2=d2, data3=d3
+                    ))
+                    continue
+
+                # 3. Check Group 0 corruption
+                if grp == 0:
+                    issues.append(NetworkIssueItem(
+                        id=f"grp0_{owner_addr}_{mem}",
+                        issue_type="group_zero",
+                        severity="warning",
+                        owner_address=owner_addr,
+                        owner_name=owner_name,
+                        mem_addr=mem,
+                        target_address=tgt,
+                        target_name=tgt_name,
+                        group=grp,
+                        role=role,
+                        summary=f"Invalid Group 0 record in {owner_name}",
+                        explanation=f"Insteon scenes must be Group 1-255. Group 0 indicates an aborted pairing handshake or improperly cleared legacy memory slot.",
+                        recommended_action="delete_record",
+                        fix_label="🗑️ Delete Group 0 Slot",
+                        secondary_action=None,
+                        secondary_label=None,
+                        can_auto_fix=True,
+                        data1=d1, data2=d2, data3=d3
+                    ))
+                    continue
+
+                # 4. Check Redundant Duplicate
+                dup_key = (tgt, grp, role)
+                if dup_key in seen_owner_keys:
+                    issues.append(NetworkIssueItem(
+                        id=f"dup_{owner_addr}_{mem}",
+                        issue_type="duplicate",
+                        severity="warning",
+                        owner_address=owner_addr,
+                        owner_name=owner_name,
+                        mem_addr=mem,
+                        target_address=tgt,
+                        target_name=tgt_name,
+                        group=grp,
+                        role=role,
+                        summary=f"Redundant duplicate {role} link on Group {grp}",
+                        explanation=f"{owner_name} has multiple active {role} records for {tgt_name} on Group {grp}. Multiple identical records cause repeated transmissions and waste EEPROM space.",
+                        recommended_action="delete_record",
+                        fix_label="🗑️ Delete Duplicate Slot",
+                        secondary_action=None,
+                        secondary_label=None,
+                        can_auto_fix=True,
+                        data1=d1, data2=d2, data3=d3
+                    ))
+                    continue
+                else:
+                    seen_owner_keys.add(dup_key)
+
+                active_links.append({
+                    "owner": owner_addr,
+                    "owner_name": owner_name,
+                    "mem": mem,
+                    "target": tgt,
+                    "target_name": tgt_name,
+                    "group": grp,
+                    "role": role,
+                    "data1": d1,
+                    "data2": d2,
+                    "data3": d3,
+                })
+
+        # 5. Check Half-Links (Missing reciprocal on target)
+        for link in active_links:
+            owner = link["owner"]
+            owner_name = link["owner_name"]
+            target = link["target"]
+            target_name = link["target_name"]
+            grp = link["group"]
+            role = link["role"]
+            mem = link["mem"]
+            d1, d2, d3 = link["data1"], link["data2"], link["data3"]
+
+            target_dev = all_dev_map.get(target)
+            if not target_dev:
+                continue
+
+            target_recs = [tr for tr in target_dev.get("records", []) if tr.get("in_use") and not tr.get("high_water_mark")]
+            expected_role = "Responder" if role == "Controller" else "Controller"
+
+            has_reciprocal = any(
+                tr.get("target_address", "").upper() == owner and
+                tr.get("group") == grp and
+                ((expected_role == "Responder" and (tr.get("is_responder") or not tr.get("is_controller"))) or
+                 (expected_role == "Controller" and tr.get("is_controller")))
+                for tr in target_recs
+            )
+
+            if not has_reciprocal:
+                # Distinguish keypad broadcasts and transient query groups
+                is_kp = is_keypad(owner)
+                is_discovery = (grp == 251)
+
+                if is_discovery:
+                    severity = "info"
+                    summary = f"Transient Engine Query Link (Group 251) on {owner_name}"
+                    explanation = f"Group 251 is used internally for device engine discovery. This one-way record is harmless."
+                    fix_label = "⚡ Create Reciprocal Link"
+                elif is_kp and role == "Controller":
+                    severity = "warning"
+                    button_label = f"Button {chr(64 + grp)} (Key {grp})" if 1 <= grp <= 8 else f"Group {grp}"
+                    summary = f"Keypad {button_label} One-Way Broadcast to {target_name}"
+                    explanation = f"{owner_name} is set to control {target_name} on {button_label}, but {target_name} has NO matching responder link. When {button_label} is pressed on the keypad, {target_name} will ignore the command."
+                    fix_label = f"⚡ Add Responder Link on {target_name}"
+                elif role == "Controller":
+                    severity = "warning"
+                    summary = f"Missing Responder Link: {owner_name} → {target_name} (Grp {grp})"
+                    explanation = f"{owner_name} transmits commands on Group {grp} to {target_name}, but {target_name} does not have a matching responder entry in its database."
+                    fix_label = f"⚡ Add Responder Link on {target_name}"
+                else:
+                    severity = "warning"
+                    summary = f"Missing Controller Link: {owner_name} ← {target_name} (Grp {grp})"
+                    explanation = f"{owner_name} is programmed to respond to Group {grp} from {target_name}, but {target_name} has no matching controller record to trigger it."
+                    fix_label = f"⚡ Add Controller Link on {target_name}"
+
+                issues.append(NetworkIssueItem(
+                    id=f"half_{owner}_{target}_{grp}_{role}_{mem}",
+                    issue_type="half_link",
+                    severity=severity,
+                    owner_address=owner,
+                    owner_name=owner_name,
+                    mem_addr=mem,
+                    target_address=target,
+                    target_name=target_name,
+                    group=grp,
+                    role=role,
+                    summary=summary,
+                    explanation=explanation,
+                    recommended_action="create_reciprocal",
+                    fix_label=fix_label,
+                    secondary_action="delete_record",
+                    secondary_label="🗑️ Delete Broken Slot",
+                    can_auto_fix=True,
+                    data1=d1, data2=d2, data3=d3
+                ))
+
+        # 6. Check Missing Default PLM Links
+        for dev in devices:
+            dev_addr = dev.get("address", "").upper()
+            if dev_addr == plm_addr or not dev_addr:
+                continue
+            dev_name = get_device_name(dev_addr)
+            dev_records = [r for r in dev.get("records", []) if r.get("in_use")]
+            plm_records = [r for r in plm.get("records", []) if r.get("in_use")]
+
+            d2p = any(r.get("target_address", "").upper() == plm_addr and r.get("is_controller") and r.get("group") == 1 for r in dev_records) and \
+                  any(r.get("target_address", "").upper() == dev_addr and (r.get("is_responder") or not r.get("is_controller")) and r.get("group") == 1 for r in plm_records)
+            p2d = any(r.get("target_address", "").upper() == dev_addr and r.get("is_controller") and r.get("group") in (0, 1) for r in plm_records) and \
+                  any(r.get("target_address", "").upper() == plm_addr and (r.get("is_responder") or not r.get("is_controller")) and r.get("group") in (0, 1) for r in dev_records)
+
+            if not d2p or not p2d:
+                issues.append(NetworkIssueItem(
+                    id=f"default_{dev_addr}",
+                    issue_type="missing_default",
+                    severity="error",
+                    owner_address=dev_addr,
+                    owner_name=dev_name,
+                    mem_addr=None,
+                    target_address=plm_addr,
+                    target_name="USB PowerLinc Modem (PLM)",
+                    group=1,
+                    role="Both",
+                    summary=f"Missing Default Reciprocal PLM Links for {dev_name}",
+                    explanation=f"{dev_name} does not have a verified bidirectional Group 1 link pair with the PLM. Automated status reports and remote controls will be unreliable.",
+                    recommended_action="create_default_link",
+                    fix_label="⚡ Establish Default PLM Links",
+                    secondary_action=None,
+                    secondary_label=None,
+                    can_auto_fix=True,
+                ))
+
+        half_count = sum(1 for i in issues if i.issue_type == "half_link" and i.severity != "info")
+        loopback_count = sum(1 for i in issues if i.issue_type == "loopback")
+        ghost_count = sum(1 for i in issues if i.issue_type == "ghost")
+        dup_count = sum(1 for i in issues if i.issue_type == "duplicate")
+        grp0_count = sum(1 for i in issues if i.issue_type == "group_zero")
+        missing_def_count = sum(1 for i in issues if i.issue_type == "missing_default")
+
+        # Health score calculation
+        deductions = (ghost_count * 10) + (missing_def_count * 5) + (loopback_count * 5) + (half_count * 3) + (dup_count * 2) + (grp0_count * 2)
+        score = max(0, min(100, 100 - deductions))
+
+        return NetworkAnalysisResponse(
+            health_score=score,
+            total_devices=len(all_dev_map),
+            total_active_records=total_active_records,
+            total_issues=len(issues),
+            half_links_count=sum(1 for i in issues if i.issue_type == "half_link"),
+            loopbacks_count=loopback_count,
+            missing_defaults_count=missing_def_count,
+            ghosts_count=ghost_count,
+            duplicates_count=dup_count,
+            group_zero_count=grp0_count,
+            issues=issues
         )
 
 

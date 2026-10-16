@@ -146,6 +146,10 @@ public class OrganizedDeviceAldb : INotifyPropertyChanged
     public int ControllerCount => ControllerRecords.Count;
     public int ResponderCount => ResponderRecords.Count;
 
+    public bool IsKeypad => InsteonKeypadHelper.IsKeypadDevice(FriendlyName, DeviceType, Address);
+    public ObservableCollection<KeypadButtonSummaryModel> KeypadButtons { get; set; } = new();
+    public bool HasKeypadButtons => IsKeypad && KeypadButtons.Count > 0;
+
     public ObservableCollection<OrganizedAldbEntry> ControllerRecords { get; set; } = new();
     public ObservableCollection<OrganizedAldbEntry> ResponderRecords { get; set; } = new();
     public ObservableCollection<OrganizedAldbEntry> OtherRecords { get; set; } = new();
@@ -167,6 +171,105 @@ public class OrganizedDeviceAldb : INotifyPropertyChanged
     protected void OnPropertyChanged([CallerMemberName] string? propertyName = null)
     {
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
+    }
+}
+
+public class KeypadButtonSummaryModel
+{
+    public int KeyNumber { get; set; }
+    public string KeyLabel { get; set; } = string.Empty;
+    public int Group { get; set; }
+    public int ControlledDevicesCount { get; set; }
+    public string ControlledDevicesSummary { get; set; } = string.Empty;
+    public bool HasControlledDevices => ControlledDevicesCount > 0;
+}
+
+public static class InsteonKeypadHelper
+{
+    public static bool IsKeypadDevice(string? friendlyName, string? deviceType, string? address = null)
+    {
+        if (address != null && address.Equals("1C.2C.40", StringComparison.OrdinalIgnoreCase)) return true;
+        if (string.IsNullOrWhiteSpace(friendlyName) && string.IsNullOrWhiteSpace(deviceType)) return false;
+        string combined = $"{friendlyName} {deviceType}".ToLowerInvariant();
+        return combined.Contains("keypad") || combined.Contains("remote") || combined.Contains("kpl");
+    }
+
+    public static string GetKeypadButtonName(int group, int data3 = 0)
+    {
+        int keyIndex = (data3 > 0 && data3 <= 8) ? data3 : group;
+        return keyIndex switch
+        {
+            1 => "Button A (Key 1 / Main)",
+            2 => "Button B (Key 2)",
+            3 => "Button C (Key 3)",
+            4 => "Button D (Key 4)",
+            5 => "Button E (Key 5)",
+            6 => "Button F (Key 6)",
+            7 => "Button G (Key 7)",
+            8 => "Button H (Key 8)",
+            _ => $"Scene / Grp {group}"
+        };
+    }
+
+    public static string GetKeypadButtonShortLabel(int group, int data3 = 0)
+    {
+        int keyIndex = (data3 > 0 && data3 <= 8) ? data3 : group;
+        return keyIndex switch
+        {
+            1 => "Btn A (Key 1)",
+            2 => "Btn B (Key 2)",
+            3 => "Btn C (Key 3)",
+            4 => "Btn D (Key 4)",
+            5 => "Btn E (Key 5)",
+            6 => "Btn F (Key 6)",
+            7 => "Btn G (Key 7)",
+            8 => "Btn H (Key 8)",
+            _ => $"Grp {group}"
+        };
+    }
+
+    public static List<KeypadButtonSummaryModel> BuildKeypadButtons(
+        string deviceAddress, 
+        IEnumerable<AldbRecordModel> records, 
+        Dictionary<string, string> friendlyNameMap)
+    {
+        var list = new List<KeypadButtonSummaryModel>();
+        var activeCtrlRecords = records.Where(r => r.InUse && !r.HighWaterMark && r.IsController).ToList();
+
+        // Check if there are keys above 4
+        int maxKey = 4;
+        foreach (var r in activeCtrlRecords)
+        {
+            int k = (r.Data3 > 0 && r.Data3 <= 8) ? r.Data3 : (r.Group > 0 && r.Group <= 8 ? r.Group : 0);
+            if (k > maxKey) maxKey = Math.Min(8, k);
+        }
+
+        for (int k = 1; k <= maxKey; k++)
+        {
+            var btnRecords = activeCtrlRecords.Where(r => 
+                (r.Data3 == k) || (r.Data3 == 0 && r.Group == k)
+            ).ToList();
+
+            var targetNames = btnRecords
+                .Select(r => friendlyNameMap.TryGetValue(r.TargetAddress, out var fn) ? fn : r.TargetAddress)
+                .Distinct()
+                .ToList();
+
+            string summary = targetNames.Count > 0 
+                ? string.Join(", ", targetNames) 
+                : "No linked responder devices";
+
+            list.Add(new KeypadButtonSummaryModel
+            {
+                KeyNumber = k,
+                KeyLabel = GetKeypadButtonName(k, k),
+                Group = k,
+                ControlledDevicesCount = targetNames.Count,
+                ControlledDevicesSummary = summary
+            });
+        }
+
+        return list;
     }
 }
 
@@ -276,6 +379,10 @@ public class OrganizedAldbEntry
     public string IssueTooltip => IsDuplicate 
         ? "Redundant duplicate record: An active link already exists for this same target device and group. Cleaning this up frees EEPROM space and eliminates repetitive All-Link retry traffic."
         : (IsGroupZero ? "Group 0 is an invalid Insteon scene (scenes are Group 1-255). This is an orphaned/corrupted link or aborted handshake leftover from older software." : string.Empty);
+
+    public bool IsKeypadRecord { get; set; }
+    public string KeypadButtonLabel { get; set; } = string.Empty;
+    public bool HasKeypadButton => !string.IsNullOrEmpty(KeypadButtonLabel);
 
     public string DataHex => $"D1: 0x{Data1:X2}  D2: 0x{Data2:X2}  D3: 0x{Data3:X2}";
     public string TargetDisplay => string.IsNullOrWhiteSpace(TargetFriendlyName) ? TargetAddress : $"{TargetFriendlyName} ({TargetAddress})";

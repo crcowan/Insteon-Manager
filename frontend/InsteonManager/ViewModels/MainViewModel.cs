@@ -128,6 +128,14 @@ public class MainViewModel : ViewModelBase
         StageAddDeviceCommand = new RelayCommand(StageAddDevice, () => InsteonAddressHelper.IsValid(NewDeviceAddress));
         AddDeviceNowCommand = new AsyncRelayCommand(AddDeviceNowAsync, () => InsteonAddressHelper.IsValid(NewDeviceAddress) && !IsLoading);
 
+        AnalyzeNetworkCommand = new AsyncRelayCommand(() => RunNetworkAnalysisAsync(false), () => !IsLoading && !IsAnalyzingNetwork);
+        FilterAnalyzerCommand = new RelayCommand<string>(filter => { if (filter != null) SelectedAnalyzerFilter = filter; });
+        FixNetworkIssueCommand = new AsyncRelayCommand<NetworkIssueItemModel>(FixNetworkIssueAsync, issue => issue != null && !IsLoading);
+        DeleteNetworkIssueSlotCommand = new AsyncRelayCommand<NetworkIssueModel>(DeleteNetworkIssueSlotAsync, issue => issue != null && !string.IsNullOrEmpty(issue.MemAddr) && !IsLoading);
+        StageNetworkIssueFixCommand = new RelayCommand<NetworkIssueModel>(StageNetworkIssueFix, issue => issue != null);
+        FixAllHalfLinksCommand = new AsyncRelayCommand(FixAllHalfLinksAsync, () => AnalyzerHalfLinksCount > 0 && !IsLoading);
+        StageAllAnalyzerFixesCommand = new RelayCommand(StageAllAnalyzerFixes, () => NetworkIssues.Count > 0 && !IsLoading);
+
         RefreshScenesCommand = new AsyncRelayCommand(() => LoadScenesAsync(false), () => !IsLoading);
         TriggerSceneOnCommand = new AsyncRelayCommand(() => TriggerSelectedSceneAsync("on"), () => SelectedScene != null && !IsLoading);
         TriggerSceneOffCommand = new AsyncRelayCommand(() => TriggerSelectedSceneAsync("off"), () => SelectedScene != null && !IsLoading);
@@ -520,6 +528,14 @@ public class MainViewModel : ViewModelBase
     public RelayCommand StageAddDeviceCommand { get; }
     public AsyncRelayCommand AddDeviceNowCommand { get; }
 
+    public AsyncRelayCommand AnalyzeNetworkCommand { get; }
+    public RelayCommand<string> FilterAnalyzerCommand { get; }
+    public AsyncRelayCommand<NetworkIssueItemModel> FixNetworkIssueCommand { get; }
+    public AsyncRelayCommand<NetworkIssueModel> DeleteNetworkIssueSlotCommand { get; }
+    public RelayCommand<NetworkIssueModel> StageNetworkIssueFixCommand { get; }
+    public AsyncRelayCommand FixAllHalfLinksCommand { get; }
+    public RelayCommand StageAllAnalyzerFixesCommand { get; }
+
     public ObservableCollection<DeviceLookupItem> DeviceLookupChoices { get; } = new();
 
     private int _selectedTabIndex = 0;
@@ -539,6 +555,97 @@ public class MainViewModel : ViewModelBase
     public ObservableCollection<string> GhostTargets { get; }
     public ObservableCollection<MissingDefaultLinkItemModel> MissingDefaultLinks { get; }
     public ObservableCollection<DeviceCategoryOption> DeviceCategoryOptions { get; }
+
+    public ObservableCollection<NetworkIssueItemModel> NetworkIssues { get; } = new();
+    public ObservableCollection<NetworkIssueItemModel> FilteredNetworkIssues { get; } = new();
+
+    private int _networkHealthScore = 100;
+    public int NetworkHealthScore
+    {
+        get => _networkHealthScore;
+        set
+        {
+            if (SetProperty(ref _networkHealthScore, value))
+            {
+                OnPropertyChanged(nameof(NetworkHealthStatus));
+                OnPropertyChanged(nameof(NetworkHealthColor));
+                OnPropertyChanged(nameof(NetworkHealthSummaryText));
+            }
+        }
+    }
+
+    public string NetworkHealthStatus => NetworkHealthScore switch
+    {
+        >= 90 => "Excellent",
+        >= 75 => "Good",
+        >= 50 => "Fair - Needs Maintenance",
+        _ => "Critical - Severe Issues"
+    };
+
+    public string NetworkHealthColor => NetworkHealthScore switch
+    {
+        >= 90 => "#A6E3A1",
+        >= 75 => "#89B4FA",
+        >= 50 => "#F9E2AF",
+        _ => "#F38BA8"
+    };
+
+    public string NetworkHealthSummaryText => $"{NetworkHealthScore}% Health • {AnalyzerTotalIssuesCount} Issues Identified";
+
+    private int _analyzerTotalIssuesCount;
+    public int AnalyzerTotalIssuesCount
+    {
+        get => _analyzerTotalIssuesCount;
+        set => SetProperty(ref _analyzerTotalIssuesCount, value);
+    }
+
+    private int _analyzerHalfLinksCount;
+    public int AnalyzerHalfLinksCount
+    {
+        get => _analyzerHalfLinksCount;
+        set => SetProperty(ref _analyzerHalfLinksCount, value);
+    }
+
+    private int _analyzerLoopbacksCount;
+    public int AnalyzerLoopbacksCount
+    {
+        get => _analyzerLoopbacksCount;
+        set => SetProperty(ref _analyzerLoopbacksCount, value);
+    }
+
+    private int _analyzerMissingPlmCount;
+    public int AnalyzerMissingPlmCount
+    {
+        get => _analyzerMissingPlmCount;
+        set => SetProperty(ref _analyzerMissingPlmCount, value);
+    }
+
+    private int _analyzerGhostCount;
+    public int AnalyzerGhostCount
+    {
+        get => _analyzerGhostCount;
+        set => SetProperty(ref _analyzerGhostCount, value);
+    }
+
+    private string _selectedAnalyzerFilter = "All";
+    public string SelectedAnalyzerFilter
+    {
+        get => _selectedAnalyzerFilter;
+        set
+        {
+            if (SetProperty(ref _selectedAnalyzerFilter, value))
+            {
+                ApplyAnalyzerFilter();
+            }
+        }
+    }
+
+    private bool _isAnalyzingNetwork;
+    public bool IsAnalyzingNetwork
+    {
+        get => _isAnalyzingNetwork;
+        set => SetProperty(ref _isAnalyzingNetwork, value);
+    }
 
     public int MissingDefaultLinksCount => MissingDefaultLinks.Count;
     public bool HasMissingDefaultLinks => MissingDefaultLinks.Count > 0;
@@ -1161,6 +1268,7 @@ public class MainViewModel : ViewModelBase
             await LoadScenesAsync(silent: silent);
             await AuditDefaultLinksAsync(silent: silent);
             UpdateSelectableDevices(_currentDevices, records);
+            await RunNetworkAnalysisAsync(silent: silent);
 
             if (!silent)
             {
@@ -1507,10 +1615,21 @@ public class MainViewModel : ViewModelBase
                 (org.IsModem && (r.SourceAddress == "PLM Modem" || r.SourceAddress == "53.C1.42"))
             ).ToList();
 
+            // Populate Keypad button mapping if device is a Keypad / Remote
+            if (org.IsKeypad)
+            {
+                var keypadButtons = InsteonKeypadHelper.BuildKeypadButtons(dev.Address, devRecords, friendlyNameMap);
+                foreach (var btn in keypadButtons)
+                {
+                    org.KeypadButtons.Add(btn);
+                }
+            }
+
             foreach (var r in devRecords)
             {
                 string tgtName = friendlyNameMap.TryGetValue(r.TargetAddress, out var fn) ? fn : $"Device {r.TargetAddress}";
                 string decoded = DecodeInsteonRecord(r, tgtName);
+                string btnLabel = org.IsKeypad ? InsteonKeypadHelper.GetKeypadButtonShortLabel(r.Group, r.Data3) : string.Empty;
 
                 // If search query is present, check match
                 if (!string.IsNullOrWhiteSpace(search))
@@ -1520,6 +1639,7 @@ public class MainViewModel : ViewModelBase
                                    tgtName.Contains(search, StringComparison.OrdinalIgnoreCase) ||
                                    r.Group.ToString().Contains(search) ||
                                    decoded.Contains(search, StringComparison.OrdinalIgnoreCase) ||
+                                   btnLabel.Contains(search, StringComparison.OrdinalIgnoreCase) ||
                                    r.RawMode.Contains(search, StringComparison.OrdinalIgnoreCase);
                     if (!matches) continue;
                 }
@@ -1542,6 +1662,8 @@ public class MainViewModel : ViewModelBase
                     Data3 = r.Data3,
                     DecodedSummary = decoded,
                     StatusBadge = r.HighWaterMark ? "High Water Mark" : (r.InUse ? "Active" : "Deleted"),
+                    IsKeypadRecord = org.IsKeypad,
+                    KeypadButtonLabel = btnLabel,
                 };
 
                 if (r.HighWaterMark || !r.InUse)
@@ -3173,6 +3295,333 @@ public class MainViewModel : ViewModelBase
         {
             IsLoading = false;
         }
+    }
+
+    public void ApplyAnalyzerFilter()
+    {
+        FilteredNetworkIssues.Clear();
+        var filter = SelectedAnalyzerFilter?.ToLowerInvariant() ?? "all";
+        foreach (var issue in NetworkIssues)
+        {
+            bool match = filter switch
+            {
+                "all" => true,
+                "half_link" => issue.IssueType == "half_link",
+                "loopback" => issue.IssueType == "loopback",
+                "keypad" => (issue.OwnerName?.Contains("Keypad", StringComparison.OrdinalIgnoreCase) ?? false) ||
+                            (issue.TargetName?.Contains("Keypad", StringComparison.OrdinalIgnoreCase) ?? false) ||
+                            issue.OwnerAddress.Equals("1C.2C.40", StringComparison.OrdinalIgnoreCase) ||
+                            issue.TargetAddress.Equals("1C.2C.40", StringComparison.OrdinalIgnoreCase),
+                "missing_default" => issue.IssueType == "missing_default",
+                "ghost" => issue.IssueType == "ghost",
+                _ => true
+            };
+            if (match)
+            {
+                FilteredNetworkIssues.Add(issue);
+            }
+        }
+    }
+
+    public async Task RunNetworkAnalysisAsync(bool silent = false)
+    {
+        if (IsAnalyzingNetwork) return;
+        IsAnalyzingNetwork = true;
+        if (!silent)
+        {
+            StatusMessage = "Analyzing Insteon network topology and link reciprocity...";
+            AddLog(LogLevel.Info, "Analyzer", "Beginning deep diagnostic network analysis...");
+        }
+
+        try
+        {
+            var report = await _apiClient.AnalyzeNetworkAsync();
+            if (report != null)
+            {
+                NetworkHealthScore = report.HealthScore;
+                AnalyzerTotalIssuesCount = report.TotalIssues;
+                AnalyzerHalfLinksCount = report.HalfLinksCount;
+                AnalyzerLoopbacksCount = report.LoopbacksCount;
+                AnalyzerMissingPlmCount = report.MissingDefaultsCount;
+                AnalyzerGhostCount = report.GhostsCount;
+
+                NetworkIssues.Clear();
+                foreach (var issue in report.Issues)
+                {
+                    NetworkIssues.Add(issue);
+                }
+
+                ApplyAnalyzerFilter();
+
+                FixAllHalfLinksCommand?.NotifyCanExecuteChanged();
+                StageAllAnalyzerFixesCommand?.NotifyCanExecuteChanged();
+
+                if (!silent)
+                {
+                    StatusMessage = $"Analysis complete: Health Score {report.HealthScore}%. Found {report.TotalIssues} network issues ({report.HalfLinksCount} broken half-links, {report.LoopbacksCount} loopbacks).";
+                    AddLog(LogLevel.Success, "Analyzer", $"Analysis complete: Health Score {report.HealthScore}%. {report.TotalIssues} issues detected across {report.TotalDevices} devices.");
+                }
+            }
+            else
+            {
+                if (!silent)
+                {
+                    StatusMessage = "Network analysis returned no response.";
+                    AddLog(LogLevel.Warning, "Analyzer", "Network analysis returned empty report.");
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            if (!silent)
+            {
+                StatusMessage = $"Analysis error: {ex.Message}";
+                AddLog(LogLevel.Error, "Analyzer", $"Analysis failed: {ex.Message}");
+            }
+        }
+        finally
+        {
+            IsAnalyzingNetwork = false;
+        }
+    }
+
+    public async Task FixNetworkIssueAsync(NetworkIssueItemModel? issue)
+    {
+        if (issue == null) return;
+        IsLoading = true;
+        StatusMessage = $"Executing fix for {issue.Summary}...";
+        AddLog(LogLevel.Info, "Analyzer", $"Executing fix for issue: {issue.Summary} ({issue.RecommendedAction}).");
+
+        try
+        {
+            bool success = false;
+            string message = string.Empty;
+
+            if (issue.RecommendedAction == "create_reciprocal")
+            {
+                var req = new ReciprocalLinkRequestModel
+                {
+                    ControllerAddress = issue.OwnerAddress,
+                    ResponderAddress = issue.TargetAddress,
+                    Group = issue.Group,
+                    Data1 = issue.Data1,
+                    Data2 = issue.Data2,
+                    Data3 = issue.Data3
+                };
+                var res = await _apiClient.CreateReciprocalLinkAsync(req);
+                success = res.Success;
+                message = res.Message;
+            }
+            else if (issue.RecommendedAction == "delete_record")
+            {
+                if (!string.IsNullOrEmpty(issue.MemAddr))
+                {
+                    var res = await _apiClient.DeleteDeviceAldbRecordAsync(issue.OwnerAddress, issue.MemAddr);
+                    success = res.Success;
+                    message = res.Message;
+                }
+            }
+            else if (issue.RecommendedAction == "purge_ghost")
+            {
+                var res = await _apiClient.PurgeGhostLinksAsync(issue.TargetAddress);
+                success = res.Success;
+                message = res.Message;
+            }
+
+            if (success)
+            {
+                StatusMessage = $"Fixed: {message}";
+                AddLog(LogLevel.Success, "Analyzer", $"Resolved issue {issue.Id}: {message}");
+                await QueryAldbAsync(silent: true);
+            }
+            else
+            {
+                StatusMessage = $"Failed to fix issue: {message}";
+                AddLog(LogLevel.Error, "Analyzer", $"Failed to resolve {issue.Id}: {message}");
+            }
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = $"Error executing fix: {ex.Message}";
+            AddLog(LogLevel.Error, "Analyzer", $"Exception during issue fix: {ex.Message}");
+        }
+        finally
+        {
+            IsLoading = false;
+        }
+    }
+
+    public async Task DeleteNetworkIssueSlotAsync(NetworkIssueModel? issue)
+    {
+        if (issue == null || string.IsNullOrEmpty(issue.MemAddr)) return;
+
+        var confirm = MessageBox.Show(
+            $"Are you sure you want to delete invalid ALDB record slot {issue.MemAddr} on device {issue.OwnerName} ({issue.OwnerAddress})?",
+            "Confirm Slot Deletion",
+            MessageBoxButton.YesNo,
+            MessageBoxImage.Question);
+
+        if (confirm != MessageBoxResult.Yes) return;
+
+        IsLoading = true;
+        StatusMessage = $"Deleting slot {issue.MemAddr} on {issue.OwnerAddress}...";
+        AddLog(LogLevel.Info, "Analyzer", $"Deleting corrupted slot {issue.MemAddr} on {issue.OwnerAddress}...");
+
+        try
+        {
+            var res = await _apiClient.DeleteDeviceAldbRecordAsync(issue.OwnerAddress, issue.MemAddr);
+            if (res.Success)
+            {
+                StatusMessage = $"Slot {issue.MemAddr} deleted successfully.";
+                AddLog(LogLevel.Success, "Analyzer", $"Slot {issue.MemAddr} on {issue.OwnerAddress} cleared.");
+                await QueryAldbAsync(silent: true);
+            }
+            else
+            {
+                StatusMessage = $"Failed to delete slot: {res.Message}";
+                AddLog(LogLevel.Error, "Analyzer", $"Failed deleting slot {issue.MemAddr}: {res.Message}");
+            }
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = $"Error deleting slot: {ex.Message}";
+            AddLog(LogLevel.Error, "Analyzer", $"Error deleting slot: {ex.Message}");
+        }
+        finally
+        {
+            IsLoading = false;
+        }
+    }
+
+    public void StageNetworkIssueFix(NetworkIssueModel? issue)
+    {
+        if (issue == null) return;
+
+        var staged = new StagedChangeModel
+        {
+            Id = $"FIX-{issue.Id}",
+            TargetAddress = $"{issue.OwnerAddress} ⇄ {issue.TargetAddress}",
+            TargetLabel = $"{issue.OwnerName} ⇄ {issue.TargetName}",
+            Operation = issue.RecommendedAction.ToUpperInvariant(),
+            CurrentState = $"{issue.IssueTypeBadge}: {issue.Summary}",
+            ProposedState = issue.RecommendedAction == "create_reciprocal"
+                ? $"Create reciprocal responder record on {issue.TargetAddress} for Group {issue.Group}"
+                : $"Mark slot {issue.MemAddr} on {issue.OwnerAddress} as deleted",
+            Description = issue.Explanation,
+            Risk = issue.Severity == "error" ? ChangeRisk.Medium : ChangeRisk.Low,
+            ExecutionHandler = async () =>
+            {
+                if (issue.RecommendedAction == "create_reciprocal")
+                {
+                    var req = new ReciprocalLinkRequestModel
+                    {
+                        ControllerAddress = issue.OwnerAddress,
+                        ResponderAddress = issue.TargetAddress,
+                        Group = issue.Group,
+                        Data1 = issue.Data1,
+                        Data2 = issue.Data2,
+                        Data3 = issue.Data3
+                    };
+                    return await _apiClient.CreateReciprocalLinkAsync(req);
+                }
+                else if (issue.RecommendedAction == "delete_record" && !string.IsNullOrEmpty(issue.MemAddr))
+                {
+                    return await _apiClient.DeleteDeviceAldbRecordAsync(issue.OwnerAddress, issue.MemAddr);
+                }
+                else if (issue.RecommendedAction == "purge_ghost")
+                {
+                    return await _apiClient.PurgeGhostLinksAsync(issue.TargetAddress);
+                }
+                return (false, "Unknown action");
+            }
+        };
+
+        StagedChanges.Add(staged);
+        StatusMessage = $"Staged fix for {issue.Summary}. Review in Pending Changes.";
+        AddLog(LogLevel.Info, "Staging", $"Staged fix for {issue.Summary}.");
+        SelectedTabIndex = 4;
+        CommitStagedChangesCommand?.NotifyCanExecuteChanged();
+    }
+
+    public async Task FixAllHalfLinksAsync()
+    {
+        var halfLinks = NetworkIssues.Where(i => i.IssueType == "half_link" && i.CanAutoFix).ToList();
+        if (halfLinks.Count == 0)
+        {
+            StatusMessage = "No auto-fixable broken half-links found.";
+            return;
+        }
+
+        var confirm = MessageBox.Show(
+            $"Found {halfLinks.Count} broken half-links.\n\nWould you like to auto-repair all of them by generating the missing reciprocal responder records?",
+            "Auto-Fix All Half-Links",
+            MessageBoxButton.YesNo,
+            MessageBoxImage.Question);
+
+        if (confirm != MessageBoxResult.Yes) return;
+
+        IsLoading = true;
+        StatusMessage = $"Auto-fixing {halfLinks.Count} broken half-links...";
+        AddLog(LogLevel.Info, "Analyzer", $"Beginning batch repair of {halfLinks.Count} broken half-links...");
+
+        int repaired = 0;
+        int failed = 0;
+
+        try
+        {
+            foreach (var hl in halfLinks)
+            {
+                var req = new ReciprocalLinkRequestModel
+                {
+                    ControllerAddress = hl.OwnerAddress,
+                    ResponderAddress = hl.TargetAddress,
+                    Group = hl.Group,
+                    Data1 = hl.Data1,
+                    Data2 = hl.Data2,
+                    Data3 = hl.Data3
+                };
+                var (success, _) = await _apiClient.CreateReciprocalLinkAsync(req);
+                if (success) repaired++;
+                else failed++;
+            }
+
+            StatusMessage = $"Batch auto-fix complete: {repaired} repaired, {failed} failed.";
+            AddLog(LogLevel.Success, "Analyzer", $"Auto-repaired {repaired} half-links ({failed} failed). Refreshing ALDB...");
+            await QueryAldbAsync(silent: true);
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = $"Batch fix error: {ex.Message}";
+            AddLog(LogLevel.Error, "Analyzer", $"Batch fix failed: {ex.Message}");
+        }
+        finally
+        {
+            IsLoading = false;
+        }
+    }
+
+    public void StageAllAnalyzerFixes()
+    {
+        var fixable = NetworkIssues.Where(i => i.CanAutoFix || !string.IsNullOrEmpty(i.MemAddr)).ToList();
+        if (fixable.Count == 0)
+        {
+            StatusMessage = "No fixable analyzer issues to stage.";
+            return;
+        }
+
+        int count = 0;
+        foreach (var issue in fixable)
+        {
+            string stageId = $"FIX-{issue.Id}";
+            if (StagedChanges.Any(sc => sc.Id == stageId)) continue;
+
+            StageNetworkIssueFix(issue);
+            count++;
+        }
+
+        StatusMessage = $"Staged {count} analyzer fixes in Pending Changes.";
+        AddLog(LogLevel.Info, "Staging", $"Staged {count} analyzer fixes for network repair.");
+        SelectedTabIndex = 4;
     }
 }
 

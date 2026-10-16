@@ -354,6 +354,19 @@ public class InsteonApiClient
             return (false, $"Error adding device: {ex.Message}", null);
         }
     }
+
+    public async Task<NetworkAnalysisReportModel?> AnalyzeNetworkAsync()
+    {
+        try
+        {
+            return await _httpClient.GetFromJsonAsync<NetworkAnalysisReportModel>($"{_baseUrl}/insteon/network/analyze");
+        }
+        catch
+        {
+            return null;
+        }
+    }
 }
+
 
 

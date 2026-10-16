@@ -1254,6 +1254,85 @@
                                                         </DockPanel>
                                                     </Border>
 
+                                                    <!-- KEYPAD BUTTON / KEY MAPPING PANEL -->
+                                                    <Border Background="#1E1E2E" CornerRadius="6" Padding="14,10" Margin="0,0,0,12" BorderBrush="#89B4FA" BorderThickness="1">
+                                                        <Border.Style>
+                                                            <Style TargetType="Border">
+                                                                <Setter Property="Visibility" Value="Collapsed" />
+                                                                <Style.Triggers>
+                                                                    <DataTrigger Binding="{Binding HasKeypadButtons}" Value="True">
+                                                                        <Setter Property="Visibility" Value="Visible" />
+                                                                    </DataTrigger>
+                                                                </Style.Triggers>
+                                                            </Style>
+                                                        </Border.Style>
+                                                        <StackPanel>
+                                                            <DockPanel LastChildFill="False" Margin="0,0,0,8">
+                                                                <StackPanel DockPanel.Dock="Left" Orientation="Horizontal" VerticalAlignment="Center">
+                                                                    <TextBlock Text="🔘 Physical Keypad / Remote Button Layout &amp; Scene Mapping" FontWeight="Bold" FontSize="12" Foreground="{StaticResource AccentBlue}" VerticalAlignment="Center" />
+                                                                    <Border Background="#2B3654" CornerRadius="4" Padding="6,2" Margin="8,0,0,0" VerticalAlignment="Center">
+                                                                        <TextBlock Text="Hardware Keys ➔ Insteon Groups" FontSize="10" Foreground="#89DCEB" FontWeight="SemiBold" />
+                                                                    </Border>
+                                                                </StackPanel>
+                                                                <TextBlock DockPanel.Dock="Right" Text="Each key broadcasts its assigned group to linked responders" FontSize="11" Foreground="{StaticResource TextMuted}" VerticalAlignment="Center" />
+                                                            </DockPanel>
+
+                                                            <!-- Buttons WrapPanel -->
+                                                            <ItemsControl ItemsSource="{Binding KeypadButtons}">
+                                                                <ItemsControl.ItemsPanel>
+                                                                    <ItemsPanelTemplate>
+                                                                        <WrapPanel Orientation="Horizontal" />
+                                                                    </ItemsPanelTemplate>
+                                                                </ItemsControl.ItemsPanel>
+                                                                <ItemsControl.ItemTemplate>
+                                                                    <DataTemplate DataType="{x:Type models:KeypadButtonSummaryModel}">
+                                                                        <Border Background="#24273A" CornerRadius="6" Padding="10,8" Margin="0,0,10,8" BorderBrush="#363A4F" BorderThickness="1" MinWidth="220" MaxWidth="300">
+                                                                            <StackPanel>
+                                                                                <DockPanel LastChildFill="False" Margin="0,0,0,4">
+                                                                                    <StackPanel DockPanel.Dock="Left" Orientation="Horizontal" VerticalAlignment="Center">
+                                                                                        <Border Background="#313244" CornerRadius="3" Padding="5,2" Margin="0,0,6,0">
+                                                                                            <TextBlock Text="{Binding KeyLabel}" FontWeight="Bold" FontSize="11" Foreground="{StaticResource AccentAmber}" />
+                                                                                        </Border>
+                                                                                        <Border Background="#181825" CornerRadius="3" Padding="4,2">
+                                                                                            <TextBlock Text="{Binding Group, StringFormat='Grp {0}'}" FontSize="10" Foreground="{StaticResource AccentBlue}" FontWeight="SemiBold" />
+                                                                                        </Border>
+                                                                                    </StackPanel>
+                                                                                    <Border DockPanel.Dock="Right" CornerRadius="3" Padding="4,2">
+                                                                                        <Border.Style>
+                                                                                            <Style TargetType="Border">
+                                                                                                <Setter Property="Background" Value="#2E4035" />
+                                                                                                <Style.Triggers>
+                                                                                                    <DataTrigger Binding="{Binding HasControlledDevices}" Value="False">
+                                                                                                        <Setter Property="Background" Value="#313244" />
+                                                                                                    </DataTrigger>
+                                                                                                </Style.Triggers>
+                                                                                            </Style>
+                                                                                        </Border.Style>
+                                                                                        <TextBlock FontSize="10" FontWeight="SemiBold">
+                                                                                            <TextBlock.Style>
+                                                                                                <Style TargetType="TextBlock">
+                                                                                                    <Setter Property="Text" Value="{Binding ControlledDevicesCount, StringFormat='🔗 {0} Links'}" />
+                                                                                                    <Setter Property="Foreground" Value="{StaticResource AccentGreen}" />
+                                                                                                    <Style.Triggers>
+                                                                                                        <DataTrigger Binding="{Binding HasControlledDevices}" Value="False">
+                                                                                                            <Setter Property="Text" Value="Unlinked" />
+                                                                                                            <Setter Property="Foreground" Value="{StaticResource TextMuted}" />
+                                                                                                        </DataTrigger>
+                                                                                                    </Style.Triggers>
+                                                                                                </Style>
+                                                                                            </TextBlock.Style>
+                                                                                        </TextBlock>
+                                                                                    </Border>
+                                                                                </DockPanel>
+                                                                                <TextBlock Text="{Binding ControlledDevicesSummary}" FontSize="10" Foreground="{StaticResource TextMuted}" TextWrapping="Wrap" MaxHeight="32" TextTrimming="CharacterEllipsis" Margin="0,2,0,0" />
+                                                                            </StackPanel>
+                                                                        </Border>
+                                                                    </DataTemplate>
+                                                                </ItemsControl.ItemTemplate>
+                                                            </ItemsControl>
+                                                        </StackPanel>
+                                                    </Border>
+
                                                     <!-- CONTROLLER RECORDS SECTION -->
                                                     <Expander IsExpanded="True" Margin="0,0,0,10">
                                                         <Expander.Header>
@@ -1312,6 +1391,11 @@
                                                                                                 </Style>
                                                                                             </Border.Style>
                                                                                             <TextBlock Text="{Binding Group, StringFormat='Grp {0}'}" FontSize="10" FontWeight="Bold" Foreground="#11111B" />
+                                                                                        </Border>
+                                                                                        <Border Background="#2B3654" BorderBrush="#89DCEB" BorderThickness="1" CornerRadius="4" Padding="4,1" Margin="4,0,0,0"
+                                                                                                Visibility="{Binding HasKeypadButton, Converter={StaticResource BoolToVis}}"
+                                                                                                ToolTip="Physical Keypad button mapped to this Insteon Group">
+                                                                                            <TextBlock Text="{Binding KeypadButtonLabel}" FontSize="9" FontWeight="Bold" Foreground="#89DCEB" />
                                                                                         </Border>
                                                                                         <Border Background="#3B2A20" BorderBrush="#F9E2AF" BorderThickness="1" CornerRadius="4" Padding="4,1" Margin="4,0,0,0"
                                                                                                 Visibility="{Binding HasIssue, Converter={StaticResource BoolToVis}}"
@@ -1400,6 +1484,11 @@
                                                                                                 </Style>
                                                                                             </Border.Style>
                                                                                             <TextBlock Text="{Binding Group, StringFormat='Grp {0}'}" FontSize="10" FontWeight="Bold" Foreground="#11111B" />
+                                                                                        </Border>
+                                                                                        <Border Background="#2B3654" BorderBrush="#89DCEB" BorderThickness="1" CornerRadius="4" Padding="4,1" Margin="4,0,0,0"
+                                                                                                Visibility="{Binding HasKeypadButton, Converter={StaticResource BoolToVis}}"
+                                                                                                ToolTip="Physical Keypad button mapped to this Insteon Group">
+                                                                                            <TextBlock Text="{Binding KeypadButtonLabel}" FontSize="9" FontWeight="Bold" Foreground="#89DCEB" />
                                                                                         </Border>
                                                                                         <Border Background="#3B2A20" BorderBrush="#F9E2AF" BorderThickness="1" CornerRadius="4" Padding="4,1" Margin="4,0,0,0"
                                                                                                 Visibility="{Binding HasIssue, Converter={StaticResource BoolToVis}}"
@@ -2342,6 +2431,233 @@
                                 <TextBlock Grid.Row="3" Text="* Verified atomic deletion: Marks records in_use=false on both devices and updates local snapshot." FontSize="11" Foreground="#6C7086" FontStyle="Italic" />
                             </Grid>
                         </Border>
+
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+
+            <!-- TAB 8: Network Health Analyzer -->
+            <TabItem Header="🩺 Network Health Analyzer">
+                <ScrollViewer VerticalScrollBarVisibility="Auto" Background="{StaticResource DarkSurface}">
+                    <StackPanel Margin="24" MaxWidth="1150" HorizontalAlignment="Left">
+                        
+                        <!-- Header Banner -->
+                        <DockPanel LastChildFill="False" Margin="0,0,0,20">
+                            <StackPanel DockPanel.Dock="Left">
+                                <TextBlock Text="🩺 Insteon Network Health &amp; Topology Analyzer" FontSize="20" FontWeight="Bold" Foreground="{StaticResource AccentBlue}" />
+                                <TextBlock Text="Deep inspection of All-Link Database link reciprocity, orphan loopbacks, ghost targets, and broken scenes." FontSize="12" Foreground="{StaticResource TextMuted}" Margin="0,4,0,0" />
+                            </StackPanel>
+                            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+                                <Button Content="🔄 Re-Analyze Network" 
+                                        Command="{Binding AnalyzeNetworkCommand}"
+                                        Background="#313244" Foreground="{StaticResource TextPrimary}" 
+                                        Margin="0,0,10,0" Padding="14,8"
+                                        ToolTip="Perform a fresh diagnostic scan of the entire Insteon network topology" />
+                                <Button Content="⚡ Auto-Fix All Half-Links" 
+                                        Command="{Binding FixAllHalfLinksCommand}"
+                                        Style="{StaticResource PrimaryButtonStyle}" 
+                                        Margin="0,0,10,0" Padding="14,8"
+                                        ToolTip="Automatically repair all one-way half-links by generating missing reciprocal responder records" />
+                                <Button Content="📋 Stage All Fixes" 
+                                        Command="{Binding StageAllAnalyzerFixesCommand}"
+                                        Background="#2B3654" Foreground="#89DCEB" BorderBrush="#89DCEB" BorderThickness="1"
+                                        Padding="14,8" FontWeight="SemiBold"
+                                        ToolTip="Stage all proposed analyzer corrections into 'Pending Changes' for safety verification" />
+                            </StackPanel>
+                        </DockPanel>
+
+                        <!-- Health Score & Metric Summary Cards -->
+                        <Grid Margin="0,0,0,20">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="280" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+
+                            <!-- Health Score Card -->
+                            <Border Grid.Column="0" Background="{StaticResource DarkSurfaceLight}" CornerRadius="8" Padding="20" Margin="0,0,16,0" BorderBrush="#45475A" BorderThickness="1">
+                                <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
+                                    <TextBlock Text="NETWORK HEALTH SCORE" FontSize="11" FontWeight="Bold" Foreground="{StaticResource TextMuted}" HorizontalAlignment="Center" Margin="0,0,0,8" />
+                                    <TextBlock Text="{Binding NetworkHealthScore, StringFormat='{}{0}%'}" FontSize="54" FontWeight="Bold" Foreground="{Binding NetworkHealthColor}" HorizontalAlignment="Center" />
+                                    <Border Background="#181825" CornerRadius="12" Padding="12,4" Margin="0,8,0,0" HorizontalAlignment="Center">
+                                        <TextBlock Text="{Binding NetworkHealthStatus}" FontSize="12" FontWeight="SemiBold" Foreground="{Binding NetworkHealthColor}" />
+                                    </Border>
+                                    <TextBlock Text="{Binding AnalyzerTotalIssuesCount, StringFormat='{}{0} anomalies require attention'}" FontSize="11" Foreground="{StaticResource TextMuted}" HorizontalAlignment="Center" Margin="0,8,0,0" />
+                                </StackPanel>
+                            </Border>
+
+                            <!-- Breakdown Stat Chips Grid -->
+                            <Grid Grid.Column="1">
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="*" />
+                                    <RowDefinition Height="*" />
+                                </Grid.RowDefinitions>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+
+                                <!-- Half Links -->
+                                <Border Grid.Row="0" Grid.Column="0" Background="{StaticResource DarkSurfaceLight}" CornerRadius="8" Padding="16" Margin="0,0,8,8" BorderBrush="#45475A" BorderThickness="1">
+                                    <DockPanel LastChildFill="False">
+                                        <StackPanel DockPanel.Dock="Left">
+                                            <TextBlock Text="🔗 Broken Half-Links" FontSize="12" FontWeight="Bold" Foreground="#F38BA8" />
+                                            <TextBlock Text="Unreciprocated 1-way links; causes radio retries" FontSize="10" Foreground="{StaticResource TextMuted}" Margin="0,3,0,0" />
+                                        </StackPanel>
+                                        <TextBlock DockPanel.Dock="Right" Text="{Binding AnalyzerHalfLinksCount}" FontSize="26" FontWeight="Bold" Foreground="#F38BA8" VerticalAlignment="Center" />
+                                    </DockPanel>
+                                </Border>
+
+                                <!-- Loopbacks -->
+                                <Border Grid.Row="0" Grid.Column="1" Background="{StaticResource DarkSurfaceLight}" CornerRadius="8" Padding="16" Margin="8,0,0,8" BorderBrush="#45475A" BorderThickness="1">
+                                    <DockPanel LastChildFill="False">
+                                        <StackPanel DockPanel.Dock="Left">
+                                            <TextBlock Text="🔄 Self-Loopbacks" FontSize="12" FontWeight="Bold" Foreground="#F9E2AF" />
+                                            <TextBlock Text="Slots pointing to device's own address" FontSize="10" Foreground="{StaticResource TextMuted}" Margin="0,3,0,0" />
+                                        </StackPanel>
+                                        <TextBlock DockPanel.Dock="Right" Text="{Binding AnalyzerLoopbacksCount}" FontSize="26" FontWeight="Bold" Foreground="#F9E2AF" VerticalAlignment="Center" />
+                                    </DockPanel>
+                                </Border>
+
+                                <!-- Missing Default Links -->
+                                <Border Grid.Row="1" Grid.Column="0" Background="{StaticResource DarkSurfaceLight}" CornerRadius="8" Padding="16" Margin="0,8,8,0" BorderBrush="#45475A" BorderThickness="1">
+                                    <DockPanel LastChildFill="False">
+                                        <StackPanel DockPanel.Dock="Left">
+                                            <TextBlock Text="🛡️ Missing Default Links" FontSize="12" FontWeight="Bold" Foreground="#89B4FA" />
+                                            <TextBlock Text="Devices lacking reciprocal PLM modem link" FontSize="10" Foreground="{StaticResource TextMuted}" Margin="0,3,0,0" />
+                                        </StackPanel>
+                                        <TextBlock DockPanel.Dock="Right" Text="{Binding AnalyzerMissingPlmCount}" FontSize="26" FontWeight="Bold" Foreground="#89B4FA" VerticalAlignment="Center" />
+                                    </DockPanel>
+                                </Border>
+
+                                <!-- Ghost Targets -->
+                                <Border Grid.Row="1" Grid.Column="1" Background="{StaticResource DarkSurfaceLight}" CornerRadius="8" Padding="16" Margin="8,8,0,0" BorderBrush="#45475A" BorderThickness="1">
+                                    <DockPanel LastChildFill="False">
+                                        <StackPanel DockPanel.Dock="Left">
+                                            <TextBlock Text="👻 Ghost Targets" FontSize="12" FontWeight="Bold" Foreground="#A6ADC8" />
+                                            <TextBlock Text="Links targeting non-existent devices" FontSize="10" Foreground="{StaticResource TextMuted}" Margin="0,3,0,0" />
+                                        </StackPanel>
+                                        <TextBlock DockPanel.Dock="Right" Text="{Binding AnalyzerGhostCount}" FontSize="26" FontWeight="Bold" Foreground="#A6ADC8" VerticalAlignment="Center" />
+                                    </DockPanel>
+                                </Border>
+                            </Grid>
+                        </Grid>
+
+                        <!-- Filter Bar -->
+                        <Border Background="{StaticResource DarkSurfaceLight}" CornerRadius="8" Padding="12,8" Margin="0,0,0,16" BorderBrush="#313244" BorderThickness="1">
+                            <DockPanel LastChildFill="False">
+                                <StackPanel DockPanel.Dock="Left" Orientation="Horizontal" VerticalAlignment="Center">
+                                    <TextBlock Text="Filter Anomalies:" FontWeight="SemiBold" FontSize="11" Foreground="{StaticResource TextMuted}" VerticalAlignment="Center" Margin="0,0,12,0" />
+                                    
+                                    <RadioButton Content="All Issues" GroupName="AnalyzerFilterGroup"
+                                                 IsChecked="True"
+                                                 Command="{Binding FilterAnalyzerCommand}" CommandParameter="All"
+                                                 Margin="0,0,10,0" Foreground="{StaticResource TextPrimary}" />
+                                    <RadioButton Content="Broken Half-Links" GroupName="AnalyzerFilterGroup"
+                                                 Command="{Binding FilterAnalyzerCommand}" CommandParameter="half_link"
+                                                 Margin="0,0,10,0" Foreground="#F38BA8" />
+                                    <RadioButton Content="Self Loopbacks" GroupName="AnalyzerFilterGroup"
+                                                 Command="{Binding FilterAnalyzerCommand}" CommandParameter="loopback"
+                                                 Margin="0,0,10,0" Foreground="#F9E2AF" />
+                                    <RadioButton Content="Keypad Mismatches" GroupName="AnalyzerFilterGroup"
+                                                 Command="{Binding FilterAnalyzerCommand}" CommandParameter="keypad"
+                                                 Margin="0,0,10,0" Foreground="#89DCEB" />
+                                    <RadioButton Content="Missing PLM Links" GroupName="AnalyzerFilterGroup"
+                                                 Command="{Binding FilterAnalyzerCommand}" CommandParameter="missing_default"
+                                                 Foreground="#89B4FA" />
+                                </StackPanel>
+
+                                <TextBlock DockPanel.Dock="Right" Text="{Binding FilteredNetworkIssues.Count, StringFormat='Showing {0} issue(s)'}" FontSize="11" Foreground="{StaticResource TextMuted}" VerticalAlignment="Center" />
+                            </DockPanel>
+                        </Border>
+
+                        <!-- Empty State (When perfectly healthy) -->
+                        <Border Background="{StaticResource DarkSurfaceLight}" CornerRadius="8" Padding="32" Margin="0,0,0,16" HorizontalAlignment="Center" MaxWidth="600">
+                            <Border.Style>
+                                <Style TargetType="Border">
+                                    <Setter Property="Visibility" Value="Collapsed" />
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding FilteredNetworkIssues.Count}" Value="0">
+                                            <Setter Property="Visibility" Value="Visible" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Border.Style>
+                            <StackPanel HorizontalAlignment="Center">
+                                <TextBlock Text="🎉 Perfect Link Reciprocity" FontSize="18" FontWeight="Bold" Foreground="{StaticResource AccentGreen}" HorizontalAlignment="Center" Margin="0,0,0,8" />
+                                <TextBlock Text="No anomalies or broken half-links detected in this category. All Insteon All-Link databases are synchronized and reciprocal." FontSize="12" Foreground="{StaticResource TextMuted}" TextWrapping="Wrap" TextAlignment="Center" />
+                            </StackPanel>
+                        </Border>
+
+                        <!-- Issues List -->
+                        <ItemsControl ItemsSource="{Binding FilteredNetworkIssues}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate DataType="{x:Type models:NetworkIssueItemModel}">
+                                    <Border Background="{StaticResource DarkSurfaceLight}" CornerRadius="8" Padding="16" Margin="0,0,0,12" BorderBrush="#45475A" BorderThickness="1">
+                                        <DockPanel LastChildFill="False">
+                                            <!-- Left: Issue Details -->
+                                            <StackPanel DockPanel.Dock="Left" MaxWidth="720">
+                                                <!-- Badges Row -->
+                                                <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                                                    <!-- Severity Badge -->
+                                                    <Border Background="{Binding SeverityBadgeBackground}" CornerRadius="4" Padding="6,2" Margin="0,0,6,0">
+                                                        <TextBlock Text="{Binding SeverityBadge}" FontSize="10" FontWeight="Bold" Foreground="{Binding SeverityBadgeForeground}" />
+                                                    </Border>
+                                                    <!-- Issue Type Badge -->
+                                                    <Border Background="#181825" CornerRadius="4" Padding="6,2" Margin="0,0,6,0">
+                                                        <TextBlock Text="{Binding IssueTypeBadge}" FontSize="10" FontWeight="SemiBold" Foreground="{StaticResource TextPrimary}" />
+                                                    </Border>
+                                                    <!-- Group Badge -->
+                                                    <Border Background="#89B4FA" CornerRadius="4" Padding="6,2" Margin="0,0,6,0">
+                                                        <TextBlock Text="{Binding Group, StringFormat='Group {0}'}" FontSize="10" FontWeight="Bold" Foreground="#11111B" />
+                                                    </Border>
+                                                    <!-- Memory Slot Badge -->
+                                                    <Border Background="#313244" CornerRadius="4" Padding="6,2" Visibility="{Binding HasMemAddr, Converter={StaticResource BoolToVis}}">
+                                                        <TextBlock Text="{Binding MemAddr, StringFormat='Slot: {0}'}" FontSize="10" Foreground="{StaticResource TextMuted}" />
+                                                    </Border>
+                                                </StackPanel>
+
+                                                <!-- Direction Title -->
+                                                <TextBlock Text="{Binding DirectionDisplay}" FontSize="14" FontWeight="Bold" Foreground="{StaticResource AccentBlue}" Margin="0,0,0,4" />
+
+                                                <!-- Issue Summary -->
+                                                <TextBlock Text="{Binding Summary}" FontSize="12" FontWeight="SemiBold" Foreground="{StaticResource TextPrimary}" Margin="0,0,0,4" TextWrapping="Wrap" />
+
+                                                <!-- Explanation -->
+                                                <TextBlock Text="{Binding Explanation}" FontSize="11" Foreground="{StaticResource TextMuted}" TextWrapping="Wrap" Margin="0,0,0,8" />
+                                            </StackPanel>
+
+                                            <!-- Right: Action Buttons -->
+                                            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+                                                <!-- Primary Recommended Action -->
+                                                <Button Content="{Binding FixLabel}" 
+                                                        Command="{Binding DataContext.FixNetworkIssueCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                        CommandParameter="{Binding}"
+                                                        Style="{StaticResource PrimaryButtonStyle}" 
+                                                        Padding="12,7" Margin="0,0,8,0"
+                                                        ToolTip="Immediately execute recommended fix (e.g. generate reciprocal link or purge invalid slot)" />
+
+                                                <!-- Secondary Action (e.g. Delete Slot) -->
+                                                <Button Content="{Binding SecondaryLabel}" 
+                                                        Command="{Binding DataContext.DeleteNetworkIssueSlotCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                        CommandParameter="{Binding}"
+                                                        Background="#3D2930" Foreground="#F38BA8" BorderBrush="#E78284" BorderThickness="1"
+                                                        Padding="10,7" Margin="0,0,8,0"
+                                                        Visibility="{Binding HasSecondaryAction, Converter={StaticResource BoolToVis}}"
+                                                        ToolTip="Delete this specific corrupt/invalid slot from the device's database" />
+
+                                                <!-- Stage Fix in Pending Changes -->
+                                                <Button Content="📋 Stage Fix" 
+                                                        Command="{Binding DataContext.StageNetworkIssueFixCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                        CommandParameter="{Binding}"
+                                                        Background="#2B3654" Foreground="#89DCEB" BorderBrush="#89DCEB" BorderThickness="1"
+                                                        Padding="10,7"
+                                                        ToolTip="Stage this fix in 'Pending Changes' for verification prior to execution" />
+                                            </StackPanel>
+                                        </DockPanel>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
 
                     </StackPanel>
                 </ScrollViewer>

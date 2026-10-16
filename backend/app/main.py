@@ -25,6 +25,7 @@ from app.models import (
     DeviceControlRequest,
     DeviceAddRequest,
     DefaultLinkAuditResponse,
+    NetworkAnalysisResponse,
 )
 from app.openhab import openhab_client
 from app.insteon import insteon_manager
@@ -379,6 +380,17 @@ async def add_device(req: DeviceAddRequest):
     except Exception as exc:
         logger.error(f"Error adding device {req.address}: {exc}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(exc))
+
+
+@app.get("/insteon/network/analyze", response_model=NetworkAnalysisResponse)
+async def analyze_network():
+    """Deep-dive diagnostic analysis of the Insteon network to detect half-links, loopbacks, and corruption."""
+    try:
+        return transaction_service.analyze_network()
+    except Exception as exc:
+        logger.error(f"Error analyzing network: {exc}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(exc))
+
 
 
 

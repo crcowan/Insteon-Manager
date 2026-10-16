@@ -162,3 +162,41 @@ class DefaultLinkAuditResponse(BaseModel):
     missing_count: int
     items: List[MissingDefaultLinkItem] = []
 
+
+class NetworkIssueItem(BaseModel):
+    id: str
+    issue_type: str  # half_link, loopback, missing_default, ghost, duplicate, group_zero
+    severity: str    # error, warning, info
+    owner_address: str
+    owner_name: str
+    mem_addr: Optional[str] = None
+    target_address: str
+    target_name: str
+    group: int
+    role: str  # Controller or Responder
+    summary: str
+    explanation: str
+    recommended_action: str  # create_reciprocal, delete_record, purge_ghost, create_default_link
+    fix_label: str = "⚡ Fix Link"
+    secondary_action: Optional[str] = "delete_record"
+    secondary_label: Optional[str] = "🗑️ Delete Link"
+    can_auto_fix: bool = True
+    data1: Optional[int] = 255
+    data2: Optional[int] = 28
+    data3: Optional[int] = 1
+
+
+class NetworkAnalysisResponse(BaseModel):
+    health_score: int  # 0 to 100
+    total_devices: int
+    total_active_records: int
+    total_issues: int
+    half_links_count: int
+    loopbacks_count: int
+    missing_defaults_count: int
+    ghosts_count: int
+    duplicates_count: int
+    group_zero_count: int
+    issues: List[NetworkIssueItem] = []
+
+
