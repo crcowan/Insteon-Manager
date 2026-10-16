@@ -77,16 +77,71 @@ public class SelectableDeviceItem : INotifyPropertyChanged
     }
 }
 
-public class OrganizedDeviceAldb
+public class OrganizedDeviceAldb : INotifyPropertyChanged
 {
-    public string Address { get; set; } = string.Empty;
-    public string FriendlyName { get; set; } = string.Empty;
-    public string DeviceType { get; set; } = string.Empty;
-    public bool IsModem { get; set; }
-    public bool IsBattery { get; set; }
-    public bool HasMissingDefaultLink { get; set; }
-    public string DefaultLinkIssue { get; set; } = string.Empty;
-    public string DefaultLinkRecommendation { get; set; } = string.Empty;
+    private string _address = string.Empty;
+    private string _friendlyName = string.Empty;
+    private string _deviceType = string.Empty;
+    private bool _isModem;
+    private bool _isBattery;
+    private bool _hasMissingDefaultLink;
+    private string _defaultLinkIssue = string.Empty;
+    private string _defaultLinkRecommendation = string.Empty;
+
+    public string Address
+    {
+        get => _address;
+        set => SetProperty(ref _address, value);
+    }
+
+    public string FriendlyName
+    {
+        get => _friendlyName;
+        set
+        {
+            if (SetProperty(ref _friendlyName, value))
+            {
+                OnPropertyChanged(nameof(DisplayTitle));
+            }
+        }
+    }
+
+    public string DeviceType
+    {
+        get => _deviceType;
+        set => SetProperty(ref _deviceType, value);
+    }
+
+    public bool IsModem
+    {
+        get => _isModem;
+        set => SetProperty(ref _isModem, value);
+    }
+
+    public bool IsBattery
+    {
+        get => _isBattery;
+        set => SetProperty(ref _isBattery, value);
+    }
+
+    public bool HasMissingDefaultLink
+    {
+        get => _hasMissingDefaultLink;
+        set => SetProperty(ref _hasMissingDefaultLink, value);
+    }
+
+    public string DefaultLinkIssue
+    {
+        get => _defaultLinkIssue;
+        set => SetProperty(ref _defaultLinkIssue, value);
+    }
+
+    public string DefaultLinkRecommendation
+    {
+        get => _defaultLinkRecommendation;
+        set => SetProperty(ref _defaultLinkRecommendation, value);
+    }
+
     public int TotalRecords => ControllerRecords.Count + ResponderRecords.Count + OtherRecords.Count;
     public int ControllerCount => ControllerRecords.Count;
     public int ResponderCount => ResponderRecords.Count;
@@ -98,6 +153,21 @@ public class OrganizedDeviceAldb
     public string DisplayTitle => string.IsNullOrWhiteSpace(FriendlyName) || FriendlyName.Equals($"Device {Address}", System.StringComparison.OrdinalIgnoreCase)
         ? Address
         : $"{FriendlyName} ({Address})";
+
+    public event PropertyChangedEventHandler? PropertyChanged;
+
+    protected bool SetProperty<T>(ref T field, T value, [CallerMemberName] string? propertyName = null)
+    {
+        if (Equals(field, value)) return false;
+        field = value;
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
+        return true;
+    }
+
+    protected void OnPropertyChanged([CallerMemberName] string? propertyName = null)
+    {
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
+    }
 }
 
 public class MissingDefaultLinkItemModel

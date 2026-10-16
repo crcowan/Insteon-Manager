@@ -1156,11 +1156,11 @@ public class MainViewModel : ViewModelBase
 
             ApplyFilter();
             BuildTopologyGraph(records, _currentDevices);
-            UpdateSelectableDevices(_currentDevices, records);
             AnalyzeGhostLinks(records);
             RebuildActiveLinkPairs(records);
             await LoadScenesAsync(silent: silent);
             await AuditDefaultLinksAsync(silent: silent);
+            UpdateSelectableDevices(_currentDevices, records);
 
             if (!silent)
             {
@@ -3019,6 +3019,25 @@ public class MainViewModel : ViewModelBase
 
             StatusMessage = $"Default PLM links created successfully for {name}.";
             AddLog(LogLevel.Success, "DefaultLink", $"Verified reciprocal default links created between PLM {plm} and {devAddr}.");
+
+            // Immediately clear missing default link state on the device card and audit collection
+            var targetOrg = OrganizedDevices.FirstOrDefault(o => o.Address.Equals(devAddr, StringComparison.OrdinalIgnoreCase));
+            if (targetOrg != null)
+            {
+                targetOrg.HasMissingDefaultLink = false;
+                targetOrg.DefaultLinkIssue = string.Empty;
+                targetOrg.DefaultLinkRecommendation = string.Empty;
+            }
+            var missingItem = MissingDefaultLinks.FirstOrDefault(m => m.DeviceAddress.Equals(devAddr, StringComparison.OrdinalIgnoreCase));
+            if (missingItem != null)
+            {
+                MissingDefaultLinks.Remove(missingItem);
+                OnPropertyChanged(nameof(MissingDefaultLinksCount));
+                OnPropertyChanged(nameof(HasMissingDefaultLinks));
+                OnPropertyChanged(nameof(DefaultLinkAuditStatusText));
+                StageFixAllDefaultLinksCommand?.NotifyCanExecuteChanged();
+            }
+
             await QueryAldbAsync(silent: true);
         }
         catch (Exception ex)
