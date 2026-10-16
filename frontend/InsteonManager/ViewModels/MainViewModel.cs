@@ -2275,10 +2275,31 @@ public class MainViewModel : ViewModelBase
                 await QueryAldbAsync(silent: true);
                 StatusMessage = $"Committed and verified {successCount} changes successfully (Failures: {failureCount}).";
                 AddLog(LogLevel.Success, "Commit", $"Topology map, ALDB tables, and scenes synchronized following commit of {successCount} changes.");
+                if (failureCount == 0)
+                {
+                    MessageBox.Show(
+                        $"Successfully committed and verified {successCount} changes across the network.",
+                        "Commit Succeeded",
+                        MessageBoxButton.OK,
+                        MessageBoxImage.Information);
+                }
+                else
+                {
+                    MessageBox.Show(
+                        $"Committed {successCount} changes, but {failureCount} changes failed to apply.\n\nPlease check the Event & Bridge Log tab for details.",
+                        "Commit Partial Success",
+                        MessageBoxButton.OK,
+                        MessageBoxImage.Warning);
+                }
             }
             else
             {
                 StatusMessage = $"Commit completed with {failureCount} failures.";
+                MessageBox.Show(
+                    $"Failed to commit {failureCount} staged changes.\n\nPlease check the Event & Bridge Log tab for details.",
+                    "Commit Failed",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Error);
             }
         }
         catch (Exception ex)
@@ -3427,6 +3448,41 @@ public class MainViewModel : ViewModelBase
                     message = res.Message;
                 }
             }
+            else if (issue.RecommendedAction == "create_default_link")
+            {
+                string devAddr = issue.OwnerAddress;
+                string plm = PlmModemAddress;
+                var req1 = new ReciprocalLinkRequestModel
+                {
+                    ControllerAddress = plm,
+                    ResponderAddress = devAddr,
+                    Group = 1,
+                    Data1 = 255,
+                    Data2 = 28,
+                    Data3 = 1
+                };
+                var (s1, m1) = await _apiClient.CreateReciprocalLinkAsync(req1);
+                if (!s1)
+                {
+                    success = false;
+                    message = m1;
+                }
+                else
+                {
+                    var req2 = new ReciprocalLinkRequestModel
+                    {
+                        ControllerAddress = devAddr,
+                        ResponderAddress = plm,
+                        Group = 1,
+                        Data1 = 255,
+                        Data2 = 28,
+                        Data3 = 1
+                    };
+                    var res2 = await _apiClient.CreateReciprocalLinkAsync(req2);
+                    success = res2.Success;
+                    message = res2.Message;
+                }
+            }
             else if (issue.RecommendedAction == "purge_ghost")
             {
                 var res = await _apiClient.PurgeGhostLinksAsync(issue.TargetAddress);
@@ -3503,16 +3559,40 @@ public class MainViewModel : ViewModelBase
     {
         if (issue == null) return;
 
+        string proposedState;
+        if (issue.RecommendedAction == "create_reciprocal")
+        {
+            proposedState = $"Create reciprocal link between Controller {issue.ControllerAddress} ({issue.ControllerName}) and Responder {issue.ResponderAddress} ({issue.ResponderName}) on Group {issue.Group}";
+        }
+        else if (issue.RecommendedAction == "create_default_link")
+        {
+            proposedState = $"Establish default bidirectional Group 1 links with PLM {PlmModemAddress}";
+        }
+        else if (issue.RecommendedAction == "purge_ghost")
+        {
+            proposedState = $"Purge all references to decommissioned device {issue.TargetAddress}";
+        }
+        else
+        {
+            proposedState = $"Mark slot {issue.MemAddr} on {issue.OwnerAddress} ({issue.OwnerName}) as deleted";
+        }
+
+        string targetAddress = !string.IsNullOrEmpty(issue.ControllerAddress) && !string.IsNullOrEmpty(issue.ResponderAddress)
+            ? $"{issue.ControllerAddress} ⇄ {issue.ResponderAddress}"
+            : $"{issue.OwnerAddress} ⇄ {(string.IsNullOrEmpty(issue.TargetAddress) ? PlmModemAddress : issue.TargetAddress)}";
+
+        string targetLabel = !string.IsNullOrEmpty(issue.ControllerName) && !string.IsNullOrEmpty(issue.ResponderName)
+            ? $"{issue.ControllerName} ⇄ {issue.ResponderName}"
+            : $"{issue.OwnerName} ⇄ {(string.IsNullOrEmpty(issue.TargetName) ? "PLM" : issue.TargetName)}";
+
         var staged = new StagedChangeModel
         {
             Id = $"FIX-{issue.Id}",
-            TargetAddress = $"{issue.ControllerAddress} ⇄ {issue.ResponderAddress}",
-            TargetLabel = $"{issue.ControllerName} ⇄ {issue.ResponderName}",
+            TargetAddress = targetAddress,
+            TargetLabel = targetLabel,
             Operation = issue.RecommendedAction.ToUpperInvariant(),
             CurrentState = $"{issue.IssueTypeBadge}: {issue.Summary}",
-            ProposedState = issue.RecommendedAction == "create_reciprocal"
-                ? $"Create reciprocal link between Controller {issue.ControllerAddress} ({issue.ControllerName}) and Responder {issue.ResponderAddress} ({issue.ResponderName}) on Group {issue.Group}"
-                : $"Mark slot {issue.MemAddr} on {issue.OwnerAddress} as deleted",
+            ProposedState = proposedState,
             Description = issue.Explanation,
             Risk = issue.Severity == "error" ? ChangeRisk.Medium : ChangeRisk.Low,
             ExecutionHandler = async () =>
@@ -3529,6 +3609,33 @@ public class MainViewModel : ViewModelBase
                         Data3 = issue.Data3
                     };
                     return await _apiClient.CreateReciprocalLinkAsync(req);
+                }
+                else if (issue.RecommendedAction == "create_default_link")
+                {
+                    string devAddr = issue.OwnerAddress;
+                    string plm = PlmModemAddress;
+                    var req1 = new ReciprocalLinkRequestModel
+                    {
+                        ControllerAddress = plm,
+                        ResponderAddress = devAddr,
+                        Group = 1,
+                        Data1 = 255,
+                        Data2 = 28,
+                        Data3 = 1
+                    };
+                    var (s1, m1) = await _apiClient.CreateReciprocalLinkAsync(req1);
+                    if (!s1) return (false, m1);
+
+                    var req2 = new ReciprocalLinkRequestModel
+                    {
+                        ControllerAddress = devAddr,
+                        ResponderAddress = plm,
+                        Group = 1,
+                        Data1 = 255,
+                        Data2 = 28,
+                        Data3 = 1
+                    };
+                    return await _apiClient.CreateReciprocalLinkAsync(req2);
                 }
                 else if (issue.RecommendedAction == "delete_record" && !string.IsNullOrEmpty(issue.MemAddr))
                 {
