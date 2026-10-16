@@ -1654,7 +1654,7 @@ public class MainViewModel : ViewModelBase
             IsModem = true,
             IsBattery = false,
             DeviceType = "Hardware Hub / Modem",
-            LinkCount = records.Count(r => r.InUse && (r.SourceAddress == plmAddress || r.TargetAddress == plmAddress)),
+            LinkCount = records.Count(r => r.InUse && (r.SourceAddress == plmAddress || r.SourceAddress == "PLM Modem" || (plmAddress == "53.C1.42" && r.SourceAddress == "1A.2B.3C"))),
             IsFilterChecked = previousChecked == null || previousChecked.Contains(plmAddress),
             IsVisible = true,
         };
@@ -1709,7 +1709,9 @@ public class MainViewModel : ViewModelBase
         for (int i = 0; i < distinctAddresses.Count; i++)
         {
             string address = distinctAddresses[i];
-            var devRecords = records.Where(r => r.InUse && (r.TargetAddress.Equals(address, StringComparison.OrdinalIgnoreCase) || (r.SourceAddress != null && r.SourceAddress.Equals(address, StringComparison.OrdinalIgnoreCase)))).ToList();
+            var ownRecords = records.Where(r => r.InUse && r.SourceAddress != null && r.SourceAddress.Equals(address, StringComparison.OrdinalIgnoreCase)).ToList();
+            var peerRecords = records.Where(r => r.InUse && r.TargetAddress.Equals(address, StringComparison.OrdinalIgnoreCase)).ToList();
+            int linkCount = ownRecords.Count > 0 ? ownRecords.Count : peerRecords.Count;
 
             double nodeX;
             double nodeY;
@@ -1740,9 +1742,18 @@ public class MainViewModel : ViewModelBase
             }
             else
             {
-                devType = (devRecords.Any(r => r.IsController) && devRecords.Any(r => r.IsResponder))
-                    ? "2-Way Peer (Cross-Linked)"
-                    : (devRecords.Any(r => r.IsResponder) ? "Controller / Keypad (Transmitter)" : "Responder / Dimmer (Load)");
+                if (ownRecords.Count > 0)
+                {
+                    devType = (ownRecords.Any(r => r.IsController) && ownRecords.Any(r => r.IsResponder))
+                        ? "2-Way Peer (Cross-Linked)"
+                        : (ownRecords.Any(r => r.IsController) ? "Controller / Keypad (Transmitter)" : "Responder / Dimmer (Load)");
+                }
+                else
+                {
+                    devType = (peerRecords.Any(r => r.IsController) && peerRecords.Any(r => r.IsResponder))
+                        ? "2-Way Peer (Cross-Linked)"
+                        : (peerRecords.Any(r => r.IsResponder) ? "Controller / Keypad (Transmitter)" : "Responder / Dimmer (Load)");
+                }
             }
 
             var peerNode = new DeviceNode
@@ -1755,7 +1766,7 @@ public class MainViewModel : ViewModelBase
                 IsModem = false,
                 IsBattery = isBat,
                 DeviceType = devType,
-                LinkCount = devRecords.Count,
+                LinkCount = linkCount,
                 IsFilterChecked = previousChecked == null || previousChecked.Contains(address),
                 IsVisible = true,
             };

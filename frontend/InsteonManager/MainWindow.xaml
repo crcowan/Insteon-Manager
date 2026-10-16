@@ -766,7 +766,8 @@
                                                         </StackPanel>
 
                                                         <!-- Link Count Badge -->
-                                                        <Border DockPanel.Dock="Right" Background="#45475A" CornerRadius="4" Padding="6,2">
+                                                        <Border DockPanel.Dock="Right" Background="#45475A" CornerRadius="4" Padding="6,2"
+                                                                ToolTip="Active records stored in this device's All-Link Database (ALDB)">
                                                             <TextBlock Text="{Binding LinkCount, StringFormat='Links: {0}'}" FontSize="10" Foreground="{StaticResource TextPrimary}" />
                                                         </Border>
                                                     </DockPanel>
@@ -947,7 +948,8 @@
                                                     <CheckBox IsChecked="{Binding IsFilterChecked}" VerticalAlignment="Center" Margin="0,0,8,0" DockPanel.Dock="Left" />
                                                     
                                                     <!-- Link Count Badge (Docked Right) -->
-                                                    <Border DockPanel.Dock="Right" Background="#313244" CornerRadius="4" Padding="6,2" VerticalAlignment="Center">
+                                                    <Border DockPanel.Dock="Right" Background="#313244" CornerRadius="4" Padding="6,2" VerticalAlignment="Center"
+                                                            ToolTip="Active records stored in this device's All-Link Database (ALDB)">
                                                         <TextBlock Text="{Binding LinkCount, StringFormat='{}{0} links'}" FontSize="10" Foreground="{StaticResource TextMuted}" />
                                                     </Border>
 

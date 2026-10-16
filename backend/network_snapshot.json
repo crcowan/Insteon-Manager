@@ -19,9 +19,9 @@
         "is_responder": true,
         "in_use": true,
         "high_water_mark": false,
-        "data1": 0,
-        "data2": 0,
-        "data3": 0,
+        "data1": 255,
+        "data2": 28,
+        "data3": 1,
         "raw_mode": "Responder"
       },
       {
@@ -474,9 +474,9 @@
         "is_responder": true,
         "in_use": true,
         "high_water_mark": false,
-        "data1": 0,
-        "data2": 0,
-        "data3": 0,
+        "data1": 255,
+        "data2": 28,
+        "data3": 1,
         "raw_mode": "Responder"
       },
       {
@@ -1206,6 +1206,58 @@
         "data2": 0,
         "data3": 0,
         "raw_mode": "Responder (Deleted)"
+      },
+      {
+        "mem_addr": "0x1D1F",
+        "target_address": "18.96.F5",
+        "group": 1,
+        "is_controller": true,
+        "is_responder": false,
+        "in_use": true,
+        "high_water_mark": false,
+        "data1": 255,
+        "data2": 28,
+        "data3": 1,
+        "raw_mode": "Controller"
+      },
+      {
+        "mem_addr": "0x1D17",
+        "target_address": "1C.2C.40",
+        "group": 1,
+        "is_controller": true,
+        "is_responder": false,
+        "in_use": true,
+        "high_water_mark": false,
+        "data1": 255,
+        "data2": 28,
+        "data3": 1,
+        "raw_mode": "Controller"
+      },
+      {
+        "mem_addr": "0x1D0F",
+        "target_address": "11.22.33",
+        "group": 1,
+        "is_controller": true,
+        "is_responder": false,
+        "in_use": true,
+        "high_water_mark": false,
+        "data1": 255,
+        "data2": 28,
+        "data3": 1,
+        "raw_mode": "Controller"
+      },
+      {
+        "mem_addr": "0x1D07",
+        "target_address": "11.22.33",
+        "group": 1,
+        "is_controller": false,
+        "is_responder": true,
+        "in_use": true,
+        "high_water_mark": false,
+        "data1": 255,
+        "data2": 28,
+        "data3": 1,
+        "raw_mode": "Responder"
       }
     ]
   },
@@ -1785,6 +1837,32 @@
           "data2": 28,
           "data3": 1,
           "raw_mode": "Responder"
+        },
+        {
+          "mem_addr": "0x0FBF",
+          "target_address": "53.C1.42",
+          "group": 1,
+          "is_controller": false,
+          "is_responder": true,
+          "in_use": true,
+          "high_water_mark": false,
+          "data1": 255,
+          "data2": 28,
+          "data3": 1,
+          "raw_mode": "Responder"
+        },
+        {
+          "mem_addr": "0x0FB7",
+          "target_address": "53.C1.42",
+          "group": 1,
+          "is_controller": true,
+          "is_responder": false,
+          "in_use": true,
+          "high_water_mark": false,
+          "data1": 255,
+          "data2": 28,
+          "data3": 1,
+          "raw_mode": "Controller"
         }
       ]
     },
@@ -2827,9 +2905,9 @@
           "is_responder": false,
           "in_use": true,
           "high_water_mark": false,
-          "data1": 3,
-          "data2": 0,
-          "data3": 0,
+          "data1": 255,
+          "data2": 28,
+          "data3": 1,
           "raw_mode": "Controller"
         },
         {
@@ -2896,6 +2974,19 @@
           "data2": 0,
           "data3": 0,
           "raw_mode": "Responder (Deleted)"
+        },
+        {
+          "mem_addr": "0x0EBF",
+          "target_address": "53.C1.42",
+          "group": 1,
+          "is_controller": false,
+          "is_responder": true,
+          "in_use": true,
+          "high_water_mark": false,
+          "data1": 255,
+          "data2": 28,
+          "data3": 1,
+          "raw_mode": "Responder"
         }
       ]
     },
@@ -5044,6 +5135,46 @@
           "raw_mode": "Responder (Deleted)"
         }
       ]
+    },
+    {
+      "address": "11.22.33",
+      "cat": 1,
+      "subcat": 32,
+      "firmware": 0,
+      "description": "Banana",
+      "label": "Banana",
+      "is_battery": false,
+      "records_count": 0,
+      "records": [
+        {
+          "mem_addr": "0x0FFF",
+          "target_address": "53.C1.42",
+          "group": 1,
+          "is_controller": false,
+          "is_responder": true,
+          "in_use": true,
+          "high_water_mark": false,
+          "data1": 255,
+          "data2": 28,
+          "data3": 1,
+          "raw_mode": "Responder"
+        },
+        {
+          "mem_addr": "0x0FF7",
+          "target_address": "53.C1.42",
+          "group": 1,
+          "is_controller": true,
+          "is_responder": false,
+          "in_use": true,
+          "high_water_mark": false,
+          "data1": 255,
+          "data2": 28,
+          "data3": 1,
+          "raw_mode": "Controller"
+        }
+      ],
+      "status": "OK",
+      "db_delta": 1
     }
   ],
   "stats": {

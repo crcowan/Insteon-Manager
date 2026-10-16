@@ -32,7 +32,7 @@ class OpenhabClient:
         """Fetch current status and enabled state of the Insteon Thing."""
         url = f"{self.base_url}/rest/things/{self.thing_uid}"
         try:
-            async with httpx.AsyncClient(timeout=5.0) as client:
+            async with httpx.AsyncClient(timeout=1.5) as client:
                 resp = await client.get(url, headers=self._get_headers())
                 if resp.status_code == 200:
                     data = resp.json()
