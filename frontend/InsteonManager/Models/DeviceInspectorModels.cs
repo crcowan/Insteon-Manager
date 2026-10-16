@@ -197,6 +197,16 @@ public class OrganizedAldbEntry
     public string DecodedSummary { get; set; } = string.Empty;
     public string StatusBadge { get; set; } = "Active";
 
+    public bool IsDuplicate { get; set; }
+    public bool IsGroupZero { get; set; }
+    public bool HasIssue => IsDuplicate || IsGroupZero;
+    public string IssueBadge => (IsDuplicate && IsGroupZero) 
+        ? "⚠️ Duplicate Grp 0" 
+        : (IsDuplicate ? "⚠️ Duplicate Link" : (IsGroupZero ? "⚠️ Orphan Grp 0" : string.Empty));
+    public string IssueTooltip => IsDuplicate 
+        ? "Redundant duplicate record: An active link already exists for this same target device and group. Cleaning this up frees EEPROM space and eliminates repetitive All-Link retry traffic."
+        : (IsGroupZero ? "Group 0 is an invalid Insteon scene (scenes are Group 1-255). This is an orphaned/corrupted link or aborted handshake leftover from older software." : string.Empty);
+
     public string DataHex => $"D1: 0x{Data1:X2}  D2: 0x{Data2:X2}  D3: 0x{Data3:X2}";
     public string TargetDisplay => string.IsNullOrWhiteSpace(TargetFriendlyName) ? TargetAddress : $"{TargetFriendlyName} ({TargetAddress})";
 }

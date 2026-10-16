@@ -1268,7 +1268,7 @@
                                                                 <Grid Margin="6,4" TextBlock.Foreground="{StaticResource TextMuted}" TextBlock.FontWeight="SemiBold" TextBlock.FontSize="11">
                                                                     <Grid.ColumnDefinitions>
                                                                         <ColumnDefinition Width="70" />
-                                                                        <ColumnDefinition Width="80" />
+                                                                        <ColumnDefinition Width="150" />
                                                                         <ColumnDefinition Width="220" />
                                                                         <ColumnDefinition Width="*" />
                                                                         <ColumnDefinition Width="130" />
@@ -1291,16 +1291,32 @@
                                                                                 <Grid>
                                                                                     <Grid.ColumnDefinitions>
                                                                                         <ColumnDefinition Width="70" />
-                                                                                        <ColumnDefinition Width="80" />
+                                                                                        <ColumnDefinition Width="150" />
                                                                                         <ColumnDefinition Width="220" />
                                                                                         <ColumnDefinition Width="*" />
                                                                                         <ColumnDefinition Width="130" />
                                                                                         <ColumnDefinition Width="40" />
                                                                                     </Grid.ColumnDefinitions>
                                                                                     <TextBlock Grid.Column="0" Text="{Binding MemAddr}" FontSize="11" Foreground="{StaticResource TextMuted}" VerticalAlignment="Center" />
-                                                                                    <Border Grid.Column="1" Background="#89B4FA" CornerRadius="4" Padding="6,2" HorizontalAlignment="Left" VerticalAlignment="Center">
-                                                                                        <TextBlock Text="{Binding Group, StringFormat='Grp {0}'}" FontSize="10" FontWeight="Bold" Foreground="#11111B" />
-                                                                                    </Border>
+                                                                                    <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                                                                                        <Border Background="#89B4FA" CornerRadius="4" Padding="6,2" HorizontalAlignment="Left">
+                                                                                            <Border.Style>
+                                                                                                <Style TargetType="Border">
+                                                                                                    <Style.Triggers>
+                                                                                                        <DataTrigger Binding="{Binding IsGroupZero}" Value="True">
+                                                                                                            <Setter Property="Background" Value="#F38BA8" />
+                                                                                                        </DataTrigger>
+                                                                                                    </Style.Triggers>
+                                                                                                </Style>
+                                                                                            </Border.Style>
+                                                                                            <TextBlock Text="{Binding Group, StringFormat='Grp {0}'}" FontSize="10" FontWeight="Bold" Foreground="#11111B" />
+                                                                                        </Border>
+                                                                                        <Border Background="#3B2A20" BorderBrush="#F9E2AF" BorderThickness="1" CornerRadius="4" Padding="4,1" Margin="4,0,0,0"
+                                                                                                Visibility="{Binding HasIssue, Converter={StaticResource BoolToVis}}"
+                                                                                                ToolTip="{Binding IssueTooltip}">
+                                                                                            <TextBlock Text="{Binding IssueBadge}" FontSize="9" FontWeight="Bold" Foreground="#F9E2AF" />
+                                                                                        </Border>
+                                                                                    </StackPanel>
                                                                                     <Button Grid.Column="2" Content="{Binding TargetDisplay}" 
                                                                                             Command="{Binding DataContext.InspectNodeInAldbCommand, RelativeSource={RelativeSource AncestorType=Window}}"
                                                                                             CommandParameter="{Binding TargetAddress}"
@@ -1340,7 +1356,7 @@
                                                                 <Grid Margin="6,4" TextBlock.Foreground="{StaticResource TextMuted}" TextBlock.FontWeight="SemiBold" TextBlock.FontSize="11">
                                                                     <Grid.ColumnDefinitions>
                                                                         <ColumnDefinition Width="70" />
-                                                                        <ColumnDefinition Width="80" />
+                                                                        <ColumnDefinition Width="150" />
                                                                         <ColumnDefinition Width="220" />
                                                                         <ColumnDefinition Width="*" />
                                                                         <ColumnDefinition Width="130" />
@@ -1363,16 +1379,32 @@
                                                                                 <Grid>
                                                                                     <Grid.ColumnDefinitions>
                                                                                         <ColumnDefinition Width="70" />
-                                                                                        <ColumnDefinition Width="80" />
+                                                                                        <ColumnDefinition Width="150" />
                                                                                         <ColumnDefinition Width="220" />
                                                                                         <ColumnDefinition Width="*" />
                                                                                         <ColumnDefinition Width="130" />
                                                                                         <ColumnDefinition Width="40" />
                                                                                     </Grid.ColumnDefinitions>
                                                                                     <TextBlock Grid.Column="0" Text="{Binding MemAddr}" FontSize="11" Foreground="{StaticResource TextMuted}" VerticalAlignment="Center" />
-                                                                                    <Border Grid.Column="1" Background="#A6E3A1" CornerRadius="4" Padding="6,2" HorizontalAlignment="Left" VerticalAlignment="Center">
-                                                                                        <TextBlock Text="{Binding Group, StringFormat='Grp {0}'}" FontSize="10" FontWeight="Bold" Foreground="#11111B" />
-                                                                                    </Border>
+                                                                                    <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                                                                                        <Border Background="#A6E3A1" CornerRadius="4" Padding="6,2" HorizontalAlignment="Left">
+                                                                                            <Border.Style>
+                                                                                                <Style TargetType="Border">
+                                                                                                    <Style.Triggers>
+                                                                                                        <DataTrigger Binding="{Binding IsGroupZero}" Value="True">
+                                                                                                            <Setter Property="Background" Value="#F38BA8" />
+                                                                                                        </DataTrigger>
+                                                                                                    </Style.Triggers>
+                                                                                                </Style>
+                                                                                            </Border.Style>
+                                                                                            <TextBlock Text="{Binding Group, StringFormat='Grp {0}'}" FontSize="10" FontWeight="Bold" Foreground="#11111B" />
+                                                                                        </Border>
+                                                                                        <Border Background="#3B2A20" BorderBrush="#F9E2AF" BorderThickness="1" CornerRadius="4" Padding="4,1" Margin="4,0,0,0"
+                                                                                                Visibility="{Binding HasIssue, Converter={StaticResource BoolToVis}}"
+                                                                                                ToolTip="{Binding IssueTooltip}">
+                                                                                            <TextBlock Text="{Binding IssueBadge}" FontSize="9" FontWeight="Bold" Foreground="#F9E2AF" />
+                                                                                        </Border>
+                                                                                    </StackPanel>
                                                                                     <Button Grid.Column="2" Content="{Binding TargetDisplay}" 
                                                                                             Command="{Binding DataContext.InspectNodeInAldbCommand, RelativeSource={RelativeSource AncestorType=Window}}"
                                                                                             CommandParameter="{Binding TargetAddress}"

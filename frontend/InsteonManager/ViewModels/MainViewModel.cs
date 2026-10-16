@@ -1562,6 +1562,29 @@ public class MainViewModel : ViewModelBase
                 }
             }
 
+            // Flag duplicate links and Group 0 anomalies for clear user visibility
+            var seenCtrl = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var entry in org.ControllerRecords)
+            {
+                entry.IsGroupZero = (entry.Group == 0);
+                string key = $"{entry.TargetAddress}|{entry.Group}";
+                if (!seenCtrl.Add(key))
+                {
+                    entry.IsDuplicate = true;
+                }
+            }
+
+            var seenResp = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var entry in org.ResponderRecords)
+            {
+                entry.IsGroupZero = (entry.Group == 0);
+                string key = $"{entry.TargetAddress}|{entry.Group}";
+                if (!seenResp.Add(key))
+                {
+                    entry.IsDuplicate = true;
+                }
+            }
+
             OrganizedDevices.Add(org);
         }
     }
@@ -2534,6 +2557,43 @@ public class MainViewModel : ViewModelBase
     public async Task DeleteLinkFromEntryAsync(OrganizedAldbEntry? entry)
     {
         if (entry == null) return;
+
+        if (entry.IsDuplicate || entry.IsGroupZero)
+        {
+            string reason = entry.IsDuplicate
+                ? $"Record {entry.MemAddr} is a redundant duplicate of an active link with {entry.TargetDisplay} on Group {entry.Group}."
+                : $"Record {entry.MemAddr} is an invalid/orphaned Group 0 record.";
+
+            var slotConfirm = MessageBox.Show(
+                $"{reason}\n\nDo you want to clean up (delete) this individual record slot {entry.MemAddr} on {entry.OwnerFriendlyName} ({entry.OwnerAddress})?\n\n(This safely clears this specific memory slot without affecting other active links).",
+                "Clean Up ALDB Record Slot",
+                MessageBoxButton.YesNo,
+                MessageBoxImage.Question
+            );
+            if (slotConfirm != MessageBoxResult.Yes) return;
+
+            IsLoading = true;
+            try
+            {
+                var (s, m) = await _apiClient.DeleteDeviceAldbRecordAsync(entry.OwnerAddress, entry.MemAddr);
+                if (s)
+                {
+                    StatusMessage = $"Cleaned up ALDB slot {entry.MemAddr} on {entry.OwnerAddress}.";
+                    AddLog(LogLevel.Success, "ALDB", m);
+                    await QueryAldbAsync(silent: true);
+                }
+                else
+                {
+                    StatusMessage = $"Delete failed: {m}";
+                    AddLog(LogLevel.Error, "ALDB", m);
+                }
+            }
+            finally
+            {
+                IsLoading = false;
+            }
+            return;
+        }
 
         string ctrlAddr;
         string respAddr;
