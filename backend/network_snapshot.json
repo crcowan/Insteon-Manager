@@ -19,9 +19,9 @@
         "is_responder": true,
         "in_use": true,
         "high_water_mark": false,
-        "data1": 0,
-        "data2": 0,
-        "data3": 0,
+        "data1": 255,
+        "data2": 28,
+        "data3": 1,
         "raw_mode": "Responder"
       },
       {
@@ -344,9 +344,9 @@
         "is_responder": true,
         "in_use": true,
         "high_water_mark": false,
-        "data1": 1,
-        "data2": 0,
-        "data3": 0,
+        "data1": 255,
+        "data2": 28,
+        "data3": 1,
         "raw_mode": "Responder"
       },
       {
@@ -357,9 +357,9 @@
         "is_responder": true,
         "in_use": true,
         "high_water_mark": false,
-        "data1": 1,
-        "data2": 0,
-        "data3": 0,
+        "data1": 255,
+        "data2": 28,
+        "data3": 1,
         "raw_mode": "Responder"
       },
       {
@@ -370,9 +370,9 @@
         "is_responder": true,
         "in_use": true,
         "high_water_mark": false,
-        "data1": 1,
-        "data2": 0,
-        "data3": 0,
+        "data1": 255,
+        "data2": 28,
+        "data3": 1,
         "raw_mode": "Responder"
       },
       {
@@ -383,9 +383,9 @@
         "is_responder": true,
         "in_use": true,
         "high_water_mark": false,
-        "data1": 1,
-        "data2": 0,
-        "data3": 0,
+        "data1": 255,
+        "data2": 28,
+        "data3": 1,
         "raw_mode": "Responder"
       },
       {
@@ -396,9 +396,9 @@
         "is_responder": true,
         "in_use": true,
         "high_water_mark": false,
-        "data1": 1,
-        "data2": 0,
-        "data3": 0,
+        "data1": 255,
+        "data2": 28,
+        "data3": 1,
         "raw_mode": "Responder"
       },
       {
@@ -409,9 +409,9 @@
         "is_responder": true,
         "in_use": true,
         "high_water_mark": false,
-        "data1": 1,
-        "data2": 0,
-        "data3": 0,
+        "data1": 255,
+        "data2": 28,
+        "data3": 1,
         "raw_mode": "Responder"
       },
       {
@@ -422,9 +422,9 @@
         "is_responder": true,
         "in_use": true,
         "high_water_mark": false,
-        "data1": 1,
-        "data2": 0,
-        "data3": 0,
+        "data1": 255,
+        "data2": 28,
+        "data3": 1,
         "raw_mode": "Responder"
       },
       {
@@ -435,9 +435,9 @@
         "is_responder": true,
         "in_use": true,
         "high_water_mark": false,
-        "data1": 1,
-        "data2": 0,
-        "data3": 0,
+        "data1": 255,
+        "data2": 28,
+        "data3": 1,
         "raw_mode": "Responder"
       },
       {
@@ -448,9 +448,9 @@
         "is_responder": true,
         "in_use": true,
         "high_water_mark": false,
-        "data1": 1,
-        "data2": 0,
-        "data3": 0,
+        "data1": 255,
+        "data2": 28,
+        "data3": 1,
         "raw_mode": "Responder"
       },
       {
@@ -461,9 +461,9 @@
         "is_responder": true,
         "in_use": true,
         "high_water_mark": false,
-        "data1": 0,
-        "data2": 0,
-        "data3": 0,
+        "data1": 255,
+        "data2": 28,
+        "data3": 1,
         "raw_mode": "Responder"
       },
       {
@@ -474,9 +474,9 @@
         "is_responder": true,
         "in_use": true,
         "high_water_mark": false,
-        "data1": 0,
-        "data2": 0,
-        "data3": 0,
+        "data1": 255,
+        "data2": 28,
+        "data3": 1,
         "raw_mode": "Responder"
       },
       {
@@ -1245,6 +1245,214 @@
         "data2": 27,
         "data3": 1,
         "raw_mode": "Controller"
+      },
+      {
+        "mem_addr": "0x1D07",
+        "target_address": "18.96.F5",
+        "group": 1,
+        "is_controller": true,
+        "is_responder": false,
+        "in_use": true,
+        "high_water_mark": false,
+        "data1": 255,
+        "data2": 28,
+        "data3": 1,
+        "raw_mode": "Controller"
+      },
+      {
+        "mem_addr": "0x1CFF",
+        "target_address": "1C.2C.40",
+        "group": 1,
+        "is_controller": true,
+        "is_responder": false,
+        "in_use": true,
+        "high_water_mark": false,
+        "data1": 255,
+        "data2": 28,
+        "data3": 1,
+        "raw_mode": "Controller"
+      },
+      {
+        "mem_addr": "0x1CF7",
+        "target_address": "2C.E7.EF",
+        "group": 1,
+        "is_controller": true,
+        "is_responder": false,
+        "in_use": true,
+        "high_water_mark": false,
+        "data1": 255,
+        "data2": 28,
+        "data3": 1,
+        "raw_mode": "Controller"
+      },
+      {
+        "mem_addr": "0x1CEF",
+        "target_address": "2C.E7.EF",
+        "group": 1,
+        "is_controller": false,
+        "is_responder": true,
+        "in_use": true,
+        "high_water_mark": false,
+        "data1": 255,
+        "data2": 28,
+        "data3": 1,
+        "raw_mode": "Responder"
+      },
+      {
+        "mem_addr": "0x1CE7",
+        "target_address": "39.F1.75",
+        "group": 1,
+        "is_controller": true,
+        "is_responder": false,
+        "in_use": true,
+        "high_water_mark": false,
+        "data1": 255,
+        "data2": 28,
+        "data3": 1,
+        "raw_mode": "Controller"
+      },
+      {
+        "mem_addr": "0x1CDF",
+        "target_address": "39.F1.75",
+        "group": 1,
+        "is_controller": false,
+        "is_responder": true,
+        "in_use": true,
+        "high_water_mark": false,
+        "data1": 255,
+        "data2": 28,
+        "data3": 1,
+        "raw_mode": "Responder"
+      },
+      {
+        "mem_addr": "0x1CD7",
+        "target_address": "15.88.E3",
+        "group": 1,
+        "is_controller": true,
+        "is_responder": false,
+        "in_use": true,
+        "high_water_mark": false,
+        "data1": 255,
+        "data2": 28,
+        "data3": 1,
+        "raw_mode": "Controller"
+      },
+      {
+        "mem_addr": "0x1CCF",
+        "target_address": "18.9A.A2",
+        "group": 1,
+        "is_controller": true,
+        "is_responder": false,
+        "in_use": true,
+        "high_water_mark": false,
+        "data1": 255,
+        "data2": 28,
+        "data3": 1,
+        "raw_mode": "Controller"
+      },
+      {
+        "mem_addr": "0x1CC7",
+        "target_address": "1A.EB.C5",
+        "group": 1,
+        "is_controller": true,
+        "is_responder": false,
+        "in_use": true,
+        "high_water_mark": false,
+        "data1": 255,
+        "data2": 28,
+        "data3": 1,
+        "raw_mode": "Controller"
+      },
+      {
+        "mem_addr": "0x1CBF",
+        "target_address": "1D.C1.50",
+        "group": 1,
+        "is_controller": true,
+        "is_responder": false,
+        "in_use": true,
+        "high_water_mark": false,
+        "data1": 255,
+        "data2": 28,
+        "data3": 1,
+        "raw_mode": "Controller"
+      },
+      {
+        "mem_addr": "0x1CB7",
+        "target_address": "1D.C5.C2",
+        "group": 1,
+        "is_controller": true,
+        "is_responder": false,
+        "in_use": true,
+        "high_water_mark": false,
+        "data1": 255,
+        "data2": 28,
+        "data3": 1,
+        "raw_mode": "Controller"
+      },
+      {
+        "mem_addr": "0x1CAF",
+        "target_address": "23.BA.1F",
+        "group": 1,
+        "is_controller": true,
+        "is_responder": false,
+        "in_use": true,
+        "high_water_mark": false,
+        "data1": 255,
+        "data2": 28,
+        "data3": 1,
+        "raw_mode": "Controller"
+      },
+      {
+        "mem_addr": "0x1CA7",
+        "target_address": "23.C1.2C",
+        "group": 1,
+        "is_controller": true,
+        "is_responder": false,
+        "in_use": true,
+        "high_water_mark": false,
+        "data1": 255,
+        "data2": 28,
+        "data3": 1,
+        "raw_mode": "Controller"
+      },
+      {
+        "mem_addr": "0x1C9F",
+        "target_address": "3C.6E.04",
+        "group": 1,
+        "is_controller": true,
+        "is_responder": false,
+        "in_use": true,
+        "high_water_mark": false,
+        "data1": 255,
+        "data2": 28,
+        "data3": 1,
+        "raw_mode": "Controller"
+      },
+      {
+        "mem_addr": "0x1C97",
+        "target_address": "3C.75.99",
+        "group": 1,
+        "is_controller": true,
+        "is_responder": false,
+        "in_use": true,
+        "high_water_mark": false,
+        "data1": 255,
+        "data2": 28,
+        "data3": 1,
+        "raw_mode": "Controller"
+      },
+      {
+        "mem_addr": "0x1C8F",
+        "target_address": "3E.91.E6",
+        "group": 1,
+        "is_controller": true,
+        "is_responder": false,
+        "in_use": true,
+        "high_water_mark": false,
+        "data1": 255,
+        "data2": 28,
+        "data3": 1,
+        "raw_mode": "Controller"
       }
     ]
   },
@@ -1348,9 +1556,9 @@
           "is_responder": false,
           "in_use": true,
           "high_water_mark": false,
-          "data1": 3,
-          "data2": 21,
-          "data3": 158,
+          "data1": 255,
+          "data2": 28,
+          "data3": 1,
           "raw_mode": "Controller"
         },
         {
@@ -1456,6 +1664,19 @@
           "data2": 28,
           "data3": 1,
           "raw_mode": "Controller"
+        },
+        {
+          "mem_addr": "0x0F87",
+          "target_address": "53.C1.42",
+          "group": 1,
+          "is_controller": false,
+          "is_responder": true,
+          "in_use": true,
+          "high_water_mark": false,
+          "data1": 255,
+          "data2": 28,
+          "data3": 1,
+          "raw_mode": "Responder"
         }
       ]
     },
@@ -1872,9 +2093,9 @@
           "is_responder": false,
           "in_use": true,
           "high_water_mark": false,
-          "data1": 0,
-          "data2": 0,
-          "data3": 0,
+          "data1": 255,
+          "data2": 28,
+          "data3": 1,
           "raw_mode": "Controller"
         },
         {
@@ -1901,6 +2122,19 @@
           "data1": 0,
           "data2": 0,
           "data3": 25,
+          "raw_mode": "Responder"
+        },
+        {
+          "mem_addr": "0x0F9F",
+          "target_address": "53.C1.42",
+          "group": 1,
+          "is_controller": false,
+          "is_responder": true,
+          "in_use": true,
+          "high_water_mark": false,
+          "data1": 255,
+          "data2": 28,
+          "data3": 1,
           "raw_mode": "Responder"
         }
       ]
@@ -2069,9 +2303,9 @@
           "is_responder": false,
           "in_use": true,
           "high_water_mark": false,
-          "data1": 3,
-          "data2": 21,
-          "data3": 158,
+          "data1": 255,
+          "data2": 28,
+          "data3": 1,
           "raw_mode": "Controller"
         },
         {
@@ -2164,6 +2398,19 @@
           "data2": 0,
           "data3": 23,
           "raw_mode": "Responder"
+        },
+        {
+          "mem_addr": "0x0F67",
+          "target_address": "53.C1.42",
+          "group": 1,
+          "is_controller": false,
+          "is_responder": true,
+          "in_use": true,
+          "high_water_mark": false,
+          "data1": 255,
+          "data2": 28,
+          "data3": 1,
+          "raw_mode": "Responder"
         }
       ]
     },
@@ -2214,9 +2461,9 @@
           "is_responder": false,
           "in_use": true,
           "high_water_mark": false,
-          "data1": 3,
-          "data2": 21,
-          "data3": 158,
+          "data1": 255,
+          "data2": 28,
+          "data3": 1,
           "raw_mode": "Controller"
         },
         {
@@ -2491,6 +2738,19 @@
           "data2": 0,
           "data3": 0,
           "raw_mode": "Responder (Deleted)"
+        },
+        {
+          "mem_addr": "0x0F3F",
+          "target_address": "53.C1.42",
+          "group": 1,
+          "is_controller": false,
+          "is_responder": true,
+          "in_use": true,
+          "high_water_mark": false,
+          "data1": 255,
+          "data2": 28,
+          "data3": 1,
+          "raw_mode": "Responder"
         }
       ]
     },
@@ -2957,9 +3217,9 @@
           "is_responder": false,
           "in_use": true,
           "high_water_mark": false,
-          "data1": 3,
-          "data2": 0,
-          "data3": 0,
+          "data1": 255,
+          "data2": 28,
+          "data3": 1,
           "raw_mode": "Controller"
         },
         {
@@ -3052,6 +3312,19 @@
           "data2": 0,
           "data3": 0,
           "raw_mode": "Controller"
+        },
+        {
+          "mem_addr": "0x0EAF",
+          "target_address": "53.C1.42",
+          "group": 1,
+          "is_controller": false,
+          "is_responder": true,
+          "in_use": true,
+          "high_water_mark": false,
+          "data1": 255,
+          "data2": 28,
+          "data3": 1,
+          "raw_mode": "Responder"
         }
       ]
     },
@@ -3167,9 +3440,9 @@
           "is_responder": false,
           "in_use": true,
           "high_water_mark": false,
-          "data1": 3,
-          "data2": 21,
-          "data3": 158,
+          "data1": 255,
+          "data2": 28,
+          "data3": 1,
           "raw_mode": "Controller"
         },
         {
@@ -3366,6 +3639,19 @@
           "data2": 0,
           "data3": 0,
           "raw_mode": "Responder"
+        },
+        {
+          "mem_addr": "0x0F47",
+          "target_address": "53.C1.42",
+          "group": 1,
+          "is_controller": false,
+          "is_responder": true,
+          "in_use": true,
+          "high_water_mark": false,
+          "data1": 255,
+          "data2": 28,
+          "data3": 1,
+          "raw_mode": "Responder"
         }
       ]
     },
@@ -3403,9 +3689,9 @@
           "is_responder": false,
           "in_use": true,
           "high_water_mark": false,
-          "data1": 3,
-          "data2": 21,
-          "data3": 158,
+          "data1": 255,
+          "data2": 28,
+          "data3": 1,
           "raw_mode": "Controller"
         },
         {
@@ -3654,6 +3940,19 @@
           "data2": 0,
           "data3": 0,
           "raw_mode": "Responder"
+        },
+        {
+          "mem_addr": "0x0F57",
+          "target_address": "53.C1.42",
+          "group": 1,
+          "is_controller": false,
+          "is_responder": true,
+          "in_use": true,
+          "high_water_mark": false,
+          "data1": 255,
+          "data2": 28,
+          "data3": 1,
+          "raw_mode": "Responder"
         }
       ]
     },
@@ -3704,9 +4003,9 @@
           "is_responder": false,
           "in_use": true,
           "high_water_mark": false,
-          "data1": 3,
-          "data2": 21,
-          "data3": 158,
+          "data1": 255,
+          "data2": 28,
+          "data3": 1,
           "raw_mode": "Controller"
         },
         {
@@ -3955,6 +4254,19 @@
           "data2": 0,
           "data3": 0,
           "raw_mode": "Responder (Deleted)"
+        },
+        {
+          "mem_addr": "0x0F4F",
+          "target_address": "53.C1.42",
+          "group": 1,
+          "is_controller": false,
+          "is_responder": true,
+          "in_use": true,
+          "high_water_mark": false,
+          "data1": 255,
+          "data2": 28,
+          "data3": 1,
+          "raw_mode": "Responder"
         }
       ]
     },
@@ -4161,9 +4473,9 @@
           "is_responder": false,
           "in_use": true,
           "high_water_mark": false,
-          "data1": 3,
-          "data2": 21,
-          "data3": 158,
+          "data1": 255,
+          "data2": 28,
+          "data3": 1,
           "raw_mode": "Controller"
         },
         {
@@ -4269,6 +4581,19 @@
           "data2": 0,
           "data3": 0,
           "raw_mode": "Responder"
+        },
+        {
+          "mem_addr": "0x0F47",
+          "target_address": "53.C1.42",
+          "group": 1,
+          "is_controller": false,
+          "is_responder": true,
+          "in_use": true,
+          "high_water_mark": false,
+          "data1": 255,
+          "data2": 28,
+          "data3": 1,
+          "raw_mode": "Responder"
         }
       ]
     },
@@ -4283,7 +4608,34 @@
       "is_battery": false,
       "status": "FAILED: Offline / Retired (No response to Standard Ping in Pass 1 or Pass 2)",
       "records_count": 0,
-      "records": []
+      "records": [
+        {
+          "mem_addr": "0x0FFF",
+          "target_address": "53.C1.42",
+          "group": 1,
+          "is_controller": false,
+          "is_responder": true,
+          "in_use": true,
+          "high_water_mark": false,
+          "data1": 255,
+          "data2": 28,
+          "data3": 1,
+          "raw_mode": "Responder"
+        },
+        {
+          "mem_addr": "0x0FF7",
+          "target_address": "53.C1.42",
+          "group": 1,
+          "is_controller": true,
+          "is_responder": false,
+          "in_use": true,
+          "high_water_mark": false,
+          "data1": 255,
+          "data2": 28,
+          "data3": 1,
+          "raw_mode": "Controller"
+        }
+      ]
     },
     {
       "address": "39.F1.75",
@@ -4296,7 +4648,34 @@
       "is_battery": false,
       "status": "FAILED: Offline / Retired (No response to Standard Ping in Pass 1 or Pass 2)",
       "records_count": 0,
-      "records": []
+      "records": [
+        {
+          "mem_addr": "0x0FFF",
+          "target_address": "53.C1.42",
+          "group": 1,
+          "is_controller": false,
+          "is_responder": true,
+          "in_use": true,
+          "high_water_mark": false,
+          "data1": 255,
+          "data2": 28,
+          "data3": 1,
+          "raw_mode": "Responder"
+        },
+        {
+          "mem_addr": "0x0FF7",
+          "target_address": "53.C1.42",
+          "group": 1,
+          "is_controller": true,
+          "is_responder": false,
+          "in_use": true,
+          "high_water_mark": false,
+          "data1": 255,
+          "data2": 28,
+          "data3": 1,
+          "raw_mode": "Controller"
+        }
+      ]
     },
     {
       "address": "3C.6E.04",
@@ -4319,9 +4698,9 @@
           "is_responder": false,
           "in_use": true,
           "high_water_mark": false,
-          "data1": 3,
-          "data2": 21,
-          "data3": 158,
+          "data1": 255,
+          "data2": 28,
+          "data3": 1,
           "raw_mode": "Controller"
         },
         {
@@ -4634,6 +5013,19 @@
           "data1": 3,
           "data2": 0,
           "data3": 0,
+          "raw_mode": "Responder"
+        },
+        {
+          "mem_addr": "0x0F37",
+          "target_address": "53.C1.42",
+          "group": 1,
+          "is_controller": false,
+          "is_responder": true,
+          "in_use": true,
+          "high_water_mark": false,
+          "data1": 255,
+          "data2": 28,
+          "data3": 1,
           "raw_mode": "Responder"
         }
       ]
@@ -4958,9 +5350,9 @@
           "is_responder": false,
           "in_use": true,
           "high_water_mark": false,
-          "data1": 3,
-          "data2": 21,
-          "data3": 158,
+          "data1": 255,
+          "data2": 28,
+          "data3": 1,
           "raw_mode": "Controller"
         },
         {
@@ -4988,6 +5380,19 @@
           "data2": 0,
           "data3": 0,
           "raw_mode": "Responder (Deleted)"
+        },
+        {
+          "mem_addr": "0x0F2F",
+          "target_address": "53.C1.42",
+          "group": 1,
+          "is_controller": false,
+          "is_responder": true,
+          "in_use": true,
+          "high_water_mark": false,
+          "data1": 255,
+          "data2": 28,
+          "data3": 1,
+          "raw_mode": "Responder"
         }
       ]
     },
@@ -5025,9 +5430,9 @@
           "is_responder": false,
           "in_use": true,
           "high_water_mark": false,
-          "data1": 3,
-          "data2": 21,
-          "data3": 158,
+          "data1": 255,
+          "data2": 28,
+          "data3": 1,
           "raw_mode": "Controller"
         },
         {
@@ -5224,6 +5629,19 @@
           "data2": 0,
           "data3": 0,
           "raw_mode": "Responder (Deleted)"
+        },
+        {
+          "mem_addr": "0x0F77",
+          "target_address": "53.C1.42",
+          "group": 1,
+          "is_controller": false,
+          "is_responder": true,
+          "in_use": true,
+          "high_water_mark": false,
+          "data1": 255,
+          "data2": 28,
+          "data3": 1,
+          "raw_mode": "Responder"
         }
       ]
     }
