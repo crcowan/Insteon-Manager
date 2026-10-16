@@ -816,16 +816,15 @@ class TransactionService:
             )
 
             if not has_reciprocal:
-                # Distinguish keypad broadcasts and transient query groups
-                is_kp = is_keypad(owner)
-                is_discovery = (grp == 251)
+                # Group 251 is used internally for pyinsteon device engine discovery and does not have reciprocal controller records
+                if grp == 251:
+                    continue
 
-                if is_discovery:
-                    severity = "info"
-                    summary = f"Transient Engine Query Link (Group 251) on {owner_name}"
-                    explanation = f"Group 251 is used internally for device engine discovery. This one-way record is harmless."
-                    fix_label = "⚡ Create Reciprocal Link"
-                elif is_kp and role == "Controller":
+                is_kp = is_keypad(owner)
+                ctrl_addr = owner if role == "Controller" else target
+                resp_addr = target if role == "Controller" else owner
+
+                if is_kp and role == "Controller":
                     severity = "warning"
                     button_label = f"Button {chr(64 + grp)} (Key {grp})" if 1 <= grp <= 8 else f"Group {grp}"
                     summary = f"Keypad {button_label} One-Way Broadcast to {target_name}"
@@ -853,6 +852,8 @@ class TransactionService:
                     target_name=target_name,
                     group=grp,
                     role=role,
+                    controller_address=ctrl_addr,
+                    responder_address=resp_addr,
                     summary=summary,
                     explanation=explanation,
                     recommended_action="create_reciprocal",

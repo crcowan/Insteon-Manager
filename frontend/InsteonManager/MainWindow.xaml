@@ -2593,9 +2593,14 @@
                             <ItemsControl.ItemTemplate>
                                 <DataTemplate DataType="{x:Type models:NetworkIssueItemModel}">
                                     <Border Background="{StaticResource DarkSurfaceLight}" CornerRadius="8" Padding="16" Margin="0,0,0,12" BorderBrush="#45475A" BorderThickness="1">
-                                        <DockPanel LastChildFill="False">
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+
                                             <!-- Left: Issue Details -->
-                                            <StackPanel DockPanel.Dock="Left" MaxWidth="720">
+                                            <StackPanel Grid.Column="0" Margin="0,0,16,0">
                                                 <!-- Badges Row -->
                                                 <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
                                                     <!-- Severity Badge -->
@@ -2623,11 +2628,11 @@
                                                 <TextBlock Text="{Binding Summary}" FontSize="12" FontWeight="SemiBold" Foreground="{StaticResource TextPrimary}" Margin="0,0,0,4" TextWrapping="Wrap" />
 
                                                 <!-- Explanation -->
-                                                <TextBlock Text="{Binding Explanation}" FontSize="11" Foreground="{StaticResource TextMuted}" TextWrapping="Wrap" Margin="0,0,0,8" />
+                                                <TextBlock Text="{Binding Explanation}" FontSize="11" Foreground="{StaticResource TextMuted}" TextWrapping="Wrap" Margin="0,0,0,4" />
                                             </StackPanel>
 
                                             <!-- Right: Action Buttons -->
-                                            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+                                            <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
                                                 <!-- Primary Recommended Action -->
                                                 <Button Content="{Binding FixLabel}" 
                                                         Command="{Binding DataContext.FixNetworkIssueCommand, RelativeSource={RelativeSource AncestorType=Window}}"
@@ -2653,7 +2658,7 @@
                                                         Padding="10,7"
                                                         ToolTip="Stage this fix in 'Pending Changes' for verification prior to execution" />
                                             </StackPanel>
-                                        </DockPanel>
+                                        </Grid>
                                     </Border>
                                 </DataTemplate>
                             </ItemsControl.ItemTemplate>

@@ -3401,8 +3401,8 @@ public class MainViewModel : ViewModelBase
             {
                 var req = new ReciprocalLinkRequestModel
                 {
-                    ControllerAddress = issue.OwnerAddress,
-                    ResponderAddress = issue.TargetAddress,
+                    ControllerAddress = issue.ControllerAddress,
+                    ResponderAddress = issue.ResponderAddress,
                     Group = issue.Group,
                     Data1 = issue.Data1,
                     Data2 = issue.Data2,
@@ -3500,12 +3500,12 @@ public class MainViewModel : ViewModelBase
         var staged = new StagedChangeModel
         {
             Id = $"FIX-{issue.Id}",
-            TargetAddress = $"{issue.OwnerAddress} ⇄ {issue.TargetAddress}",
-            TargetLabel = $"{issue.OwnerName} ⇄ {issue.TargetName}",
+            TargetAddress = $"{issue.ControllerAddress} ⇄ {issue.ResponderAddress}",
+            TargetLabel = $"{issue.ControllerName} ⇄ {issue.ResponderName}",
             Operation = issue.RecommendedAction.ToUpperInvariant(),
             CurrentState = $"{issue.IssueTypeBadge}: {issue.Summary}",
             ProposedState = issue.RecommendedAction == "create_reciprocal"
-                ? $"Create reciprocal responder record on {issue.TargetAddress} for Group {issue.Group}"
+                ? $"Create reciprocal link between Controller {issue.ControllerAddress} ({issue.ControllerName}) and Responder {issue.ResponderAddress} ({issue.ResponderName}) on Group {issue.Group}"
                 : $"Mark slot {issue.MemAddr} on {issue.OwnerAddress} as deleted",
             Description = issue.Explanation,
             Risk = issue.Severity == "error" ? ChangeRisk.Medium : ChangeRisk.Low,
@@ -3515,8 +3515,8 @@ public class MainViewModel : ViewModelBase
                 {
                     var req = new ReciprocalLinkRequestModel
                     {
-                        ControllerAddress = issue.OwnerAddress,
-                        ResponderAddress = issue.TargetAddress,
+                        ControllerAddress = issue.ControllerAddress,
+                        ResponderAddress = issue.ResponderAddress,
                         Group = issue.Group,
                         Data1 = issue.Data1,
                         Data2 = issue.Data2,
@@ -3573,8 +3573,8 @@ public class MainViewModel : ViewModelBase
             {
                 var req = new ReciprocalLinkRequestModel
                 {
-                    ControllerAddress = hl.OwnerAddress,
-                    ResponderAddress = hl.TargetAddress,
+                    ControllerAddress = hl.ControllerAddress,
+                    ResponderAddress = hl.ResponderAddress,
                     Group = hl.Group,
                     Data1 = hl.Data1,
                     Data2 = hl.Data2,

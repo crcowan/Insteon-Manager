@@ -174,6 +174,8 @@ class NetworkIssueItem(BaseModel):
     target_name: str
     group: int
     role: str  # Controller or Responder
+    controller_address: Optional[str] = None
+    responder_address: Optional[str] = None
     summary: str
     explanation: str
     recommended_action: str  # create_reciprocal, delete_record, purge_ghost, create_default_link

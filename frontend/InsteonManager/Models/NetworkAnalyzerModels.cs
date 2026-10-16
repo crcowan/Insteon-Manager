@@ -38,6 +38,23 @@ public class NetworkIssueModel : INotifyPropertyChanged
     [JsonPropertyName("role")]
     public string Role { get; set; } = string.Empty;
 
+    [JsonPropertyName("controller_address")]
+    public string? ExplicitControllerAddress { get; set; }
+
+    [JsonPropertyName("responder_address")]
+    public string? ExplicitResponderAddress { get; set; }
+
+    public string ControllerAddress => !string.IsNullOrEmpty(ExplicitControllerAddress)
+        ? ExplicitControllerAddress
+        : (Role.Equals("Responder", StringComparison.OrdinalIgnoreCase) ? TargetAddress : OwnerAddress);
+
+    public string ResponderAddress => !string.IsNullOrEmpty(ExplicitResponderAddress)
+        ? ExplicitResponderAddress
+        : (Role.Equals("Responder", StringComparison.OrdinalIgnoreCase) ? OwnerAddress : TargetAddress);
+
+    public string ControllerName => Role.Equals("Responder", StringComparison.OrdinalIgnoreCase) ? TargetName : OwnerName;
+    public string ResponderName => Role.Equals("Responder", StringComparison.OrdinalIgnoreCase) ? OwnerName : TargetName;
+
     [JsonPropertyName("summary")]
     public string Summary { get; set; } = string.Empty;
 
