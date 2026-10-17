@@ -1139,11 +1139,17 @@ class InsteonManager:
         found = False
         for d in snapshot["devices"]:
             if d.get("address", "").upper() == clean_addr:
-                d["records"] = rec_dicts
-                d["records_count"] = len(rec_dicts)
-                if live_delta is not None:
-                    d["db_delta"] = int(live_delta)
-                d["status"] = status_str
+                if len(rec_dicts) > 0:
+                    d["records"] = rec_dicts
+                    d["records_count"] = len(rec_dicts)
+                    d["status"] = status_str
+                    if live_delta is not None:
+                        d["db_delta"] = int(live_delta)
+                else:
+                    logger.warning(
+                        f"Live ALDB read for {clean_addr} returned 0 records; preserving {len(d.get('records', []))} existing snapshot records."
+                    )
+                    d["status"] = f"OK (cached {len(d.get('records', []))} records)"
                 if getattr(device, "cat", 0):
                     d["cat"] = int(device.cat)
                 if getattr(device, "subcat", 0):

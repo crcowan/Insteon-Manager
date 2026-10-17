@@ -2030,12 +2030,12 @@
           "group": 0,
           "is_controller": false,
           "is_responder": true,
-          "in_use": true,
+          "in_use": false,
           "high_water_mark": false,
           "data1": 255,
           "data2": 31,
           "data3": 1,
-          "raw_mode": "Responder"
+          "raw_mode": "Responder (Deleted)"
         },
         {
           "mem_addr": "0x0FF7",
@@ -2121,12 +2121,12 @@
           "group": 14,
           "is_controller": false,
           "is_responder": true,
-          "in_use": true,
+          "in_use": false,
           "high_water_mark": false,
           "data1": 77,
           "data2": 27,
           "data3": 1,
-          "raw_mode": "Responder"
+          "raw_mode": "Responder (Deleted)"
         },
         {
           "mem_addr": "0x0FBF",
@@ -2134,12 +2134,12 @@
           "group": 15,
           "is_controller": false,
           "is_responder": true,
-          "in_use": true,
+          "in_use": false,
           "high_water_mark": false,
           "data1": 0,
           "data2": 27,
           "data3": 1,
-          "raw_mode": "Responder"
+          "raw_mode": "Responder (Deleted)"
         },
         {
           "mem_addr": "0x0FB7",
@@ -2303,12 +2303,12 @@
           "group": 1,
           "is_controller": true,
           "is_responder": false,
-          "in_use": true,
+          "in_use": false,
           "high_water_mark": false,
           "data1": 3,
           "data2": 31,
           "data3": 1,
-          "raw_mode": "Controller"
+          "raw_mode": "Controller (Deleted)"
         },
         {
           "mem_addr": "0x0F4F",
@@ -2316,12 +2316,12 @@
           "group": 13,
           "is_controller": false,
           "is_responder": true,
-          "in_use": true,
+          "in_use": false,
           "high_water_mark": false,
           "data1": 77,
           "data2": 27,
           "data3": 1,
-          "raw_mode": "Responder"
+          "raw_mode": "Responder (Deleted)"
         },
         {
           "mem_addr": "0x0F47",

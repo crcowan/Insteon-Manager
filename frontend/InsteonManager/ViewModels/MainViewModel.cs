@@ -2662,25 +2662,56 @@ public class MainViewModel : ViewModelBase
     {
         GhostTargets.Clear();
         var known = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        if (!string.IsNullOrWhiteSpace(PlmModemAddress))
+
+        bool IsPlmAddress(string? addr)
         {
-            known.Add(PlmModemAddress);
+            if (string.IsNullOrWhiteSpace(addr)) return false;
+            var clean = addr.Trim().Replace(".", "").Replace(":", "").ToUpperInvariant();
+            var plmClean = (PlmModemAddress ?? "53.C1.42").Trim().Replace(".", "").Replace(":", "").ToUpperInvariant();
+            return clean == "53C142" || clean == plmClean;
         }
-        known.Add("53.C1.42"); // Fallback PLM hub address
+
+        void AddKnownAddress(string? addr)
+        {
+            if (string.IsNullOrWhiteSpace(addr)) return;
+            var trimmed = addr.Trim();
+            known.Add(trimmed);
+            var clean = trimmed.Replace(".", "").Replace(":", "").ToUpperInvariant();
+            if (clean.Length == 6)
+            {
+                known.Add(clean);
+                known.Add($"{clean.Substring(0, 2)}.{clean.Substring(2, 2)}.{clean.Substring(4, 2)}");
+            }
+        }
+
+        AddKnownAddress(PlmModemAddress);
+        AddKnownAddress("53.C1.42");
 
         foreach (var dev in _currentDevices)
         {
-            if (!string.IsNullOrWhiteSpace(dev.Address) && (dev.AldbRecordCount > 0 || dev.IsBattery))
-                known.Add(dev.Address);
+            AddKnownAddress(dev.Address);
+        }
+
+        foreach (var node in DeviceNodes)
+        {
+            AddKnownAddress(node.Address);
         }
 
         // Count references to unknown target addresses (excluding 00.00.00 and PLM)
         var ghostCounts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
         foreach (var rec in records)
         {
-            if (rec.InUse && !string.IsNullOrWhiteSpace(rec.TargetAddress) && rec.TargetAddress != "00.00.00" && !known.Contains(rec.TargetAddress))
+            if (string.IsNullOrWhiteSpace(rec.TargetAddress)) continue;
+            var target = rec.TargetAddress.Trim();
+            var cleanTarget = target.Replace(".", "").Replace(":", "").ToUpperInvariant();
+            if (cleanTarget == "000000" || IsPlmAddress(target) || IsPlmAddress(cleanTarget)) continue;
+
+            if (rec.InUse && !known.Contains(target) && !known.Contains(cleanTarget))
             {
-                ghostCounts[rec.TargetAddress] = ghostCounts.GetValueOrDefault(rec.TargetAddress, 0) + 1;
+                var formatted = cleanTarget.Length == 6
+                    ? $"{cleanTarget.Substring(0, 2)}.{cleanTarget.Substring(2, 2)}.{cleanTarget.Substring(4, 2)}"
+                    : target;
+                ghostCounts[formatted] = ghostCounts.GetValueOrDefault(formatted, 0) + 1;
             }
         }
 
@@ -2692,6 +2723,10 @@ public class MainViewModel : ViewModelBase
         if (GhostTargets.Count > 0 && (string.IsNullOrEmpty(SelectedGhostTarget) || !GhostTargets.Contains(SelectedGhostTarget)))
         {
             SelectedGhostTarget = GhostTargets[0];
+        }
+        else if (GhostTargets.Count == 0)
+        {
+            SelectedGhostTarget = null;
         }
     }
 
