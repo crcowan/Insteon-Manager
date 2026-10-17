@@ -353,6 +353,7 @@ class TransactionService:
                 )
 
             dev_obj.aldb.modify(mem_addr=mem_int, in_use=False)
+            logger.info(f"Hardware EEPROM: Marked slot {clean_mem} (Group {getattr(rec, 'group', '?')}, target {getattr(rec, 'target', '?')}) deleted on {clean_addr}.")
             _, failed = await dev_obj.aldb.async_write()
             if failed:
                 dev_obj.aldb.clear_pending()
@@ -360,6 +361,7 @@ class TransactionService:
                     success=False,
                     message=f"Hardware EEPROM write failed while deleting slot {clean_mem} on {clean_addr}.",
                 )
+            logger.info(f"Hardware EEPROM write succeeded on {clean_addr}: Slot {clean_mem} marked deleted.")
             await insteon_manager.refresh_device_db_delta_after_write(clean_addr, snapshot)
 
         found = False
@@ -368,6 +370,7 @@ class TransactionService:
             raw = target_snap_rec.get("raw_mode", "Record")
             target_snap_rec["raw_mode"] = raw.replace(" (Deleted)", "") + " (Deleted)"
             found = True
+            logger.info(f"Deleted slot {clean_mem} on {clean_addr} (Group {target_snap_rec.get('group', '?')}, target {target_snap_rec.get('target_address', '?')}) in snapshot.")
             self._save_snapshot(snapshot)
 
         return GenericResponse(
@@ -424,6 +427,7 @@ class TransactionService:
                     if rec.is_in_use and str(rec.target).upper() == str(ghost_addr_obj).upper():
                         dev_obj.aldb.modify(mem_addr=mem_k, in_use=False)
                         modified_slots += 1
+                        logger.info(f"Hardware EEPROM: Marked slot 0x{mem_k:04X} (Group {rec.group}, target {clean_target}) deleted on {owner_addr}.")
                 if modified_slots > 0:
                     _, failed = await dev_obj.aldb.async_write()
                     if failed:
@@ -432,6 +436,7 @@ class TransactionService:
                             success=False,
                             message=f"Hardware write failed while purging ghost {clean_target} from {owner_addr}.",
                         )
+                    logger.info(f"Hardware EEPROM write succeeded on {owner_addr}: {modified_slots} slot(s) deleted.")
                     await insteon_manager.refresh_device_db_delta_after_write(owner_addr, snapshot)
 
         # 1. Purge from PLM snapshot
@@ -440,6 +445,7 @@ class TransactionService:
                 rec["in_use"] = False
                 rec["raw_mode"] = rec.get("raw_mode", "").replace(" (Deleted)", "") + " (Deleted)"
                 purged_count += 1
+                logger.info(f"Purged PLM slot {rec.get('mem_addr')} (Group {rec.get('group')}) targeting ghost {clean_target}")
                 if plm_addr not in modified_devices:
                     modified_devices.append(plm_addr)
 
@@ -451,6 +457,7 @@ class TransactionService:
                     rec["in_use"] = False
                     rec["raw_mode"] = rec.get("raw_mode", "").replace(" (Deleted)", "") + " (Deleted)"
                     purged_count += 1
+                    logger.info(f"Purged slot {rec.get('mem_addr')} on {dev_addr} (Group {rec.get('group')}) targeting ghost {clean_target}")
                     if dev_addr not in modified_devices:
                         modified_devices.append(dev_addr)
 
@@ -726,11 +733,13 @@ class TransactionService:
                     raw = r.get("raw_mode", "Controller")
                     r["raw_mode"] = raw.replace(" (Deleted)", "") + " (Deleted)"
                     deleted_count += 1
+                    logger.info(f"Deleted Controller link on {clean_src} slot {r.get('mem_addr')} (Grp {group} -> {clean_target})")
                 elif not is_controller and (r.get("is_responder") or not r.get("is_controller")):
                     r["in_use"] = False
                     raw = r.get("raw_mode", "Responder")
                     r["raw_mode"] = raw.replace(" (Deleted)", "") + " (Deleted)"
                     deleted_count += 1
+                    logger.info(f"Deleted Responder link on {clean_src} slot {r.get('mem_addr')} (Grp {group} <- {clean_target})")
         return deleted_count
 
     def audit_default_links(self) -> DefaultLinkAuditResponse:
