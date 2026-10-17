@@ -874,6 +874,8 @@ class InsteonManager:
             and len(snap_records) > 0
         ):
             seeded_count = self._seed_aldb_from_snapshot_records(dev_obj.aldb, snap_records, is_modem=False)
+            from pyinsteon.constants import ALDBStatus
+            dev_obj.aldb._status = ALDBStatus.LOADED
             logger.info(
                 f"Seeded {seeded_count} verified ALDB records into pyinsteon memory for {clean_addr} (db_delta=0x{live_delta:02X})."
             )

@@ -165,8 +165,11 @@ class TransactionService:
             addr_ctrl = Address(ctrl_addr)
             addr_resp = Address(resp_addr)
 
+            from pyinsteon.constants import ALDBStatus, ReadWriteMode
+
             ok_resp, dev_resp, msg_resp = await insteon_manager.ensure_device_aldb_ready_for_write(resp_addr, snapshot)
             if not ok_resp or not dev_resp:
+                logger.error(f"Responder pre-check failed on {resp_addr}: {msg_resp}")
                 return GenericResponse(
                     success=False,
                     message=f"Responder pre-check failed: {msg_resp} Link creation aborted without changes.",
@@ -174,12 +177,14 @@ class TransactionService:
 
             ok_ctrl, dev_ctrl, msg_ctrl = await insteon_manager.ensure_device_aldb_ready_for_write(ctrl_addr, snapshot)
             if not ok_ctrl or not dev_ctrl:
+                logger.error(f"Controller pre-check failed on {ctrl_addr}: {msg_ctrl}")
                 return GenericResponse(
                     success=False,
                     message=f"Controller pre-check failed: {msg_ctrl} Link creation aborted without changes.",
                 )
 
             # Step 2: Write Controller record
+            dev_ctrl.aldb._status = ALDBStatus.LOADED
             dev_ctrl.aldb.add(
                 group=grp,
                 target=addr_resp,
@@ -188,12 +193,21 @@ class TransactionService:
                 data2=ctrl_d2,
                 data3=ctrl_d3,
             )
-            ctrl_done, ctrl_failed = await dev_ctrl.aldb.async_write()
+            ctrl_done, ctrl_failed = await dev_ctrl.aldb.async_write(force=True)
+            if ctrl_failed:
+                if getattr(dev_ctrl.aldb, "_read_write_mode", None) != ReadWriteMode.PEEK_POKE:
+                    logger.info(f"Standard write failed on controller {ctrl_addr}; retrying with legacy PEEK/POKE mode...")
+                    dev_ctrl.aldb._read_write_mode = ReadWriteMode.PEEK_POKE
+                    dev_ctrl.aldb._status = ALDBStatus.LOADED
+                    ctrl_done, ctrl_failed = await dev_ctrl.aldb.async_write(force=True)
             if ctrl_failed:
                 dev_ctrl.aldb.clear_pending()
+                logger.error(f"Hardware write failed while creating Controller record on {ctrl_addr} (target {resp_addr}, Grp {grp}).")
                 return GenericResponse(success=False, message=f"Failed writing Controller record to {ctrl_addr}")
+            logger.info(f"Hardware EEPROM write succeeded on controller {ctrl_addr}: Controller link to {resp_addr} (Grp {grp}) added.")
 
             # Step 3: Write Responder record
+            dev_resp.aldb._status = ALDBStatus.LOADED
             dev_resp.aldb.add(
                 group=grp,
                 target=addr_ctrl,
@@ -202,19 +216,26 @@ class TransactionService:
                 data2=resp_d2,
                 data3=resp_d3,
             )
-            resp_done, resp_failed = await dev_resp.aldb.async_write()
-
-            # Rollback Step 2 if Step 3 failed
+            resp_done, resp_failed = await dev_resp.aldb.async_write(force=True)
+            if resp_failed:
+                if getattr(dev_resp.aldb, "_read_write_mode", None) != ReadWriteMode.PEEK_POKE:
+                    logger.info(f"Standard write failed on responder {resp_addr}; retrying with legacy PEEK/POKE mode...")
+                    dev_resp.aldb._read_write_mode = ReadWriteMode.PEEK_POKE
+                    dev_resp.aldb._status = ALDBStatus.LOADED
+                    resp_done, resp_failed = await dev_resp.aldb.async_write(force=True)
             if resp_failed:
                 logger.warning(f"Responder write failed on {resp_addr}; initiating ROLLBACK on controller {ctrl_addr}...")
                 dev_resp.aldb.clear_pending()
                 for rec in dev_ctrl.aldb.find(target=addr_resp, group=grp, is_controller=True, in_use=True):
                     dev_ctrl.aldb.modify(mem_addr=rec.mem_addr, in_use=False)
+                dev_ctrl.aldb._status = ALDBStatus.LOADED
                 await dev_ctrl.aldb.async_write(force=True)
+                logger.error(f"Hardware write failed on responder {resp_addr} (target {ctrl_addr}, Grp {grp}). Controller link on {ctrl_addr} rolled back.")
                 return GenericResponse(
                     success=False,
                     message=f"Write to responder {resp_addr} failed. Controller link on {ctrl_addr} rolled back cleanly.",
                 )
+            logger.info(f"Hardware EEPROM write succeeded on responder {resp_addr}: Responder link to {ctrl_addr} (Grp {grp}) added.")
 
             await insteon_manager.refresh_device_db_delta_after_write(ctrl_addr, snapshot)
             await insteon_manager.refresh_device_db_delta_after_write(resp_addr, snapshot)
@@ -273,15 +294,26 @@ class TransactionService:
             if not ok_resp or not dev_resp:
                 return GenericResponse(success=False, message=f"Cannot delete link: {msg_resp}")
 
+            from pyinsteon.constants import ALDBStatus, ReadWriteMode
+            dev_ctrl.aldb._status = ALDBStatus.LOADED
             for rec in dev_ctrl.aldb.find(target=addr_resp, group=group, is_controller=True, in_use=True):
                 dev_ctrl.aldb.modify(mem_addr=rec.mem_addr, in_use=False)
             _, ctrl_failed = await dev_ctrl.aldb.async_write(force=True)
+            if ctrl_failed and getattr(dev_ctrl.aldb, "_read_write_mode", None) != ReadWriteMode.PEEK_POKE:
+                dev_ctrl.aldb._read_write_mode = ReadWriteMode.PEEK_POKE
+                dev_ctrl.aldb._status = ALDBStatus.LOADED
+                _, ctrl_failed = await dev_ctrl.aldb.async_write(force=True)
             if ctrl_failed:
                 return GenericResponse(success=False, message=f"Hardware write failed while deleting Controller record on {ctrl_clean}.")
 
+            dev_resp.aldb._status = ALDBStatus.LOADED
             for rec in dev_resp.aldb.find(target=addr_ctrl, group=group, is_controller=False, in_use=True):
                 dev_resp.aldb.modify(mem_addr=rec.mem_addr, in_use=False)
             _, resp_failed = await dev_resp.aldb.async_write(force=True)
+            if resp_failed and getattr(dev_resp.aldb, "_read_write_mode", None) != ReadWriteMode.PEEK_POKE:
+                dev_resp.aldb._read_write_mode = ReadWriteMode.PEEK_POKE
+                dev_resp.aldb._status = ALDBStatus.LOADED
+                _, resp_failed = await dev_resp.aldb.async_write(force=True)
             if resp_failed:
                 return GenericResponse(success=False, message=f"Hardware write failed while deleting Responder record on {resp_clean}.")
 
@@ -541,7 +573,9 @@ class TransactionService:
                             data2=int(rec.get("data2", 0)),
                             data3=int(rec.get("data3", 0)),
                         )
-                _, failed_clone = await dev_new_obj.aldb.async_write()
+                from pyinsteon.constants import ALDBStatus
+                dev_new_obj.aldb._status = ALDBStatus.LOADED
+                _, failed_clone = await dev_new_obj.aldb.async_write(force=True)
                 if failed_clone:
                     dev_new_obj.aldb.clear_pending()
                     return GenericResponse(success=False, message=f"Failed writing cloned links to new device {new_addr}.")
@@ -564,7 +598,8 @@ class TransactionService:
                 for mem_k, rec in list(dev_p.aldb.items()):
                     if rec.is_in_use and str(rec.target).upper() == str(old_addr_obj).upper():
                         dev_p.aldb.modify(mem_addr=mem_k, target=new_addr_obj)
-                _, failed_p = await dev_p.aldb.async_write()
+                dev_p.aldb._status = ALDBStatus.LOADED
+                _, failed_p = await dev_p.aldb.async_write(force=True)
                 if failed_p:
                     dev_p.aldb.clear_pending()
                     return GenericResponse(success=False, message=f"Failed retargeting links on peer {owner_addr}.")
