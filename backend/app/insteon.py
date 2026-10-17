@@ -600,24 +600,46 @@ class InsteonManager:
             subcat_c = int((cached_dev or {}).get("subcat", 0) or 0)
             fw_c = int((cached_dev or {}).get("firmware", 0) or 0)
             device = pyinsteon.devices.add_x10_or_insteon_device(addr_obj, cat_c, subcat_c, fw_c)
-        if force_refresh and hasattr(device, "aldb"):
+
+        is_partial_resume = (
+            cached_dev is not None
+            and str(cached_dev.get("status", "")).upper().startswith("PARTIAL")
+            and cached_dev.get("db_delta") is not None
+            and live_delta is not None
+            and int(cached_dev.get("db_delta")) == int(live_delta)
+            and len(cached_dev.get("records", [])) > 0
+        )
+
+        if is_partial_resume and hasattr(device, "aldb") and not device.aldb.is_loaded:
+            seeded = self._seed_aldb_from_snapshot_records(
+                device.aldb, cached_dev.get("records", []), is_modem=False, ensure_hwm=False
+            )
+            logger.info(
+                f"[Device Query] Resuming partial ALDB read for {clean_addr} ({dev_label}) from {seeded} cached records (db_delta=0x{live_delta:02X})..."
+            )
+        elif force_refresh and hasattr(device, "aldb"):
             try:
                 device.aldb.clear()
             except Exception:
                 pass
+
         if getattr(device, "engine_version", EngineVersion.UNKNOWN) == EngineVersion.UNKNOWN:
             try:
                 await asyncio.wait_for(device.async_get_engine_version(), timeout=3.5)
             except Exception:
                 self._drain_outbound_queue()
 
-        use_peek_poke = getattr(device, "engine_version", EngineVersion.UNKNOWN) == EngineVersion.I1
-        for attempt in range(1, 4):
-            prefer_bulk = attempt == 1 and len(device.aldb) == 0
+        dev_engine = getattr(device, "engine_version", EngineVersion.UNKNOWN)
+        use_peek_poke = dev_engine == EngineVersion.I1
+        max_attempts = 4
+        for attempt in range(1, max_attempts + 1):
+            get_health(addr_obj).record_success()
+            prev_rec_count = len(device.aldb)
+            prefer_bulk = attempt == 1 and prev_rec_count == 0
             mode_desc = "10-byte Standard PEEK_POKE" if use_peek_poke else ("bulk stream" if prefer_bulk else "1-by-1 gap fill")
-            logger.info(f"[Device Query] Reading ALDB from {clean_addr} ({dev_label}) Attempt {attempt}/3 ({mode_desc})...")
+            logger.info(f"[Device Query] Reading ALDB from {clean_addr} ({dev_label}) Attempt {attempt}/{max_attempts} ({mode_desc}, {prev_rec_count} records in memory)...")
             try:
-                timeout_s = 65.0 if use_peek_poke else 22.0
+                timeout_s = 80.0 if use_peek_poke else (25.0 if prefer_bulk else 45.0)
                 await asyncio.wait_for(
                     self._read_aldb_robust(device.aldb, prefer_bulk=prefer_bulk, use_peek_poke=use_peek_poke),
                     timeout=timeout_s,
@@ -626,14 +648,17 @@ class InsteonManager:
                 self._drain_outbound_queue()
             if device.aldb.is_loaded:
                 break
-            if len(device.aldb) == 0 and not use_peek_poke and device.engine_version in (EngineVersion.I1, EngineVersion.I2):
+            if len(device.aldb) == 0 and not use_peek_poke and dev_engine in (EngineVersion.I1, EngineVersion.I2):
                 use_peek_poke = True
                 logger.info(f"[Device Query] {clean_addr} ({dev_label}): Switching to 10-byte Standard PEEK_POKE...")
-            await asyncio.sleep(1.5 * attempt)
+            elif attempt >= 3 and len(device.aldb) <= prev_rec_count:
+                break
+            await asyncio.sleep(1.2 * attempt)
 
         parsed = self._parse_aldb_records(device.aldb, source_address=clean_addr)
         if parsed:
-            logger.info(f"[Device Query] {clean_addr} ({dev_label}) ALDB read complete ({len(parsed)} records).")
+            st_msg = "Complete ALDB loaded" if device.aldb.is_loaded else "Partial ALDB read"
+            logger.info(f"[Device Query] {clean_addr} ({dev_label}): {st_msg} ({len(parsed)} records).")
             self._update_device_in_snapshot(
                 address=clean_addr,
                 device=device,
@@ -654,8 +679,10 @@ class InsteonManager:
             return False
         return True
 
-    def _seed_aldb_from_snapshot_records(self, aldb, records: List[Dict[str, Any]], is_modem: bool = False) -> int:
-        """Seed a pyinsteon ALDB or ModemALDB instance from verified snapshot records, ensuring a High-Water Mark exists."""
+    def _seed_aldb_from_snapshot_records(
+        self, aldb, records: List[Dict[str, Any]], is_modem: bool = False, ensure_hwm: bool = True
+    ) -> int:
+        """Seed a pyinsteon ALDB or ModemALDB instance from snapshot records."""
         if not PYINSTEON_AVAILABLE or not records:
             return 0
 
@@ -693,8 +720,8 @@ class InsteonManager:
             except Exception as ex:
                 logger.debug(f"Skipping invalid snapshot record during ALDB seed: {ex}")
 
-        # Ensure non-modem ALDB has a High-Water Mark record at the end so pyinsteon knows where the table terminates
-        if not is_modem and loaded_dict and not has_hwm:
+        # Ensure non-modem ALDB has a High-Water Mark record at the end when seeding a complete table
+        if ensure_hwm and not is_modem and loaded_dict and not has_hwm:
             hwm_addr = max(0x0000, min_mem - 8)
             loaded_dict[hwm_addr] = ALDBRecord(
                 memory=hwm_addr,
@@ -711,10 +738,11 @@ class InsteonManager:
             )
 
         if loaded_dict:
+            target_status = ALDBStatus.LOADED if (ensure_hwm or has_hwm) else ALDBStatus.PARTIAL
             try:
                 if hasattr(aldb, "load_saved_records"):
                     aldb.load_saved_records(
-                        ALDBStatus.LOADED,
+                        target_status,
                         loaded_dict,
                         first_mem_addr=0x1FFF if is_modem else 0x0FFF,
                     )
@@ -1298,7 +1326,21 @@ class InsteonManager:
             if device is None:
                 device = pyinsteon.devices.add_x10_or_insteon_device(addr_obj, cat_val or 1, subcat_val, fw_val)
 
-            if force_full and not is_recovery and hasattr(device, "aldb"):
+            is_partial_resume = (
+                str(prev_dev.get("status", "")).upper().startswith("PARTIAL")
+                and prev_dev.get("db_delta") is not None
+                and live_delta is not None
+                and int(prev_dev.get("db_delta")) == int(live_delta)
+                and len(prev_dev.get("records", [])) > 0
+            )
+            if is_partial_resume and hasattr(device, "aldb") and not device.aldb.is_loaded:
+                seeded = self._seed_aldb_from_snapshot_records(
+                    device.aldb, prev_dev.get("records", []), is_modem=False, ensure_hwm=False
+                )
+                logger.info(
+                    f"  -> {addr_str} ({friendly_label}): Resuming partial ALDB read from {seeded} cached records (DB Delta: {delta_hex})..."
+                )
+            elif force_full and not is_recovery and hasattr(device, "aldb"):
                 try:
                     device.aldb.clear()
                 except Exception:

@@ -123,6 +123,20 @@ public class InsteonApiClient
         }
     }
 
+    public async Task<List<AldbRecordModel>> GetDeviceAldbAsync(string address, bool forceRefresh = true)
+    {
+        try
+        {
+            var url = $"{_baseUrl}/insteon/devices/{Uri.EscapeDataString(address)}/aldb?force_refresh={forceRefresh.ToString().ToLower()}";
+            var records = await _httpClient.GetFromJsonAsync<List<AldbRecordModel>>(url);
+            return records ?? new List<AldbRecordModel>();
+        }
+        catch (Exception ex)
+        {
+            throw new InvalidOperationException($"Failed to query ALDB for {address}: {ex.Message}", ex);
+        }
+    }
+
     public async Task<List<DeviceSummaryModel>> GetDevicesAsync()
     {
         try

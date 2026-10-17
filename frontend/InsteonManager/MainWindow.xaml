@@ -674,6 +674,9 @@
                                                                   Click="MenuItem_InspectAldb_Click"
                                                                   Command="{Binding PlacementTarget.Tag.InspectNodeInAldbCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}"
                                                                   CommandParameter="{Binding PlacementTarget.DataContext.Address, RelativeSource={RelativeSource AncestorType=ContextMenu}}" />
+                                                        <MenuItem Header="📡 Refresh Device ALDB from Hardware"
+                                                                  Command="{Binding PlacementTarget.Tag.RefreshDeviceAldbCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}"
+                                                                  CommandParameter="{Binding PlacementTarget.DataContext.Address, RelativeSource={RelativeSource AncestorType=ContextMenu}}" />
                                                         <MenuItem Header="📋 Copy Insteon Address"
                                                                   Click="MenuItem_CopyAddress_Click"
                                                                   Command="{Binding PlacementTarget.Tag.CopyNodeAddressCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}"
@@ -1186,6 +1189,12 @@
                                                                     </TextBlock.Style>
                                                                 </TextBlock>
                                                             </Border>
+                                                            <Button Content="📡 Refresh Hardware ALDB"
+                                                                    Command="{Binding DataContext.RefreshDeviceAldbCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                                    CommandParameter="{Binding}"
+                                                                    Padding="8,4" Margin="4,0,0,0" FontSize="11"
+                                                                    Background="#25324A" Foreground="{StaticResource AccentBlue}" FontWeight="SemiBold"
+                                                                    ToolTip="Interrogate only this device's All-Link Database directly from hardware (resumes partial reads automatically)" />
                                                         </StackPanel>
                                                     </DockPanel>
 

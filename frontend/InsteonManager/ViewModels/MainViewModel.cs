@@ -108,6 +108,7 @@ public class MainViewModel : ViewModelBase
         StartSessionCommand = new AsyncRelayCommand(StartSessionAsync, () => !IsSessionActive && !IsLoading);
         EndSessionCommand = new AsyncRelayCommand(EndSessionAsync, () => IsSessionActive && !IsLoading);
         QueryAldbCommand = new AsyncRelayCommand(() => QueryAldbAsync(false), () => !IsLoading);
+        RefreshDeviceAldbCommand = new AsyncRelayCommand<object>(RefreshSingleDeviceAldbAsync, _ => !IsLoading);
         ForceRestoreOpenhabCommand = new AsyncRelayCommand(ForceRestoreOpenhabAsync, () => !IsLoading);
         CheckConnectionCommand = new AsyncRelayCommand(CheckStatusAsync, () => !IsLoading);
         ResetLayoutCommand = new RelayCommand(ResetLayout);
@@ -495,6 +496,7 @@ public class MainViewModel : ViewModelBase
         ? "Stop session: Disconnects pyinsteon and restores openHAB Insteon Thing back to ONLINE." 
         : "Start session: Pauses openHAB Insteon Thing and connects pyinsteon to USB PLM for management.";
     public AsyncRelayCommand QueryAldbCommand { get; }
+    public AsyncRelayCommand<object> RefreshDeviceAldbCommand { get; }
     public AsyncRelayCommand ForceRestoreOpenhabCommand { get; }
     public AsyncRelayCommand CheckConnectionCommand { get; }
     public RelayCommand ResetLayoutCommand { get; }
@@ -1321,7 +1323,8 @@ public class MainViewModel : ViewModelBase
 
     public async Task QueryAldbAsync(bool silent = false)
     {
-        if (ForceRefreshHardware && !IsSessionActive)
+        bool doHardwareRefresh = !silent && ForceRefreshHardware;
+        if (doHardwareRefresh && !IsSessionActive)
         {
             StatusMessage = "Must start session before reading ALDB directly from hardware.";
             AddLog(LogLevel.Warning, "InsteonAPI", "Blocked query attempt: Session is not active for hardware read.");
@@ -1331,16 +1334,16 @@ public class MainViewModel : ViewModelBase
         IsLoading = true;
         if (!silent)
         {
-            StatusMessage = ForceRefreshHardware
+            StatusMessage = doHardwareRefresh
                 ? "Reading ALDB directly from hardware (pacing powerline queries)..."
                 : "Querying ALDB records from backend cache...";
 
-            AddLog(LogLevel.Info, "InsteonAPI", ForceRefreshHardware ? "Querying ALDB from wire hardware..." : "Querying ALDB from backend cache...");
+            AddLog(LogLevel.Info, "InsteonAPI", doHardwareRefresh ? "Querying ALDB from wire hardware..." : "Querying ALDB from backend cache...");
         }
 
         try
         {
-            var records = await _apiClient.GetPlmAldbAsync(ForceRefreshHardware);
+            var records = await _apiClient.GetPlmAldbAsync(doHardwareRefresh);
             _currentDevices = await _apiClient.GetDevicesAsync();
 
             AldbRecords.Clear();
@@ -1368,6 +1371,63 @@ public class MainViewModel : ViewModelBase
         {
             StatusMessage = $"ALDB query failed: {ex.Message}";
             AddLog(LogLevel.Error, "InsteonAPI", $"ALDB query failed: {ex.Message}");
+        }
+        finally
+        {
+            IsLoading = false;
+        }
+    }
+
+    public async Task RefreshSingleDeviceAldbAsync(object? target)
+    {
+        string? devAddr = null;
+        string? devName = null;
+
+        if (target is OrganizedDeviceAldb org)
+        {
+            devAddr = org.Address;
+            devName = org.FriendlyName;
+        }
+        else if (target is DeviceNode node)
+        {
+            devAddr = node.Address;
+            devName = node.FriendlyName;
+        }
+        else if (target is string addrStr)
+        {
+            devAddr = InsteonAddressHelper.Normalize(addrStr);
+            devName = SelectableDevices.FirstOrDefault(d => d.Address.Equals(devAddr, StringComparison.OrdinalIgnoreCase))?.FriendlyName ?? devAddr;
+        }
+        else if (SelectedGraphNode != null)
+        {
+            devAddr = SelectedGraphNode.Address;
+            devName = SelectedGraphNode.FriendlyName;
+        }
+
+        if (string.IsNullOrWhiteSpace(devAddr)) return;
+
+        if (!IsSessionActive)
+        {
+            StatusMessage = $"Must start session before reading {devName} ({devAddr}) ALDB directly from hardware.";
+            AddLog(LogLevel.Warning, "DeviceQuery", $"Blocked single-device hardware query for {devAddr}: Start a management session first.");
+            return;
+        }
+
+        IsLoading = true;
+        StatusMessage = $"Interrogating {devName} ({devAddr}) ALDB from hardware...";
+        AddLog(LogLevel.Info, "DeviceQuery", $"Requesting live hardware ALDB refresh for {devName} ({devAddr})...");
+
+        try
+        {
+            var devRecords = await _apiClient.GetDeviceAldbAsync(devAddr, forceRefresh: true);
+            await QueryAldbAsync(silent: true);
+            StatusMessage = $"Refreshed {devName} ({devAddr}) ALDB from hardware ({devRecords.Count} records).";
+            AddLog(LogLevel.Success, "DeviceQuery", $"Refreshed {devName} ({devAddr}) ALDB from hardware: {devRecords.Count} records loaded.");
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = $"Failed to refresh {devName} ({devAddr}): {ex.Message}";
+            AddLog(LogLevel.Error, "DeviceQuery", $"Hardware ALDB refresh failed for {devAddr}: {ex.Message}");
         }
         finally
         {
