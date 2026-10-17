@@ -477,7 +477,9 @@ class InsteonManager:
             except Exception:
                 self._drain_outbound_queue()
             aldb.set_load_status()
-            return aldb.status
+            if aldb.is_loaded or len(aldb) > 0:
+                return aldb.status
+            logger.info(f"Bulk ALDB stream did not return records for {aldb.address} (status={aldb.status}); falling back to step-by-step walk...")
 
         await self._walk_missing_records_one_by_one(
             aldb,

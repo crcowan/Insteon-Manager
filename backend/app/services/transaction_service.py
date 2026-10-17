@@ -413,15 +413,16 @@ class TransactionService:
                 owners_to_purge.append(dev_addr)
 
         # Execute live hardware deletions if connected
+        hardware_success_devices: List[str] = []
+        hardware_failed_devices: List[str] = []
         if live_hw and owners_to_purge:
             ghost_addr_obj = Address(clean_target)
             for owner_addr in owners_to_purge:
                 ok, dev_obj, err_msg = await insteon_manager.ensure_device_aldb_ready_for_write(owner_addr, snapshot)
                 if not ok or not dev_obj:
-                    return GenericResponse(
-                        success=False,
-                        message=f"Ghost purge aborted on {owner_addr}: {err_msg}",
-                    )
+                    logger.warning(f"Skipping ghost purge on {owner_addr}: {err_msg}")
+                    hardware_failed_devices.append(f"{owner_addr} ({err_msg})")
+                    continue
                 modified_slots = 0
                 for mem_k, rec in list(dev_obj.aldb.items()):
                     if rec.is_in_use and str(rec.target).upper() == str(ghost_addr_obj).upper():
@@ -432,26 +433,32 @@ class TransactionService:
                     _, failed = await dev_obj.aldb.async_write()
                     if failed:
                         dev_obj.aldb.clear_pending()
-                        return GenericResponse(
-                            success=False,
-                            message=f"Hardware write failed while purging ghost {clean_target} from {owner_addr}.",
-                        )
+                        logger.error(f"Hardware write failed on {owner_addr} while purging ghost {clean_target}.")
+                        hardware_failed_devices.append(f"{owner_addr} (Write failed)")
+                        continue
                     logger.info(f"Hardware EEPROM write succeeded on {owner_addr}: {modified_slots} slot(s) deleted.")
                     await insteon_manager.refresh_device_db_delta_after_write(owner_addr, snapshot)
+                    hardware_success_devices.append(owner_addr)
+                else:
+                    hardware_success_devices.append(owner_addr)
 
         # 1. Purge from PLM snapshot
-        for rec in plm.get("records", []):
-            if rec.get("in_use") and rec.get("target_address", "").upper() == clean_target:
-                rec["in_use"] = False
-                rec["raw_mode"] = rec.get("raw_mode", "").replace(" (Deleted)", "") + " (Deleted)"
-                purged_count += 1
-                logger.info(f"Purged PLM slot {rec.get('mem_addr')} (Group {rec.get('group')}) targeting ghost {clean_target}")
-                if plm_addr not in modified_devices:
-                    modified_devices.append(plm_addr)
+        if not live_hw or plm_addr in hardware_success_devices:
+            for rec in plm.get("records", []):
+                if rec.get("in_use") and rec.get("target_address", "").upper() == clean_target:
+                    rec["in_use"] = False
+                    rec["raw_mode"] = rec.get("raw_mode", "").replace(" (Deleted)", "") + " (Deleted)"
+                    purged_count += 1
+                    logger.info(f"Purged PLM slot {rec.get('mem_addr')} (Group {rec.get('group')}) targeting ghost {clean_target}")
+                    if plm_addr not in modified_devices:
+                        modified_devices.append(plm_addr)
 
         # 2. Purge from peer devices in snapshot
+        failed_addrs = [f.split()[0].upper() for f in hardware_failed_devices]
         for dev in snapshot.get("devices", []):
-            dev_addr = dev.get("address", "")
+            dev_addr = dev.get("address", "").upper()
+            if live_hw and dev_addr in failed_addrs:
+                continue
             for rec in dev.get("records", []):
                 if rec.get("in_use") and rec.get("target_address", "").upper() == clean_target:
                     rec["in_use"] = False
@@ -469,12 +476,16 @@ class TransactionService:
 
         self._save_snapshot(snapshot)
 
-        logger.info(f"Purged {purged_count} ghost references to {clean_target} across {len(modified_devices)} devices.")
+        msg = f"Purged {purged_count} orphan references to {clean_target} across {len(modified_devices)} devices."
+        if hardware_failed_devices:
+            msg += f" Note: {len(hardware_failed_devices)} device(s) could not be reached on hardware: {', '.join(hardware_failed_devices)}"
+
+        logger.info(msg)
 
         return GenericResponse(
             success=True,
-            message=f"Successfully purged {purged_count} orphan references to {clean_target} across {len(modified_devices)} devices.",
-            data={"target": clean_target, "records_purged": purged_count, "devices_affected": modified_devices},
+            message=msg,
+            data={"target": clean_target, "records_purged": purged_count, "devices_affected": modified_devices, "skipped": hardware_failed_devices},
         )
 
     async def replace_device(self, req: DeviceReplaceRequest) -> GenericResponse:
