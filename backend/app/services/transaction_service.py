@@ -465,14 +465,14 @@ class TransactionService:
         failed_addrs = [f.split()[0].upper() for f in hardware_failed_devices]
         for dev in snapshot.get("devices", []):
             dev_addr = dev.get("address", "").upper()
-            if live_hw and dev_addr in failed_addrs:
-                continue
+            is_hw_failed = live_hw and dev_addr in failed_addrs
             for rec in dev.get("records", []):
                 if rec.get("in_use") and rec.get("target_address", "").upper() == clean_target:
                     rec["in_use"] = False
                     rec["raw_mode"] = rec.get("raw_mode", "").replace(" (Deleted)", "") + " (Deleted)"
                     purged_count += 1
-                    logger.info(f"Purged slot {rec.get('mem_addr')} on {dev_addr} (Group {rec.get('group')}) targeting ghost {clean_target}")
+                    note = " (snapshot purged; hardware EEPROM write timed out)" if is_hw_failed else ""
+                    logger.info(f"Purged slot {rec.get('mem_addr')} on {dev_addr} (Group {rec.get('group')}) targeting ghost {clean_target}{note}")
                     if dev_addr not in modified_devices:
                         modified_devices.append(dev_addr)
 
@@ -486,7 +486,7 @@ class TransactionService:
 
         msg = f"Purged {purged_count} orphan references to {clean_target} across {len(modified_devices)} devices."
         if hardware_failed_devices:
-            msg += f" Note: {len(hardware_failed_devices)} device(s) could not be reached on hardware: {', '.join(hardware_failed_devices)}"
+            msg += f" Note: {len(hardware_failed_devices)} device(s) could not be written on physical hardware: {', '.join(hardware_failed_devices)} (to sync switch EEPROM, hold Set button on switch until it beeps and re-run)."
 
         logger.info(msg)
 
