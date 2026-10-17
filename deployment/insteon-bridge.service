@@ -7,8 +7,8 @@ Wants=network-online.target
 [Service]
 Type=simple
 # Ensure the user belongs to the 'dialout' group to access /dev/ttyUSB0
-User=pi
-Group=pi
+User=openhabian
+Group=openhabian
 WorkingDirectory=/opt/insteon-bridge
 EnvironmentFile=-/opt/insteon-bridge/.env
 ExecStart=/opt/insteon-bridge/.venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8000

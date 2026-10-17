@@ -53,11 +53,12 @@ python3 -m venv "$INSTALL_DIR/.venv"
 "$INSTALL_DIR/.venv/bin/pip" install --upgrade pip
 "$INSTALL_DIR/.venv/bin/pip" install -r "$INSTALL_DIR/requirements.txt"
 
-echo "[3/5] Ensuring user '${SUDO_USER:-$USER}' is in the 'dialout' group for /dev/ttyUSB0 access..."
-sudo usermod -a -G dialout "${SUDO_USER:-$USER}" || true
+TARGET_USER="${SUDO_USER:-$USER}"
+echo "[3/5] Ensuring user '$TARGET_USER' is in the 'dialout' group for /dev/ttyUSB0 access..."
+sudo usermod -a -G dialout "$TARGET_USER" || true
 
-echo "[4/5] Installing systemd service unit ($SERVICE_FILE)..."
-sudo cp "$SCRIPT_DIR/insteon-bridge.service" "$SERVICE_FILE"
+echo "[4/5] Installing systemd service unit ($SERVICE_FILE) for user '$TARGET_USER'..."
+sed -e "s/^User=.*/User=$TARGET_USER/" -e "s/^Group=.*/Group=$TARGET_USER/" "$SCRIPT_DIR/insteon-bridge.service" | sudo tee "$SERVICE_FILE" > /dev/null
 sudo systemctl daemon-reload
 sudo systemctl enable insteon-bridge.service
 
