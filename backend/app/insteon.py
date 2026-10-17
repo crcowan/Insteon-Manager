@@ -594,12 +594,10 @@ class InsteonManager:
                 for r in cached_dev.get("records", [])
             ]
 
-        device = pyinsteon.devices.get(addr_obj)
-        if not device:
-            cat_c = int((cached_dev or {}).get("cat", 1) or 1)
-            subcat_c = int((cached_dev or {}).get("subcat", 0) or 0)
-            fw_c = int((cached_dev or {}).get("firmware", 0) or 0)
-            device = pyinsteon.devices.add_x10_or_insteon_device(addr_obj, cat_c, subcat_c, fw_c)
+        cat_c = int((cached_dev or {}).get("cat", 1) or 1)
+        subcat_c = int((cached_dev or {}).get("subcat", 0) or 0)
+        fw_c = int((cached_dev or {}).get("firmware", 0) or 0)
+        device = await self._get_or_create_pyinsteon_device(addr_obj, cat_c, subcat_c, fw_c)
 
         is_partial_resume = (
             cached_dev is not None
@@ -755,6 +753,27 @@ class InsteonManager:
                 aldb._records.update(loaded_dict)
         return len(loaded_dict)
 
+    async def _get_or_create_pyinsteon_device(
+        self, addr_obj: Address, cat: int = 1, subcat: int = 0, firmware: int = 0
+    ) -> Any:
+        """Retrieve or instantiate a pyinsteon device object without triggering background network inspection."""
+        dev = pyinsteon.devices.get(addr_obj)
+        if dev is not None and (int(getattr(dev, "subcat", 0) or 0) != 0 or subcat == 0):
+            return dev
+        try:
+            pyinsteon.devices.delay_inspection = True
+            pyinsteon.devices.set_id(addr_obj, int(cat or 1), int(subcat or 0), int(firmware or 0))
+            await asyncio.sleep(0.05)
+            dev = pyinsteon.devices.get(addr_obj)
+        except Exception:
+            pass
+        if dev is None:
+            from pyinsteon.managers.device_id_manager import DeviceId
+            from pyinsteon.managers.utils import create_device
+            dev = create_device(DeviceId(addr_obj, int(cat or 1), int(subcat or 0), int(firmware or 0)))
+            pyinsteon.devices._devices[addr_obj] = dev
+        return dev
+
     async def ensure_device_aldb_ready_for_write(
         self, address: str, snapshot: Optional[Dict[str, Any]] = None
     ) -> tuple[bool, Optional[Any], str]:
@@ -811,15 +830,7 @@ class InsteonManager:
         subcat = int((cached_dev or {}).get("subcat", 0) or 0)
         fw = int((cached_dev or {}).get("firmware", 0) or 0)
 
-        dev_obj = pyinsteon.devices.get(addr_obj)
-        if not dev_obj:
-            try:
-                pyinsteon.devices.set_id(addr_obj, cat, subcat, fw)
-                dev_obj = pyinsteon.devices.get(addr_obj)
-            except Exception:
-                pass
-        if not dev_obj:
-            dev_obj = pyinsteon.devices.add_x10_or_insteon_device(addr_obj, cat, subcat, fw)
+        dev_obj = await self._get_or_create_pyinsteon_device(addr_obj, cat, subcat, fw)
 
         if getattr(dev_obj, "engine_version", EngineVersion.UNKNOWN) == EngineVersion.UNKNOWN:
             eng_str = str((cached_dev or {}).get("engine_version", "I2CS")).upper()
@@ -1315,16 +1326,7 @@ class InsteonManager:
                     "_cached_delta_hit": True,
                 }
 
-            device = pyinsteon.devices.get(addr_obj)
-            if device is None or (int(getattr(device, "subcat", 0) or 0) == 0 and subcat_val != 0):
-                try:
-                    pyinsteon.devices.set_id(addr_obj, cat_val or 1, subcat_val, fw_val)
-                    await asyncio.sleep(0.05)
-                    device = pyinsteon.devices.get(addr_obj)
-                except Exception:
-                    pass
-            if device is None:
-                device = pyinsteon.devices.add_x10_or_insteon_device(addr_obj, cat_val or 1, subcat_val, fw_val)
+            device = await self._get_or_create_pyinsteon_device(addr_obj, cat_val or 1, subcat_val, fw_val)
 
             is_partial_resume = (
                 str(prev_dev.get("status", "")).upper().startswith("PARTIAL")
@@ -1544,13 +1546,7 @@ class InsteonManager:
                 cat_c = int(cached_d.get("cat", 1) or 1)
                 subcat_c = int(cached_d.get("subcat", 0) or 0)
                 fw_c = int(cached_d.get("firmware", 0) or 0)
-                try:
-                    pyinsteon.devices.set_id(addr_obj, cat_c, subcat_c, fw_c)
-                    dev = pyinsteon.devices.get(addr_obj)
-                except Exception:
-                    pass
-                if not dev:
-                    dev = pyinsteon.devices.add_x10_or_insteon_device(addr_obj, cat_c, subcat_c, fw_c)
+                dev = await self._get_or_create_pyinsteon_device(addr_obj, cat_c, subcat_c, fw_c)
 
         group_num = max(1, int(button or 1))
 

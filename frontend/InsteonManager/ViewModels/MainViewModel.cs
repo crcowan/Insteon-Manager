@@ -729,12 +729,15 @@ public class MainViewModel : ViewModelBase
                     n.IsSelected = (n == value);
                 }
                 OnPropertyChanged(nameof(HasSelectedGraphNode));
+                OnPropertyChanged(nameof(HasSelectedControllableGraphNode));
                 OnPropertyChanged(nameof(SelectedGraphNodeTitle));
+                ControlSelectedNodeCommand?.NotifyCanExecuteChanged();
             }
         }
     }
 
     public bool HasSelectedGraphNode => SelectedGraphNode != null;
+    public bool HasSelectedControllableGraphNode => SelectedGraphNode != null && !SelectedGraphNode.IsModem;
 
     public string SelectedGraphNodeTitle => SelectedGraphNode != null
         ? $"{SelectedGraphNode.FriendlyName} ({SelectedGraphNode.Address})"

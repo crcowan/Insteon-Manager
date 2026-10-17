@@ -541,16 +541,16 @@
 
                                         <!-- Quick Controls -->
                                         <Button Content="💡 On" Command="{Binding ControlSelectedNodeCommand}" CommandParameter="on"
-                                                IsEnabled="{Binding HasSelectedGraphNode}"
+                                                IsEnabled="{Binding HasSelectedControllableGraphNode}"
                                                 Padding="7,4" FontSize="11" Margin="0,0,3,0" Background="#2E4035" Foreground="#A6E3A1" FontWeight="SemiBold" ToolTip="Turn ON selected device" />
                                         <Button Content="🌑 Off" Command="{Binding ControlSelectedNodeCommand}" CommandParameter="off"
-                                                IsEnabled="{Binding HasSelectedGraphNode}"
+                                                IsEnabled="{Binding HasSelectedControllableGraphNode}"
                                                 Padding="7,4" FontSize="11" Margin="0,0,6,0" Background="#3D2930" Foreground="#F38BA8" FontWeight="SemiBold" ToolTip="Turn OFF selected device" />
                                         <TextBlock Text="Dim:" FontSize="10" Foreground="{StaticResource TextMuted}" VerticalAlignment="Center" Margin="0,0,4,0" />
-                                        <Slider Value="{Binding SelectedNodeBrightness}" Minimum="0" Maximum="100" Width="70" VerticalAlignment="Center" Margin="0,0,4,0" IsEnabled="{Binding HasSelectedGraphNode}" />
+                                        <Slider Value="{Binding SelectedNodeBrightness}" Minimum="0" Maximum="100" Width="70" VerticalAlignment="Center" Margin="0,0,4,0" IsEnabled="{Binding HasSelectedControllableGraphNode}" />
                                         <TextBlock Text="{Binding SelectedNodeBrightness, StringFormat='{}{0}%'}" FontSize="10" Foreground="{StaticResource AccentGreen}" Width="30" VerticalAlignment="Center" Margin="0,0,4,0" />
                                         <Button Content="🔆" Command="{Binding ControlSelectedNodeCommand}" CommandParameter="dim"
-                                                IsEnabled="{Binding HasSelectedGraphNode}"
+                                                IsEnabled="{Binding HasSelectedControllableGraphNode}"
                                                 Padding="6,4" FontSize="10" Background="#3A3225" Foreground="{StaticResource AccentAmber}" FontWeight="SemiBold" ToolTip="Set dim brightness level" />
                                     </StackPanel>
                                 </DockPanel>
