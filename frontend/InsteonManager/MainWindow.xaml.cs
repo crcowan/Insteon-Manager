@@ -422,3 +422,16 @@ public partial class MainWindow : Window
         }
     }
 }
+
+public class CommandActionConverter : System.Windows.Data.IValueConverter
+{
+    public object Convert(object value, Type targetType, object parameter, System.Globalization.CultureInfo culture)
+    {
+        string addr = value?.ToString() ?? string.Empty;
+        string action = parameter?.ToString() ?? "on";
+        return $"{addr}:{action}";
+    }
+
+    public object ConvertBack(object value, Type targetType, object parameter, System.Globalization.CultureInfo culture)
+        => System.Windows.Data.Binding.DoNothing;
+}

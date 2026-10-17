@@ -22,6 +22,7 @@
 
     <Window.Resources>
         <BooleanToVisibilityConverter x:Key="BoolToVis" />
+        <local:CommandActionConverter x:Key="ActionParam" />
 
         <!-- Modern Colors -->
         <SolidColorBrush x:Key="DarkSurface" Color="#1E1E2E" />
@@ -470,6 +471,18 @@
 
         <!-- 3. Main Workspace: Tabs -->
         <TabControl Grid.Row="2" SelectedIndex="{Binding SelectedTabIndex}" Background="Transparent" BorderThickness="0" Margin="12,8,12,8">
+            <TabControl.Style>
+                <Style TargetType="TabControl">
+                    <Setter Property="Opacity" Value="0.4" />
+                    <Setter Property="IsEnabled" Value="False" />
+                    <Style.Triggers>
+                        <DataTrigger Binding="{Binding IsSessionActive}" Value="True">
+                            <Setter Property="Opacity" Value="1.0" />
+                            <Setter Property="IsEnabled" Value="True" />
+                        </DataTrigger>
+                    </Style.Triggers>
+                </Style>
+            </TabControl.Style>
             <!-- TAB 1: Network Topology Graph (Canvas with Dynamic Links & Draggable Nodes) -->
             <TabItem Header="🗺️ Network Topology Map">
                 <Grid Background="{StaticResource DarkSurface}">
@@ -686,26 +699,26 @@
                                                         <Separator Background="#313244" />
                                                         <MenuItem Header="💡 Turn ON (100%)"
                                                                   Command="{Binding PlacementTarget.Tag.ControlDeviceCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}"
-                                                                  CommandParameter="{Binding PlacementTarget.DataContext.Address, RelativeSource={RelativeSource AncestorType=ContextMenu}, StringFormat='{}{0}:on'}" />
+                                                                  CommandParameter="{Binding PlacementTarget.DataContext.Address, RelativeSource={RelativeSource AncestorType=ContextMenu}, Converter={StaticResource ActionParam}, ConverterParameter=on}" />
                                                         <MenuItem Header="🌑 Turn OFF"
                                                                   Command="{Binding PlacementTarget.Tag.ControlDeviceCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}"
-                                                                  CommandParameter="{Binding PlacementTarget.DataContext.Address, RelativeSource={RelativeSource AncestorType=ContextMenu}, StringFormat='{}{0}:off'}" />
+                                                                  CommandParameter="{Binding PlacementTarget.DataContext.Address, RelativeSource={RelativeSource AncestorType=ContextMenu}, Converter={StaticResource ActionParam}, ConverterParameter=off}" />
                                                         <MenuItem Header="⚡ Fast ON"
                                                                   Command="{Binding PlacementTarget.Tag.ControlDeviceCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}"
-                                                                  CommandParameter="{Binding PlacementTarget.DataContext.Address, RelativeSource={RelativeSource AncestorType=ContextMenu}, StringFormat='{}{0}:fast_on'}" />
+                                                                  CommandParameter="{Binding PlacementTarget.DataContext.Address, RelativeSource={RelativeSource AncestorType=ContextMenu}, Converter={StaticResource ActionParam}, ConverterParameter=fast_on}" />
                                                         <MenuItem Header="⚡ Fast OFF"
                                                                   Command="{Binding PlacementTarget.Tag.ControlDeviceCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}"
-                                                                  CommandParameter="{Binding PlacementTarget.DataContext.Address, RelativeSource={RelativeSource AncestorType=ContextMenu}, StringFormat='{}{0}:fast_off'}" />
+                                                                  CommandParameter="{Binding PlacementTarget.DataContext.Address, RelativeSource={RelativeSource AncestorType=ContextMenu}, Converter={StaticResource ActionParam}, ConverterParameter=fast_off}" />
                                                         <Separator Background="#313244" />
                                                         <MenuItem Header="🔆 Dim to 25%"
                                                                   Command="{Binding PlacementTarget.Tag.ControlDeviceCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}"
-                                                                  CommandParameter="{Binding PlacementTarget.DataContext.Address, RelativeSource={RelativeSource AncestorType=ContextMenu}, StringFormat='{}{0}:dim:64'}" />
+                                                                  CommandParameter="{Binding PlacementTarget.DataContext.Address, RelativeSource={RelativeSource AncestorType=ContextMenu}, Converter={StaticResource ActionParam}, ConverterParameter=dim:64}" />
                                                         <MenuItem Header="🔆 Dim to 50%"
                                                                   Command="{Binding PlacementTarget.Tag.ControlDeviceCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}"
-                                                                  CommandParameter="{Binding PlacementTarget.DataContext.Address, RelativeSource={RelativeSource AncestorType=ContextMenu}, StringFormat='{}{0}:dim:128'}" />
+                                                                  CommandParameter="{Binding PlacementTarget.DataContext.Address, RelativeSource={RelativeSource AncestorType=ContextMenu}, Converter={StaticResource ActionParam}, ConverterParameter=dim:128}" />
                                                         <MenuItem Header="🔆 Dim to 75%"
                                                                   Command="{Binding PlacementTarget.Tag.ControlDeviceCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}"
-                                                                  CommandParameter="{Binding PlacementTarget.DataContext.Address, RelativeSource={RelativeSource AncestorType=ContextMenu}, StringFormat='{}{0}:dim:192'}" />
+                                                                  CommandParameter="{Binding PlacementTarget.DataContext.Address, RelativeSource={RelativeSource AncestorType=ContextMenu}, Converter={StaticResource ActionParam}, ConverterParameter=dim:192}" />
                                                     </ContextMenu>
                                                 </Border.ContextMenu>
                                                 <Border.Style>
@@ -776,11 +789,11 @@
                                                             </StackPanel.Style>
                                                             <Button Content="💡" Focusable="False" Cursor="Hand"
                                                                     Command="{Binding DataContext.ControlDeviceCommand, RelativeSource={RelativeSource AncestorType=Window}}"
-                                                                    CommandParameter="{Binding Address, StringFormat='{}{0}:on'}"
+                                                                    CommandParameter="{Binding Address, Converter={StaticResource ActionParam}, ConverterParameter=on}"
                                                                     Padding="4,1" FontSize="9" Margin="0,0,3,0" Background="#2E4035" Foreground="#A6E3A1" ToolTip="Quick Turn ON (100%)" />
                                                             <Button Content="🌑" Focusable="False" Cursor="Hand"
                                                                     Command="{Binding DataContext.ControlDeviceCommand, RelativeSource={RelativeSource AncestorType=Window}}"
-                                                                    CommandParameter="{Binding Address, StringFormat='{}{0}:off'}"
+                                                                    CommandParameter="{Binding Address, Converter={StaticResource ActionParam}, ConverterParameter=off}"
                                                                     Padding="4,1" FontSize="9" Background="#3D2930" Foreground="#F38BA8" ToolTip="Quick Turn OFF" />
                                                         </StackPanel>
 
@@ -1255,24 +1268,24 @@
                                                             <StackPanel DockPanel.Dock="Left" Orientation="Horizontal" VerticalAlignment="Center">
                                                                 <TextBlock Text="⚡ Direct Controls:" FontWeight="SemiBold" FontSize="11" Foreground="{StaticResource TextMuted}" VerticalAlignment="Center" Margin="0,0,10,0" />
                                                                 <Button Content="💡 ON" Command="{Binding DataContext.ControlDeviceCommand, RelativeSource={RelativeSource AncestorType=Window}}"
-                                                                        CommandParameter="{Binding Address, StringFormat='{}{0}:on'}" Padding="10,4" FontSize="11" Margin="0,0,6,0" Background="#2E4035" Foreground="#A6E3A1" FontWeight="SemiBold" ToolTip="Send direct ON to this device" />
+                                                                        CommandParameter="{Binding Address, Converter={StaticResource ActionParam}, ConverterParameter=on}" Padding="10,4" FontSize="11" Margin="0,0,6,0" Background="#2E4035" Foreground="#A6E3A1" FontWeight="SemiBold" ToolTip="Send direct ON to this device" />
                                                                 <Button Content="🌑 OFF" Command="{Binding DataContext.ControlDeviceCommand, RelativeSource={RelativeSource AncestorType=Window}}"
-                                                                        CommandParameter="{Binding Address, StringFormat='{}{0}:off'}" Padding="10,4" FontSize="11" Margin="0,0,6,0" Background="#3D2930" Foreground="#F38BA8" FontWeight="SemiBold" ToolTip="Send direct OFF to this device" />
+                                                                        CommandParameter="{Binding Address, Converter={StaticResource ActionParam}, ConverterParameter=off}" Padding="10,4" FontSize="11" Margin="0,0,6,0" Background="#3D2930" Foreground="#F38BA8" FontWeight="SemiBold" ToolTip="Send direct OFF to this device" />
                                                                 <Button Content="⚡ Fast On" Command="{Binding DataContext.ControlDeviceCommand, RelativeSource={RelativeSource AncestorType=Window}}"
-                                                                        CommandParameter="{Binding Address, StringFormat='{}{0}:fast_on'}" Padding="8,4" FontSize="10" Margin="0,0,6,0" Background="#2A324B" Foreground="#89B4FA" ToolTip="Send Fast ON" />
+                                                                        CommandParameter="{Binding Address, Converter={StaticResource ActionParam}, ConverterParameter=fast_on}" Padding="8,4" FontSize="10" Margin="0,0,6,0" Background="#2A324B" Foreground="#89B4FA" ToolTip="Send Fast ON" />
                                                                 <Button Content="⚡ Fast Off" Command="{Binding DataContext.ControlDeviceCommand, RelativeSource={RelativeSource AncestorType=Window}}"
-                                                                        CommandParameter="{Binding Address, StringFormat='{}{0}:fast_off'}" Padding="8,4" FontSize="10" Margin="0,0,12,0" Background="#2A324B" Foreground="#89B4FA" ToolTip="Send Fast OFF" />
+                                                                        CommandParameter="{Binding Address, Converter={StaticResource ActionParam}, ConverterParameter=fast_off}" Padding="8,4" FontSize="10" Margin="0,0,12,0" Background="#2A324B" Foreground="#89B4FA" ToolTip="Send Fast OFF" />
                                                             </StackPanel>
                                                             <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
                                                                 <TextBlock Text="Dim Preset:" FontSize="11" Foreground="{StaticResource TextMuted}" VerticalAlignment="Center" Margin="0,0,6,0" />
                                                                 <Button Content="25%" Command="{Binding DataContext.ControlDeviceCommand, RelativeSource={RelativeSource AncestorType=Window}}"
-                                                                        CommandParameter="{Binding Address, StringFormat='{}{0}:dim:64'}" Padding="6,3" FontSize="10" Margin="0,0,4,0" Background="#1E1E2E" />
+                                                                        CommandParameter="{Binding Address, Converter={StaticResource ActionParam}, ConverterParameter=dim:64}" Padding="6,3" FontSize="10" Margin="0,0,4,0" Background="#1E1E2E" />
                                                                 <Button Content="50%" Command="{Binding DataContext.ControlDeviceCommand, RelativeSource={RelativeSource AncestorType=Window}}"
-                                                                        CommandParameter="{Binding Address, StringFormat='{}{0}:dim:128'}" Padding="6,3" FontSize="10" Margin="0,0,4,0" Background="#1E1E2E" />
+                                                                        CommandParameter="{Binding Address, Converter={StaticResource ActionParam}, ConverterParameter=dim:128}" Padding="6,3" FontSize="10" Margin="0,0,4,0" Background="#1E1E2E" />
                                                                 <Button Content="75%" Command="{Binding DataContext.ControlDeviceCommand, RelativeSource={RelativeSource AncestorType=Window}}"
-                                                                        CommandParameter="{Binding Address, StringFormat='{}{0}:dim:192'}" Padding="6,3" FontSize="10" Margin="0,0,4,0" Background="#1E1E2E" />
+                                                                        CommandParameter="{Binding Address, Converter={StaticResource ActionParam}, ConverterParameter=dim:192}" Padding="6,3" FontSize="10" Margin="0,0,4,0" Background="#1E1E2E" />
                                                                 <Button Content="100%" Command="{Binding DataContext.ControlDeviceCommand, RelativeSource={RelativeSource AncestorType=Window}}"
-                                                                        CommandParameter="{Binding Address, StringFormat='{}{0}:dim:255'}" Padding="6,3" FontSize="10" Background="#1E1E2E" />
+                                                                        CommandParameter="{Binding Address, Converter={StaticResource ActionParam}, ConverterParameter=dim:255}" Padding="6,3" FontSize="10" Background="#1E1E2E" />
                                                             </StackPanel>
                                                         </DockPanel>
                                                     </Border>
@@ -1983,10 +1996,10 @@
                                                         <!-- Col 3: Actions -->
                                                         <StackPanel Grid.Column="3" Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
                                                             <Button Content="💡 Test On" Command="{Binding DataContext.ControlDeviceCommand, RelativeSource={RelativeSource AncestorType=Window}}"
-                                                                    CommandParameter="{Binding Address, StringFormat='{}{0}:on'}"
+                                                                    CommandParameter="{Binding Address, Converter={StaticResource ActionParam}, ConverterParameter=on}"
                                                                     Padding="8,5" FontSize="11" Margin="0,0,6,0" Background="#2E4035" Foreground="#A6E3A1" ToolTip="Turn on this device directly to test brightness" />
                                                             <Button Content="🌑 Test Off" Command="{Binding DataContext.ControlDeviceCommand, RelativeSource={RelativeSource AncestorType=Window}}"
-                                                                    CommandParameter="{Binding Address, StringFormat='{}{0}:off'}"
+                                                                    CommandParameter="{Binding Address, Converter={StaticResource ActionParam}, ConverterParameter=off}"
                                                                     Padding="8,5" FontSize="11" Margin="0,0,10,0" Background="#3D2930" Foreground="#F38BA8" ToolTip="Turn off this device" />
                                                             <Button Content="💾 Save Preset" Click="SaveMemberPresetButton_Click"
                                                                     Style="{StaticResource PrimaryButtonStyle}" Padding="12,6" FontSize="11"

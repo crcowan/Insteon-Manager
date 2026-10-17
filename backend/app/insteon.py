@@ -224,6 +224,11 @@ class InsteonManager:
         if not modem:
             raise RuntimeError("No PLM modem device detected by pyinsteon.")
 
+        if not force_refresh_aldb and not modem.aldb.is_loaded:
+            snapshot = self._load_snapshot()
+            if snapshot and snapshot.get("plm") and snapshot["plm"].get("records"):
+                return self._get_mock_plm_info()
+
         if force_refresh_aldb or not modem.aldb.is_loaded:
             logger.info("Loading PLM ALDB from hardware...")
             try:
