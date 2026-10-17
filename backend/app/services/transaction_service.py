@@ -824,12 +824,21 @@ class TransactionService:
                 ctrl_addr = owner if role == "Controller" else target
                 resp_addr = target if role == "Controller" else owner
 
+                rec_action = "create_reciprocal"
+                sec_action = "delete_record"
+                sec_label = "🗑️ Delete Broken Slot"
+                can_auto = True
+
                 if is_kp and role == "Controller":
                     severity = "warning"
                     button_label = f"Button {chr(64 + grp)} (Key {grp})" if 1 <= grp <= 8 else f"Group {grp}"
-                    summary = f"Keypad {button_label} One-Way Broadcast to {target_name}"
-                    explanation = f"{owner_name} is set to control {target_name} on {button_label}, but {target_name} has NO matching responder link. When {button_label} is pressed on the keypad, {target_name} will ignore the command."
-                    fix_label = f"⚡ Add Responder Link on {target_name}"
+                    summary = f"Keypad {button_label} Orphan Slot → {target_name}"
+                    explanation = f"{owner_name} has an unverified controller slot for {target_name} on {button_label}, but {target_name} has NO matching responder link. If this keypad button is NOT supposed to control {target_name}, delete this slot. If you want {button_label} to control {target_name}, click 'Add Responder Link'."
+                    fix_label = f"🗑️ Delete Stale Slot on {owner_name}"
+                    rec_action = "delete_record"
+                    sec_action = "create_reciprocal"
+                    sec_label = f"⚡ Add Responder Link on {target_name}"
+                    can_auto = False
                 elif role == "Controller":
                     severity = "warning"
                     summary = f"Missing Responder Link: {owner_name} → {target_name} (Grp {grp})"
@@ -856,11 +865,11 @@ class TransactionService:
                     responder_address=resp_addr,
                     summary=summary,
                     explanation=explanation,
-                    recommended_action="create_reciprocal",
+                    recommended_action=rec_action,
                     fix_label=fix_label,
-                    secondary_action="delete_record",
-                    secondary_label="🗑️ Delete Broken Slot",
-                    can_auto_fix=True,
+                    secondary_action=sec_action,
+                    secondary_label=sec_label,
+                    can_auto_fix=can_auto,
                     data1=d1, data2=d2, data3=d3
                 ))
 

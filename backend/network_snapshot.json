@@ -1645,12 +1645,12 @@
           "group": 1,
           "is_controller": false,
           "is_responder": true,
-          "in_use": true,
+          "in_use": false,
           "high_water_mark": false,
           "data1": 3,
           "data2": 0,
           "data3": 0,
-          "raw_mode": "Responder"
+          "raw_mode": "Responder (Deleted)"
         },
         {
           "mem_addr": "0x0F8F",
@@ -1946,12 +1946,12 @@
           "group": 1,
           "is_controller": false,
           "is_responder": true,
-          "in_use": true,
+          "in_use": false,
           "high_water_mark": false,
           "data1": 3,
           "data2": 0,
           "data3": 0,
-          "raw_mode": "Responder"
+          "raw_mode": "Responder (Deleted)"
         }
       ]
     },
@@ -2065,12 +2065,12 @@
           "group": 1,
           "is_controller": false,
           "is_responder": true,
-          "in_use": true,
+          "in_use": false,
           "high_water_mark": false,
           "data1": 3,
           "data2": 0,
           "data3": 0,
-          "raw_mode": "Responder"
+          "raw_mode": "Responder (Deleted)"
         },
         {
           "mem_addr": "0x0FBF",
@@ -2968,12 +2968,12 @@
           "group": 1,
           "is_controller": true,
           "is_responder": false,
-          "in_use": true,
+          "in_use": false,
           "high_water_mark": false,
           "data1": 3,
           "data2": 0,
           "data3": 0,
-          "raw_mode": "Controller"
+          "raw_mode": "Controller (Deleted)"
         },
         {
           "mem_addr": "0x0F7F",
@@ -3085,12 +3085,12 @@
           "group": 1,
           "is_controller": true,
           "is_responder": false,
-          "in_use": true,
+          "in_use": false,
           "high_water_mark": false,
           "data1": 3,
           "data2": 0,
           "data3": 0,
-          "raw_mode": "Controller"
+          "raw_mode": "Controller (Deleted)"
         },
         {
           "mem_addr": "0x0F37",
@@ -3124,12 +3124,12 @@
           "group": 1,
           "is_controller": true,
           "is_responder": false,
-          "in_use": true,
+          "in_use": false,
           "high_water_mark": false,
           "data1": 3,
           "data2": 0,
           "data3": 0,
-          "raw_mode": "Controller"
+          "raw_mode": "Controller (Deleted)"
         },
         {
           "mem_addr": "0x0F1F",
@@ -3150,12 +3150,12 @@
           "group": 1,
           "is_controller": true,
           "is_responder": false,
-          "in_use": true,
+          "in_use": false,
           "high_water_mark": false,
           "data1": 3,
           "data2": 0,
           "data3": 0,
-          "raw_mode": "Controller"
+          "raw_mode": "Controller (Deleted)"
         },
         {
           "mem_addr": "0x0F0F",
@@ -3228,12 +3228,12 @@
           "group": 1,
           "is_controller": true,
           "is_responder": false,
-          "in_use": true,
+          "in_use": false,
           "high_water_mark": false,
           "data1": 3,
           "data2": 0,
           "data3": 0,
-          "raw_mode": "Controller"
+          "raw_mode": "Controller (Deleted)"
         },
         {
           "mem_addr": "0x0EDF",
@@ -3241,12 +3241,12 @@
           "group": 1,
           "is_controller": true,
           "is_responder": false,
-          "in_use": true,
+          "in_use": false,
           "high_water_mark": false,
           "data1": 3,
           "data2": 0,
           "data3": 0,
-          "raw_mode": "Controller"
+          "raw_mode": "Controller (Deleted)"
         },
         {
           "mem_addr": "0x0ED7",
@@ -3254,12 +3254,12 @@
           "group": 1,
           "is_controller": true,
           "is_responder": false,
-          "in_use": true,
+          "in_use": false,
           "high_water_mark": false,
           "data1": 3,
           "data2": 0,
           "data3": 0,
-          "raw_mode": "Controller"
+          "raw_mode": "Controller (Deleted)"
         },
         {
           "mem_addr": "0x0ECF",
@@ -3633,12 +3633,12 @@
           "group": 1,
           "is_controller": false,
           "is_responder": true,
-          "in_use": true,
+          "in_use": false,
           "high_water_mark": false,
           "data1": 3,
           "data2": 0,
           "data3": 0,
-          "raw_mode": "Responder"
+          "raw_mode": "Responder (Deleted)"
         },
         {
           "mem_addr": "0x0F47",
@@ -3934,12 +3934,12 @@
           "group": 1,
           "is_controller": false,
           "is_responder": true,
-          "in_use": true,
+          "in_use": false,
           "high_water_mark": false,
           "data1": 3,
           "data2": 0,
           "data3": 0,
-          "raw_mode": "Responder"
+          "raw_mode": "Responder (Deleted)"
         },
         {
           "mem_addr": "0x0F57",
@@ -4575,12 +4575,12 @@
           "group": 1,
           "is_controller": false,
           "is_responder": true,
-          "in_use": true,
+          "in_use": false,
           "high_water_mark": false,
           "data1": 3,
           "data2": 0,
           "data3": 0,
-          "raw_mode": "Responder"
+          "raw_mode": "Responder (Deleted)"
         },
         {
           "mem_addr": "0x0F47",
@@ -5008,12 +5008,12 @@
           "group": 1,
           "is_controller": false,
           "is_responder": true,
-          "in_use": true,
+          "in_use": false,
           "high_water_mark": false,
           "data1": 3,
           "data2": 0,
           "data3": 0,
-          "raw_mode": "Responder"
+          "raw_mode": "Responder (Deleted)"
         },
         {
           "mem_addr": "0x0F37",
