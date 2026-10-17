@@ -600,7 +600,15 @@ class InsteonManager:
 
         device = pyinsteon.devices.get(addr_obj)
         if not device:
-            device = pyinsteon.devices.add_x10_or_insteon_device(addr_obj, 0x01, 0x00, 0x00)
+            cat_c = int((cached_dev or {}).get("cat", 1) or 1)
+            subcat_c = int((cached_dev or {}).get("subcat", 0) or 0)
+            fw_c = int((cached_dev or {}).get("firmware", 0) or 0)
+            device = pyinsteon.devices.add_x10_or_insteon_device(addr_obj, cat_c, subcat_c, fw_c)
+        if force_refresh and hasattr(device, "aldb"):
+            try:
+                device.aldb.clear()
+            except Exception:
+                pass
         if device.engine_version == EngineVersion.UNKNOWN:
             try:
                 eng_cmd = EngineVersionRequest(addr_obj)
@@ -629,7 +637,17 @@ class InsteonManager:
                 use_peek_poke = True
             await asyncio.sleep(1.5 * attempt)
 
-        return self._parse_aldb_records(device.aldb, source_address=clean_addr)
+        parsed = self._parse_aldb_records(device.aldb, source_address=clean_addr)
+        if parsed:
+            self._update_device_in_snapshot(
+                address=clean_addr,
+                device=device,
+                live_delta=live_delta,
+                records=parsed,
+                is_loaded=bool(device.aldb.is_loaded),
+            )
+        return parsed
+
 
     @staticmethod
     def is_active_snapshot_device(d: Dict[str, Any]) -> bool:
@@ -949,57 +967,13 @@ class InsteonManager:
                 records=records,
             )
 
-        mock_records = [
-            ALDBRecordResponse(
-                mem_addr="0x0FFF",
-                source_address="1A.2B.3C",
-                target_address="2A.44.11",
-                group=1,
-                is_controller=True,
-                is_responder=False,
-                in_use=True,
-                high_water_mark=False,
-                data1=0,
-                data2=0,
-                data3=0,
-                raw_mode="Controller",
-            ),
-            ALDBRecordResponse(
-                mem_addr="0x0FF7",
-                source_address="1A.2B.3C",
-                target_address="3C.55.99",
-                group=1,
-                is_controller=False,
-                is_responder=True,
-                in_use=True,
-                high_water_mark=False,
-                data1=255,
-                data2=28,
-                data3=1,
-                raw_mode="Responder",
-            ),
-            ALDBRecordResponse(
-                mem_addr="0x0FEF",
-                source_address="1A.2B.3C",
-                target_address="12.34.56",
-                group=2,
-                is_controller=True,
-                is_responder=False,
-                in_use=True,
-                high_water_mark=True,
-                data1=0,
-                data2=0,
-                data3=0,
-                raw_mode="Controller (High Water Mark)",
-            ),
-        ]
         return PlmInfoResponse(
             address="1A.2B.3C",
             cat=3,
             subcat=21,
             firmware=158,
-            records_count=len(mock_records),
-            records=mock_records,
+            records_count=0,
+            records=[],
         )
 
     def _get_mock_devices(self) -> List[DeviceSummary]:
@@ -1034,46 +1008,418 @@ class InsteonManager:
                     )
                 )
             return results
+        return []
 
-        return [
-            DeviceSummary(
-                address="1A.2B.3C",
-                cat=3,
-                subcat=21,
-                firmware=158,
-                description="USB PowerLinc Modem (PLM)",
-                is_battery=False,
-                aldb_record_count=3,
-            ),
-            DeviceSummary(
-                address="2A.44.11",
-                cat=2,
-                subcat=42,
-                firmware=65,
-                description="Dimmer Switch 2477D",
-                is_battery=False,
-                aldb_record_count=5,
-            ),
-            DeviceSummary(
-                address="3C.55.99",
-                cat=2,
-                subcat=54,
-                firmware=70,
-                description="KeypadLinc 6-Button 2487S",
-                is_battery=False,
-                aldb_record_count=8,
-            ),
+    def _save_snapshot(self, data: Dict[str, Any]):
+        """Atomically persist network_snapshot.json to disk and keep workspace copies synchronized."""
+        default_path = os.path.join("backend", "network_snapshot.json") if os.path.isdir("backend") else "network_snapshot.json"
+        path = self._find_snapshot_file() or default_path
+        try:
+            dir_name = os.path.dirname(path)
+            if dir_name:
+                os.makedirs(dir_name, exist_ok=True)
+            temp_file = f"{path}.tmp"
+            with open(temp_file, "w", encoding="utf-8") as f:
+                json.dump(data, f, indent=2)
+            os.replace(temp_file, path)
+            for sync_candidate in ("network_snapshot.json", os.path.join("backend", "network_snapshot.json")):
+                if os.path.isfile(sync_candidate) and os.path.abspath(sync_candidate) != os.path.abspath(path):
+                    with open(sync_candidate, "w", encoding="utf-8") as rf:
+                        json.dump(data, rf, indent=2)
+        except Exception as exc:
+            logger.error(f"Error saving snapshot to '{path}': {exc}")
+
+    def _update_device_in_snapshot(
+        self,
+        address: str,
+        device: Any,
+        live_delta: Optional[int],
+        records: List[ALDBRecordResponse],
+        is_loaded: bool,
+    ):
+        """Update or insert a single device's hardware-pulled ALDB records in network_snapshot.json."""
+        snapshot = self._load_snapshot() or {"plm": {}, "devices": [], "stats": {}}
+        if "devices" not in snapshot:
+            snapshot["devices"] = []
+
+        rec_dicts = [
+            {
+                "mem_addr": r.mem_addr,
+                "target_address": r.target_address,
+                "group": r.group,
+                "is_controller": r.is_controller,
+                "is_responder": r.is_responder,
+                "in_use": r.in_use,
+                "high_water_mark": r.high_water_mark,
+                "data1": r.data1,
+                "data2": r.data2,
+                "data3": r.data3,
+                "raw_mode": r.raw_mode,
+            }
+            for r in records
         ]
 
-    async def get_all_network_aldb(self) -> List[ALDBRecordResponse]:
+        clean_addr = address.upper().strip()
+        status_str = "OK" if is_loaded else f"PARTIAL ({len(rec_dicts)} records)"
+        found = False
+        for d in snapshot["devices"]:
+            if d.get("address", "").upper() == clean_addr:
+                d["records"] = rec_dicts
+                d["records_count"] = len(rec_dicts)
+                if live_delta is not None:
+                    d["db_delta"] = int(live_delta)
+                d["status"] = status_str
+                if getattr(device, "cat", 0):
+                    d["cat"] = int(device.cat)
+                if getattr(device, "subcat", 0):
+                    d["subcat"] = int(device.subcat)
+                if getattr(device, "firmware", 0):
+                    d["firmware"] = int(device.firmware)
+                found = True
+                break
+
+        if not found:
+            cat_val = int(getattr(device, "cat", 0) or 0)
+            subcat_val = int(getattr(device, "subcat", 0) or 0)
+            fw_val = int(getattr(device, "firmware", 0) or 0)
+            desc = str(getattr(device, "description", "") or f"Device {clean_addr}")
+            snapshot["devices"].append(
+                {
+                    "address": clean_addr,
+                    "label": desc,
+                    "cat": cat_val,
+                    "subcat": subcat_val,
+                    "firmware": fw_val,
+                    "engine_version": str(getattr(device, "engine_version", "I2CS")),
+                    "db_delta": int(live_delta) if live_delta is not None else None,
+                    "description": desc,
+                    "is_battery": cat_val in (0x00, 0x10),
+                    "status": status_str,
+                    "records_count": len(rec_dicts),
+                    "records": rec_dicts,
+                }
+            )
+
+        self._save_snapshot(snapshot)
+
+    async def pull_network_from_hardware(self, force_full: bool = False) -> Dict[str, Any]:
+        """Crawl PLM and all discovered peer devices from physical Insteon hardware and save network_snapshot.json."""
+        from datetime import datetime, timezone
+        from app.openhab import openhab_client
+
+        logger.info(f"Starting live hardware network pull (force_full={force_full})...")
+        prev_snapshot = self._load_snapshot() or {}
+        prev_by_addr: Dict[str, Dict[str, Any]] = {}
+        for d in prev_snapshot.get("devices", []):
+            if d.get("address"):
+                prev_by_addr[d["address"].upper().strip()] = d
+
+        # Fetch friendly labels and battery hints from openHAB registry if reachable
+        oh_meta = await openhab_client.fetch_device_metadata()
+
+        modem = pyinsteon.devices.modem
+        if not modem:
+            raise RuntimeError("No PLM modem device detected by pyinsteon.")
+
+        if force_full and hasattr(modem, "aldb"):
+            try:
+                modem.aldb.clear()
+            except Exception:
+                pass
+
+        plm_info = await self.get_plm_info(force_refresh_aldb=True)
+        plm_rec_dicts = [
+            {
+                "mem_addr": r.mem_addr,
+                "target_address": r.target_address,
+                "group": r.group,
+                "is_controller": r.is_controller,
+                "is_responder": r.is_responder,
+                "in_use": r.in_use,
+                "high_water_mark": r.high_water_mark,
+                "data1": r.data1,
+                "data2": r.data2,
+                "data3": r.data3,
+                "raw_mode": r.raw_mode,
+            }
+            for r in plm_info.records
+        ]
+
+        snapshot_data: Dict[str, Any] = {
+            "snapshot_metadata": {
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "source": "Insteon Management Bridge Hardware Pull (Dual-Band Optimized)",
+                "version": "2.0",
+            },
+            "plm": {
+                "address": plm_info.address,
+                "cat": plm_info.cat,
+                "subcat": plm_info.subcat,
+                "firmware": plm_info.firmware,
+                "records_count": len(plm_rec_dicts),
+                "records": plm_rec_dicts,
+            },
+            "devices": [],
+            "stats": {
+                "devices_total": 0,
+                "devices_success": 0,
+                "devices_cached_delta_match": 0,
+                "devices_partial": 0,
+                "devices_failed": 0,
+                "devices_skipped_battery": 0,
+                "total_aldb_records": len(plm_rec_dicts),
+            },
+        }
+        self._save_snapshot(snapshot_data)
+
+        # Discover unique target device addresses from PLM ALDB and pyinsteon.devices
+        discovered_addresses = set()
+        plm_cat_hints: Dict[str, tuple[int, int, int]] = {}
+        plm_addr_upper = plm_info.address.upper()
+        for r in plm_rec_dicts:
+            t_addr = str(r.get("target_address", "")).upper().strip()
+            if r.get("in_use", True) and t_addr and t_addr not in ("00.00.00", plm_addr_upper):
+                discovered_addresses.add(t_addr)
+                if r.get("group") == 0 and int(r.get("data1", 0)) > 0:
+                    plm_cat_hints[t_addr] = (
+                        int(r.get("data1", 0)),
+                        int(r.get("data2", 0)),
+                        int(r.get("data3", 0)),
+                    )
+
+        for addr in pyinsteon.devices:
+            a_str = str(addr).upper().strip()
+            if a_str and a_str != plm_addr_upper:
+                discovered_addresses.add(a_str)
+
+        sorted_addresses = sorted(discovered_addresses)
+        snapshot_data["stats"]["devices_total"] = len(sorted_addresses)
+        logger.info(f"Discovered {len(sorted_addresses)} unique peer devices from PLM ALDB.")
+
+        async def _interrogate_peer(addr_str: str, is_recovery: bool = False) -> Dict[str, Any]:
+            clean_compact = addr_str.replace(".", "").upper()
+            meta = oh_meta.get(addr_str, {}) or oh_meta.get(clean_compact, {})
+            prev_dev = prev_by_addr.get(addr_str, {})
+            cat_h, subcat_h, fw_h = plm_cat_hints.get(addr_str, (0, 0, 0))
+            cat_val = cat_h or int(prev_dev.get("cat", 0) or 0)
+            subcat_val = subcat_h or int(prev_dev.get("subcat", 0) or 0)
+            fw_val = fw_h or int(prev_dev.get("firmware", 0) or 0)
+
+            friendly_label = meta.get("label") or prev_dev.get("label") or f"Device {addr_str}"
+            is_sensor_battery = bool(meta.get("is_battery", False)) or cat_val == 0x10
+            is_remote_battery = cat_val == 0x00 or ("keypad" in friendly_label.lower() and cat_val == 0)
+
+            # Sleeping RF sensors (Leak/Motion/Door sensors, Cat 0x10) never answer unsolicited pings
+            if is_sensor_battery and not is_remote_battery:
+                logger.info(f"Skipping sleeping RF sensor {addr_str} ({friendly_label}).")
+                return {
+                    "address": addr_str,
+                    "label": friendly_label,
+                    "cat": cat_val,
+                    "subcat": subcat_val,
+                    "firmware": fw_val,
+                    "description": meta.get("thing_type") or prev_dev.get("description") or friendly_label,
+                    "is_battery": True,
+                    "status": "SKIPPED_BATTERY",
+                    "records_count": len(prev_dev.get("records", [])),
+                    "records": prev_dev.get("records", []),
+                }
+
+            addr_obj = Address(addr_str)
+            get_health(addr_obj).record_success()
+
+            ping_ok, live_delta, _ = await self._fast_ping_and_db_delta(addr_obj, timeout=4.5)
+            if not ping_ok and not is_recovery:
+                await asyncio.sleep(0.5)
+                ping_ok, live_delta, _ = await self._fast_ping_and_db_delta(addr_obj, timeout=4.5)
+
+            if not ping_ok:
+                if prev_dev.get("records"):
+                    logger.info(f"Device {addr_str} ({friendly_label}) asleep/offline; preserving {len(prev_dev['records'])} cached records.")
+                    return {
+                        **prev_dev,
+                        "address": addr_str,
+                        "label": friendly_label,
+                    }
+                return {
+                    "address": addr_str,
+                    "label": friendly_label,
+                    "cat": cat_val,
+                    "subcat": subcat_val,
+                    "firmware": fw_val,
+                    "db_delta": None,
+                    "description": meta.get("thing_type") or prev_dev.get("description") or friendly_label,
+                    "is_battery": is_remote_battery,
+                    "status": "SKIPPED_BATTERY" if is_remote_battery else "FAILED: No response to Standard Ping",
+                    "records_count": 0,
+                    "records": [],
+                }
+
+            # If not force_full and db_delta matches cached snapshot, fast-skip
+            if (
+                not force_full
+                and prev_dev.get("status") == "OK"
+                and prev_dev.get("db_delta") is not None
+                and live_delta is not None
+                and int(prev_dev.get("db_delta")) == int(live_delta)
+                and len(prev_dev.get("records", [])) > 0
+            ):
+                logger.info(f"Fast-skipping {addr_str} ({friendly_label}): db_delta 0x{live_delta:02X} unchanged.")
+                return {
+                    **prev_dev,
+                    "address": addr_str,
+                    "label": friendly_label,
+                    "db_delta": int(live_delta),
+                    "_cached_delta_hit": True,
+                }
+
+            device = pyinsteon.devices.get(addr_obj)
+            if device is None or (int(getattr(device, "subcat", 0) or 0) == 0 and subcat_val != 0):
+                try:
+                    pyinsteon.devices.set_id(addr_obj, cat_val or 1, subcat_val, fw_val)
+                    await asyncio.sleep(0.05)
+                    device = pyinsteon.devices.get(addr_obj)
+                except Exception:
+                    pass
+            if device is None:
+                device = pyinsteon.devices.add_x10_or_insteon_device(addr_obj, cat_val or 1, subcat_val, fw_val)
+
+            if force_full and not is_recovery and hasattr(device, "aldb"):
+                try:
+                    device.aldb.clear()
+                except Exception:
+                    pass
+
+            if getattr(device, "engine_version", EngineVersion.UNKNOWN) == EngineVersion.UNKNOWN:
+                try:
+                    eng_cmd = EngineVersionRequest(addr_obj)
+                    _, eng_ver = await asyncio.wait_for(eng_cmd.async_send(), timeout=4.0)
+                    if eng_ver in (EngineVersion.I1, EngineVersion.I2, EngineVersion.I2CS):
+                        device.engine_version = eng_ver
+                except Exception:
+                    pass
+                if getattr(device, "engine_version", EngineVersion.UNKNOWN) == EngineVersion.UNKNOWN:
+                    device.engine_version = EngineVersion.I2CS
+
+            use_peek_poke = device.engine_version == EngineVersion.I1
+            for attempt in range(1, 4):
+                get_health(addr_obj).record_success()
+                prefer_bulk = (attempt == 1) and not is_recovery and len(device.aldb) == 0
+                try:
+                    timeout_s = 65.0 if use_peek_poke else 22.0
+                    await asyncio.wait_for(
+                        self._read_aldb_robust(device.aldb, prefer_bulk=prefer_bulk, use_peek_poke=use_peek_poke),
+                        timeout=timeout_s,
+                    )
+                except asyncio.TimeoutError:
+                    pass
+                if device.aldb.is_loaded:
+                    break
+                if len(device.aldb) == 0 and not use_peek_poke and device.engine_version in (EngineVersion.I1, EngineVersion.I2):
+                    use_peek_poke = True
+                await asyncio.sleep(1.2 * attempt)
+
+            parsed_recs = self._parse_aldb_records(device.aldb, source_address=addr_str)
+            rec_dicts = [
+                {
+                    "mem_addr": r.mem_addr,
+                    "target_address": r.target_address,
+                    "group": r.group,
+                    "is_controller": r.is_controller,
+                    "is_responder": r.is_responder,
+                    "in_use": r.in_use,
+                    "high_water_mark": r.high_water_mark,
+                    "data1": r.data1,
+                    "data2": r.data2,
+                    "data3": r.data3,
+                    "raw_mode": r.raw_mode,
+                }
+                for r in parsed_recs
+            ]
+
+            if device.aldb.is_loaded:
+                st_str = "OK"
+            elif rec_dicts:
+                st_str = f"PARTIAL ({len(rec_dicts)} records)"
+            else:
+                st_str = "FAILED: Unresponsive to ALDB Read"
+
+            dev_desc = getattr(device, "description", "") or meta.get("thing_type") or prev_dev.get("description") or friendly_label
+            return {
+                "address": addr_str,
+                "label": friendly_label,
+                "cat": int(getattr(device, "cat", 0) or cat_val),
+                "subcat": int(getattr(device, "subcat", 0) or subcat_val),
+                "firmware": int(getattr(device, "firmware", 0) or fw_val),
+                "engine_version": str(getattr(device, "engine_version", "I2CS")),
+                "db_delta": int(live_delta) if live_delta is not None else None,
+                "description": str(dev_desc),
+                "is_battery": is_remote_battery,
+                "status": st_str,
+                "records_count": len(rec_dicts),
+                "records": rec_dicts,
+            }
+
+        straggler_indices: List[int] = []
+        for idx, addr_str in enumerate(sorted_addresses, start=1):
+            logger.info(f"[Hardware Pull {idx}/{len(sorted_addresses)}] Interrogating {addr_str}...")
+            entry = await _interrogate_peer(addr_str, is_recovery=False)
+            dev_idx = len(snapshot_data["devices"])
+            snapshot_data["devices"].append(entry)
+            if entry["status"].startswith("PARTIAL"):
+                straggler_indices.append(dev_idx)
+            self._save_snapshot(snapshot_data)
+            await asyncio.sleep(0.4)
+
+        if straggler_indices:
+            logger.info(f"[Hardware Pull Pass 2] Recovering {len(straggler_indices)} partial device(s)...")
+            await asyncio.sleep(1.5)
+            for dev_idx in straggler_indices:
+                addr_str = snapshot_data["devices"][dev_idx]["address"]
+                recovered = await _interrogate_peer(addr_str, is_recovery=True)
+                if recovered["records_count"] >= snapshot_data["devices"][dev_idx]["records_count"]:
+                    snapshot_data["devices"][dev_idx] = recovered
+                self._save_snapshot(snapshot_data)
+                await asyncio.sleep(0.4)
+
+        for d_entry in snapshot_data["devices"]:
+            st = d_entry.get("status", "")
+            snapshot_data["stats"]["total_aldb_records"] += int(d_entry.get("records_count", 0))
+            if st == "SKIPPED_BATTERY":
+                snapshot_data["stats"]["devices_skipped_battery"] += 1
+            elif st == "OK":
+                snapshot_data["stats"]["devices_success"] += 1
+                if d_entry.pop("_cached_delta_hit", False):
+                    snapshot_data["stats"]["devices_cached_delta_match"] += 1
+            elif st.startswith("PARTIAL"):
+                snapshot_data["stats"]["devices_partial"] += 1
+            else:
+                snapshot_data["stats"]["devices_failed"] += 1
+
+        self._save_snapshot(snapshot_data)
+        logger.info(
+            f"Hardware pull complete: {snapshot_data['stats']['devices_success']} OK, "
+            f"{snapshot_data['stats']['devices_partial']} PARTIAL, "
+            f"{snapshot_data['stats']['devices_failed']} FAILED, "
+            f"{snapshot_data['stats']['total_aldb_records']} total ALDB records."
+        )
+        return snapshot_data
+
+    async def get_all_network_aldb(self, force_refresh: bool = False) -> List[ALDBRecordResponse]:
         """Aggregate all ALDB records across PLM and all line devices for complete topology."""
+        snapshot = self._load_snapshot()
+        has_snapshot_devices = bool(snapshot and snapshot.get("devices"))
+
+        # When connected to real hardware, perform a live hardware crawl if force_refresh=True or snapshot is empty
+        if self.is_connected and not self._mock_mode and PYINSTEON_AVAILABLE and (force_refresh or not has_snapshot_devices):
+            snapshot = await self.pull_network_from_hardware(force_full=force_refresh)
+
         all_records: List[ALDBRecordResponse] = []
         # 1. PLM records
-        plm_info = await self.get_plm_info()
+        plm_info = await self.get_plm_info(force_refresh_aldb=False)
         all_records.extend(plm_info.records)
 
         # 2. Check snapshot devices if available
-        snapshot = self._load_snapshot()
         if snapshot and "devices" in snapshot:
             for dev in snapshot["devices"]:
                 dev_addr = dev.get("address", "")
@@ -1095,6 +1441,7 @@ class InsteonManager:
                         )
                     )
         return all_records
+
 
     async def control_device(
         self,

@@ -14,7 +14,7 @@ public class InsteonApiClient
     {
         _httpClient = new HttpClient
         {
-            Timeout = TimeSpan.FromSeconds(25)
+            Timeout = TimeSpan.FromMinutes(10)
         };
     }
 
@@ -99,7 +99,7 @@ public class InsteonApiClient
     {
         try
         {
-            var url = $"{_baseUrl}/insteon/network/aldb";
+            var url = $"{_baseUrl}/insteon/network/aldb?force_refresh={forceRefresh.ToString().ToLower()}";
             var records = await _httpClient.GetFromJsonAsync<List<AldbRecordModel>>(url);
             if (records != null && records.Count > 0)
             {

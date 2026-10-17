@@ -1254,12 +1254,8 @@ public class MainViewModel : ViewModelBase
 
         try
         {
-            var recordsTask = _apiClient.GetPlmAldbAsync(ForceRefreshHardware);
-            var devicesTask = _apiClient.GetDevicesAsync();
-            await Task.WhenAll(recordsTask, devicesTask);
-
-            var records = await recordsTask;
-            _currentDevices = await devicesTask;
+            var records = await _apiClient.GetPlmAldbAsync(ForceRefreshHardware);
+            _currentDevices = await _apiClient.GetDevicesAsync();
 
             AldbRecords.Clear();
             foreach (var rec in records)

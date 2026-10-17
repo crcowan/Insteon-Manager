@@ -64,7 +64,8 @@ class TransactionService:
             return {}
 
     def _save_snapshot(self, data: Dict[str, Any]):
-        path = self._find_snapshot_file() or os.path.join("backend", "network_snapshot.json")
+        default_path = os.path.join("backend", "network_snapshot.json") if os.path.isdir("backend") else "network_snapshot.json"
+        path = self._find_snapshot_file() or default_path
         try:
             dir_name = os.path.dirname(path)
             if dir_name:

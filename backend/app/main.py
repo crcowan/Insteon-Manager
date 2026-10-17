@@ -244,13 +244,21 @@ async def control_device(address: str, req: DeviceControlRequest):
 
 
 @app.get("/insteon/network/aldb", response_model=List[ALDBRecordResponse])
-async def get_all_network_aldb():
+async def get_all_network_aldb(
+    force_refresh: bool = Query(default=False, description="Force live hardware crawl of PLM and peer devices"),
+):
     """Get all ALDB records across the PLM and all line devices for complete topology."""
+    if force_refresh and not session_manager.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Active session required before querying Insteon devices directly from hardware.",
+        )
     try:
-        return await insteon_manager.get_all_network_aldb()
+        return await insteon_manager.get_all_network_aldb(force_refresh=force_refresh)
     except Exception as exc:
         logger.error(f"Error querying network ALDB: {exc}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(exc))
+
 
 
 # --- Scene Management Endpoints ---

@@ -138,5 +138,46 @@ class OpenhabClient:
             logger.error(f"Error communicating with openHAB: {exc}")
             return False
 
+    async def fetch_device_metadata(self) -> Dict[str, Dict[str, Any]]:
+        """Query openHAB Thing registry for friendly device labels and battery sensor hints."""
+        if settings.is_simulator:
+            return {}
+
+        url = f"{self.base_url}/rest/things"
+        metadata: Dict[str, Dict[str, Any]] = {}
+        battery_types = {"motion", "leak", "door", "window", "openclose", "contact", "battery", "sensor"}
+        try:
+            async with httpx.AsyncClient(timeout=5.0) as client:
+                resp = await client.get(url, headers=self._get_headers())
+                if resp.status_code == 200:
+                    for thing in resp.json():
+                        config = thing.get("configuration", {})
+                        props = thing.get("properties", {})
+                        label = thing.get("label", "")
+                        thing_type = thing.get("thingTypeUID", "")
+                        addr = config.get("address") or props.get("address")
+                        if not addr:
+                            parts = thing.get("UID", "").split(":")
+                            if parts and len(parts[-1].replace(".", "")) == 6:
+                                addr = parts[-1]
+                        if addr:
+                            clean_addr = str(addr).upper().strip()
+                            clean_compact = clean_addr.replace(".", "")
+                            if len(clean_compact) == 6 and "." not in clean_addr:
+                                clean_addr = f"{clean_compact[0:2]}.{clean_compact[2:4]}.{clean_compact[4:6]}"
+                            is_batt = any(t in thing_type.lower() or t in label.lower() for t in battery_types)
+                            info = {
+                                "label": label or f"Device {clean_addr}",
+                                "thing_type": thing_type,
+                                "is_battery": is_batt,
+                            }
+                            metadata[clean_addr] = info
+                            metadata[clean_compact] = info
+                    logger.info(f"Retrieved {len(metadata) // 2} device metadata entries from openHAB registry.")
+        except Exception as exc:
+            logger.debug(f"openHAB device metadata fetch notice: {exc}")
+        return metadata
+
 
 openhab_client = OpenhabClient()
+

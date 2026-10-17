@@ -8,6 +8,19 @@ SERVICE_FILE="/etc/systemd/system/insteon-bridge.service"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
+CLEAN_DB=false
+SEED_SNAPSHOT=false
+for arg in "$@"; do
+    case "$arg" in
+        --clean-db)
+            CLEAN_DB=true
+            ;;
+        --seed-snapshot)
+            SEED_SNAPSHOT=true
+            ;;
+    esac
+done
+
 echo "=================================================================="
 echo " Insteon Network Management Bridge - Raspberry Pi 4 Installer"
 echo "=================================================================="
@@ -16,17 +29,26 @@ sudo mkdir -p "$INSTALL_DIR" "$CACHE_DIR"
 sudo chown -R "${SUDO_USER:-$USER}:${SUDO_USER:-$USER}" "$INSTALL_DIR" "$CACHE_DIR"
 
 echo "[1/5] Copying backend application files to $INSTALL_DIR..."
+rm -rf "$INSTALL_DIR/app"
 cp -r "$REPO_ROOT/backend/app" "$INSTALL_DIR/"
+cp -r "$REPO_ROOT/backend/scripts" "$INSTALL_DIR/"
 cp "$REPO_ROOT/backend/requirements.txt" "$INSTALL_DIR/"
-if [ -f "$REPO_ROOT/network_snapshot.json" ]; then
+
+if [ "$CLEAN_DB" = true ]; then
+    echo "      [--clean-db] Clearing cached network_snapshot.json and pyinsteon cache..."
+    rm -f "$INSTALL_DIR/network_snapshot.json" "$INSTALL_DIR/backend/network_snapshot.json"
+    rm -rf "$CACHE_DIR"/* "$INSTALL_DIR/insteon_cache"/* 2>/dev/null || true
+elif [ "$SEED_SNAPSHOT" = true ] && [ -f "$REPO_ROOT/network_snapshot.json" ]; then
+    echo "      [--seed-snapshot] Copying initial network_snapshot.json to $INSTALL_DIR..."
     cp "$REPO_ROOT/network_snapshot.json" "$INSTALL_DIR/network_snapshot.json"
 fi
+
 if [ ! -f "$INSTALL_DIR/.env" ]; then
     cp "$REPO_ROOT/backend/.env.example" "$INSTALL_DIR/.env"
     echo "      Created $INSTALL_DIR/.env from template (please configure OPENHAB_TOKEN and INSTEON_PORT)."
 fi
 
-echo "[2/5] Creating Python virtual environment in $INSTALL_DIR/.venv..."
+echo "[2/5] Creating/updating Python virtual environment in $INSTALL_DIR/.venv..."
 python3 -m venv "$INSTALL_DIR/.venv"
 "$INSTALL_DIR/.venv/bin/pip" install --upgrade pip
 "$INSTALL_DIR/.venv/bin/pip" install -r "$INSTALL_DIR/requirements.txt"
@@ -47,3 +69,4 @@ echo "=================================================================="
 echo " Deployment Complete! Point Windows GUI Backend URL to:"
 echo "   http://$(hostname -I | awk '{print $1}'):8000"
 echo "=================================================================="
+
