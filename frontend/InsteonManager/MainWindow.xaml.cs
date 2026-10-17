@@ -158,8 +158,39 @@ public partial class MainWindow : Window
         }
     }
 
+    private void GraphCanvas_RequestBringIntoView(object sender, RequestBringIntoViewEventArgs e)
+    {
+        // Prevent WPF ScrollViewer from auto-scrolling the 2600x2000 canvas when a button or element inside a node is clicked
+        e.Handled = true;
+    }
+
+    private static bool IsDescendantOfButton(DependencyObject? source)
+    {
+        while (source != null)
+        {
+            if (source is System.Windows.Controls.Primitives.ButtonBase)
+            {
+                return true;
+            }
+            if (source is System.Windows.Media.Visual || source is System.Windows.Media.Media3D.Visual3D)
+            {
+                source = System.Windows.Media.VisualTreeHelper.GetParent(source);
+            }
+            else
+            {
+                source = LogicalTreeHelper.GetParent(source);
+            }
+        }
+        return false;
+    }
+
     private void Node_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
     {
+        if (IsDescendantOfButton(e.OriginalSource as DependencyObject))
+        {
+            return;
+        }
+
         if (sender is FrameworkElement element && element.DataContext is DeviceNode node)
         {
             if (DataContext is MainViewModel vm)

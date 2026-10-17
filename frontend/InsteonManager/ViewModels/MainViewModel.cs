@@ -44,6 +44,7 @@ public class MainViewModel : ViewModelBase
     {
         _apiClient = new InsteonApiClient();
         _positionService = new NodePositionService();
+        _backendUrl = _positionService.LoadBackendUrl("http://openhabian5:8000");
         _clientId = $"win-client-{Environment.MachineName}";
 
         AldbRecords = new ObservableCollection<AldbRecordModel>();
@@ -1102,6 +1103,7 @@ public class MainViewModel : ViewModelBase
     private void UpdateBackendUrl()
     {
         _apiClient.SetBaseUrl(_backendUrl);
+        _positionService.SaveBackendUrl(_backendUrl);
         _lastBackendLogSeq = -1;
     }
 
@@ -1455,6 +1457,7 @@ public class MainViewModel : ViewModelBase
 
     public void SaveNodePositions()
     {
+        _positionService.SaveBackendUrl(_backendUrl);
         _positionService.SavePositions(DeviceNodes);
         AddLog(LogLevel.Info, "Topology", "Node canvas positions persisted to local storage.");
     }

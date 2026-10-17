@@ -560,11 +560,13 @@
                         <!-- Scrollable Graph Canvas with Zoom & Pan Support -->
                         <ScrollViewer x:Name="GraphScrollViewer" Grid.Row="1" 
                                   HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto"
+                                  RequestBringIntoView="GraphCanvas_RequestBringIntoView"
                                   PreviewMouseWheel="GraphScrollViewer_PreviewMouseWheel">
                         <Grid>
                             <!-- Main Visual Canvas (Expanded 2600x2000 for generous node distribution) -->
                             <Canvas x:Name="GraphCanvas" Width="2600" Height="2000"
                                     Cursor="Hand"
+                                    RequestBringIntoView="GraphCanvas_RequestBringIntoView"
                                     MouseLeftButtonDown="GraphCanvas_MouseLeftButtonDown"
                                     MouseMove="GraphCanvas_MouseMove"
                                     MouseLeftButtonUp="GraphCanvas_MouseLeftButtonUp"
@@ -760,12 +762,24 @@
 
                                                     <!-- Footer (Quick Action Buttons & Link Count Badge) -->
                                                     <DockPanel Grid.Row="2" LastChildFill="False" Margin="0,4,0,0">
-                                                        <!-- Quick Control Buttons -->
+                                                        <!-- Quick Control Buttons (Hidden for PLM Modem Hub) -->
                                                         <StackPanel DockPanel.Dock="Left" Orientation="Horizontal">
-                                                            <Button Content="💡" Command="{Binding DataContext.ControlDeviceCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                            <StackPanel.Style>
+                                                                <Style TargetType="StackPanel">
+                                                                    <Setter Property="Visibility" Value="Visible" />
+                                                                    <Style.Triggers>
+                                                                        <DataTrigger Binding="{Binding IsModem}" Value="True">
+                                                                            <Setter Property="Visibility" Value="Collapsed" />
+                                                                        </DataTrigger>
+                                                                    </Style.Triggers>
+                                                                </Style>
+                                                            </StackPanel.Style>
+                                                            <Button Content="💡" Focusable="False" Cursor="Hand"
+                                                                    Command="{Binding DataContext.ControlDeviceCommand, RelativeSource={RelativeSource AncestorType=Window}}"
                                                                     CommandParameter="{Binding Address, StringFormat='{}{0}:on'}"
                                                                     Padding="4,1" FontSize="9" Margin="0,0,3,0" Background="#2E4035" Foreground="#A6E3A1" ToolTip="Quick Turn ON (100%)" />
-                                                            <Button Content="🌑" Command="{Binding DataContext.ControlDeviceCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                            <Button Content="🌑" Focusable="False" Cursor="Hand"
+                                                                    Command="{Binding DataContext.ControlDeviceCommand, RelativeSource={RelativeSource AncestorType=Window}}"
                                                                     CommandParameter="{Binding Address, StringFormat='{}{0}:off'}"
                                                                     Padding="4,1" FontSize="9" Background="#3D2930" Foreground="#F38BA8" ToolTip="Quick Turn OFF" />
                                                         </StackPanel>

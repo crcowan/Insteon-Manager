@@ -10,9 +10,16 @@ public class NodeCoordinate
     public double Y { get; set; }
 }
 
+public class UiSettings
+{
+    public string BackendUrl { get; set; } = string.Empty;
+}
+
 public class NodePositionService
 {
     private readonly string _storageFilePath;
+    private readonly string _localSettingsFilePath;
+    private readonly string _appDataSettingsFilePath;
     private readonly object _lock = new();
 
     public NodePositionService()
@@ -21,21 +28,85 @@ public class NodePositionService
         string baseDir = AppDomain.CurrentDomain.BaseDirectory;
         string candidatePath = Path.Combine(baseDir, "node_positions.json");
 
+        string appData = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "InsteonManager"
+        );
+        try
+        {
+            Directory.CreateDirectory(appData);
+        }
+        catch
+        {
+        }
+        _appDataSettingsFilePath = Path.Combine(appData, "ui_settings.json");
+
         try
         {
             // Test write permission
             File.WriteAllText(candidatePath + ".test", "");
             File.Delete(candidatePath + ".test");
             _storageFilePath = candidatePath;
+            _localSettingsFilePath = Path.Combine(baseDir, "ui_settings.json");
         }
         catch
         {
-            string appData = Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                "InsteonManager"
-            );
-            Directory.CreateDirectory(appData);
             _storageFilePath = Path.Combine(appData, "node_positions.json");
+            _localSettingsFilePath = _appDataSettingsFilePath;
+        }
+    }
+
+    public string LoadBackendUrl(string defaultUrl = "http://localhost:8000")
+    {
+        lock (_lock)
+        {
+            foreach (var path in new[] { _localSettingsFilePath, _appDataSettingsFilePath })
+            {
+                try
+                {
+                    if (!string.IsNullOrWhiteSpace(path) && File.Exists(path))
+                    {
+                        string json = File.ReadAllText(path);
+                        var settings = JsonSerializer.Deserialize<UiSettings>(json);
+                        if (settings != null && !string.IsNullOrWhiteSpace(settings.BackendUrl))
+                        {
+                            return settings.BackendUrl.Trim();
+                        }
+                    }
+                }
+                catch
+                {
+                }
+            }
+            return defaultUrl;
+        }
+    }
+
+    public void SaveBackendUrl(string url)
+    {
+        if (string.IsNullOrWhiteSpace(url))
+        {
+            return;
+        }
+
+        lock (_lock)
+        {
+            var settings = new UiSettings { BackendUrl = url.Trim() };
+            string json = JsonSerializer.Serialize(settings, new JsonSerializerOptions { WriteIndented = true });
+
+            foreach (var path in new[] { _localSettingsFilePath, _appDataSettingsFilePath }.Distinct())
+            {
+                try
+                {
+                    if (!string.IsNullOrWhiteSpace(path))
+                    {
+                        File.WriteAllText(path, json);
+                    }
+                }
+                catch
+                {
+                }
+            }
         }
     }
 

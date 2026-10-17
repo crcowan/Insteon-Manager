@@ -1518,17 +1518,49 @@ class InsteonManager:
     ) -> bool:
         """Control a physical device live over Insteon (on, off, fast_on, fast_off, dim/set_level)."""
         import inspect
-        clean_addr = address.strip().upper()
+        clean_addr = str(Address(address.strip())).upper()
         action_clean = action.lower().strip()
 
         if self._mock_mode or not PYINSTEON_AVAILABLE or not self.is_connected:
             logger.info(f"[Mock] Triggered device {clean_addr}: action='{action_clean}', level={level}, button={button}")
             return True
 
+        modem = pyinsteon.devices.modem
+        modem_addr = str(modem.address).upper() if modem else ""
+        snapshot = self._load_snapshot() or {}
+        snap_plm_addr = str((snapshot.get("plm") or {}).get("address", "")).upper()
+        if clean_addr in (modem_addr, snap_plm_addr) and clean_addr:
+            logger.warning(
+                f"Cannot send direct load '{action_clean}' to the USB PLM Hub ({clean_addr}) — the modem has no switchable load. Use Scene Test to trigger PLM broadcast scenes."
+            )
+            return False
+
         addr_obj = Address(clean_addr)
         get_health(addr_obj).record_success()
         dev = pyinsteon.devices.get(addr_obj)
+        if not dev and snapshot.get("devices"):
+            cached_d = next((d for d in snapshot["devices"] if str(d.get("address", "")).upper() == clean_addr), None)
+            if cached_d:
+                cat_c = int(cached_d.get("cat", 1) or 1)
+                subcat_c = int(cached_d.get("subcat", 0) or 0)
+                fw_c = int(cached_d.get("firmware", 0) or 0)
+                try:
+                    pyinsteon.devices.set_id(addr_obj, cat_c, subcat_c, fw_c)
+                    dev = pyinsteon.devices.get(addr_obj)
+                except Exception:
+                    pass
+                if not dev:
+                    dev = pyinsteon.devices.add_x10_or_insteon_device(addr_obj, cat_c, subcat_c, fw_c)
+
         group_num = max(1, int(button or 1))
+
+        def _is_success(res_val: Any) -> bool:
+            if res_val == ResponseStatus.SUCCESS:
+                return True
+            try:
+                return int(res_val) == 1
+            except Exception:
+                return False
 
         try:
             logger.info(f"Sending '{action_clean}' (level={level}, group={group_num}) to {clean_addr}...")
@@ -1546,11 +1578,12 @@ class InsteonManager:
                     from pyinsteon.handlers.to_device.on_level import OnLevelCommand
                     cmd = OnLevelCommand(addr_obj, group_num)
                     res = await cmd.async_send(on_level=on_level)
-                ok = res in (ResponseStatus.SUCCESS, ResponseStatus.UNCLEAR)
+                ok = _is_success(res)
+                res_name = getattr(res, "name", str(res))
                 if ok:
-                    logger.info(f"Device {clean_addr} '{action_clean}' (level={on_level}) succeeded ({res.name}).")
+                    logger.info(f"Device {clean_addr} '{action_clean}' (level={on_level}) succeeded ({res_name}).")
                 else:
-                    logger.warning(f"Device {clean_addr} '{action_clean}' returned status {res}.")
+                    logger.warning(f"Device {clean_addr} '{action_clean}' returned status {res_name}.")
                 return ok
 
             elif action_clean == "off":
@@ -1562,11 +1595,12 @@ class InsteonManager:
                     from pyinsteon.handlers.to_device.off import OffCommand
                     cmd = OffCommand(addr_obj, group_num)
                     res = await cmd.async_send()
-                ok = res in (ResponseStatus.SUCCESS, ResponseStatus.UNCLEAR)
+                ok = _is_success(res)
+                res_name = getattr(res, "name", str(res))
                 if ok:
-                    logger.info(f"Device {clean_addr} 'off' succeeded ({res.name}).")
+                    logger.info(f"Device {clean_addr} 'off' succeeded ({res_name}).")
                 else:
-                    logger.warning(f"Device {clean_addr} 'off' returned status {res}.")
+                    logger.warning(f"Device {clean_addr} 'off' returned status {res_name}.")
                 return ok
 
             elif action_clean == "fast_on":
@@ -1576,11 +1610,12 @@ class InsteonManager:
                     from pyinsteon.handlers.to_device.on_fast import OnFastCommand
                     cmd = OnFastCommand(addr_obj, group_num)
                     res = await cmd.async_send(on_level=255)
-                ok = res in (ResponseStatus.SUCCESS, ResponseStatus.UNCLEAR)
+                ok = _is_success(res)
+                res_name = getattr(res, "name", str(res))
                 if ok:
-                    logger.info(f"Device {clean_addr} 'fast_on' succeeded ({res.name}).")
+                    logger.info(f"Device {clean_addr} 'fast_on' succeeded ({res_name}).")
                 else:
-                    logger.warning(f"Device {clean_addr} 'fast_on' returned status {res}.")
+                    logger.warning(f"Device {clean_addr} 'fast_on' returned status {res_name}.")
                 return ok
 
             elif action_clean == "fast_off":
@@ -1590,11 +1625,12 @@ class InsteonManager:
                     from pyinsteon.handlers.to_device.off_fast import OffFastCommand
                     cmd = OffFastCommand(addr_obj, group_num)
                     res = await cmd.async_send()
-                ok = res in (ResponseStatus.SUCCESS, ResponseStatus.UNCLEAR)
+                ok = _is_success(res)
+                res_name = getattr(res, "name", str(res))
                 if ok:
-                    logger.info(f"Device {clean_addr} 'fast_off' succeeded ({res.name}).")
+                    logger.info(f"Device {clean_addr} 'fast_off' succeeded ({res_name}).")
                 else:
-                    logger.warning(f"Device {clean_addr} 'fast_off' returned status {res}.")
+                    logger.warning(f"Device {clean_addr} 'fast_off' returned status {res_name}.")
                 return ok
 
             else:
