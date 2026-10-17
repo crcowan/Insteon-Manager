@@ -849,13 +849,19 @@ class InsteonManager:
         dev_obj = await self._get_or_create_pyinsteon_device(addr_obj, cat, subcat, fw)
 
         if getattr(dev_obj, "engine_version", EngineVersion.UNKNOWN) == EngineVersion.UNKNOWN:
-            eng_str = str((cached_dev or {}).get("engine_version", "I2CS")).upper()
+            eng_str = str((cached_dev or {}).get("engine_version") or "").upper()
             if "I1" in eng_str:
                 dev_obj.engine_version = EngineVersion.I1
             elif "I2" in eng_str and "I2CS" not in eng_str:
                 dev_obj.engine_version = EngineVersion.I2
-            else:
+            elif "I2CS" in eng_str:
                 dev_obj.engine_version = EngineVersion.I2CS
+            else:
+                try:
+                    high_byte = int(clean_addr.split(".")[0], 16)
+                    dev_obj.engine_version = EngineVersion.I2 if high_byte < 0x20 else EngineVersion.I2CS
+                except Exception:
+                    dev_obj.engine_version = EngineVersion.I2CS
 
         # Check if we can seed from verified snapshot via matching db_delta
         snap_delta = (cached_dev or {}).get("db_delta")
@@ -881,10 +887,11 @@ class InsteonManager:
                 if len(snap_records) > 0:
                     seeded = self._seed_aldb_from_snapshot_records(dev_obj.aldb, snap_records, is_modem=False)
                     from pyinsteon.constants import ReadWriteMode, ALDBStatus
-                    dev_obj.aldb._read_write_mode = ReadWriteMode.PEEK_POKE
+                    write_mode = ReadWriteMode.PEEK_POKE if dev_obj.engine_version == EngineVersion.I1 else ReadWriteMode.STANDARD
+                    dev_obj.aldb._read_write_mode = write_mode
                     dev_obj.aldb._status = ALDBStatus.LOADED
                     logger.warning(
-                        f"Live ALDB read refused/NAKed by {clean_addr}. Falling back to {seeded} verified snapshot records and PEEK/POKE write mode."
+                        f"Live ALDB read refused/NAKed by {clean_addr}. Falling back to {seeded} verified snapshot records and {write_mode.name} write mode."
                     )
                 else:
                     return (

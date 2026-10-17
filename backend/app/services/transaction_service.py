@@ -275,13 +275,13 @@ class TransactionService:
 
             for rec in dev_ctrl.aldb.find(target=addr_resp, group=group, is_controller=True, in_use=True):
                 dev_ctrl.aldb.modify(mem_addr=rec.mem_addr, in_use=False)
-            _, ctrl_failed = await dev_ctrl.aldb.async_write()
+            _, ctrl_failed = await dev_ctrl.aldb.async_write(force=True)
             if ctrl_failed:
                 return GenericResponse(success=False, message=f"Hardware write failed while deleting Controller record on {ctrl_clean}.")
 
             for rec in dev_resp.aldb.find(target=addr_ctrl, group=group, is_controller=False, in_use=True):
                 dev_resp.aldb.modify(mem_addr=rec.mem_addr, in_use=False)
-            _, resp_failed = await dev_resp.aldb.async_write()
+            _, resp_failed = await dev_resp.aldb.async_write(force=True)
             if resp_failed:
                 return GenericResponse(success=False, message=f"Hardware write failed while deleting Responder record on {resp_clean}.")
 
@@ -354,7 +354,7 @@ class TransactionService:
 
             dev_obj.aldb.modify(mem_addr=mem_int, in_use=False)
             logger.info(f"Hardware EEPROM: Marked slot {clean_mem} (Group {getattr(rec, 'group', '?')}, target {getattr(rec, 'target', '?')}) deleted on {clean_addr}.")
-            _, failed = await dev_obj.aldb.async_write()
+            _, failed = await dev_obj.aldb.async_write(force=True)
             if failed:
                 dev_obj.aldb.clear_pending()
                 return GenericResponse(
