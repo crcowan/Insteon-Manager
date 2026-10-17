@@ -312,7 +312,22 @@ class InsteonManager:
         rm = aldb._read_manager
         get_health(aldb.address).record_success()
 
-        flags_byte = await rm._async_peek(mem_addr=mem_addr - 7)
+        async def _clean_peek(target_mem: int):
+            # Allow any multi-hop powerline/RF echo from the previous peek to arrive and drain it
+            await asyncio.sleep(0.18)
+            try:
+                pm = getattr(rm, "_peek_manager", None)
+                if pm and hasattr(pm, "_peek_value_queue"):
+                    while not pm._peek_value_queue.empty():
+                        pm._peek_value_queue.get_nowait()
+                if hasattr(rm, "_peek_bytes_received"):
+                    while not rm._peek_bytes_received.empty():
+                        rm._peek_bytes_received.get_nowait()
+            except Exception:
+                pass
+            return await rm._async_peek(mem_addr=target_mem)
+
+        flags_byte = await _clean_peek(mem_addr - 7)
         if flags_byte is None or flags_byte == -1:
             return None
 
@@ -349,7 +364,7 @@ class InsteonManager:
 
         rem_bytes = {}
         for offset in range(6, -1, -1):
-            val = await rm._async_peek(mem_addr=mem_addr - offset)
+            val = await _clean_peek(mem_addr - offset)
             if val is None or val == -1:
                 return None
             rem_bytes[offset] = val
@@ -1297,13 +1312,15 @@ class InsteonManager:
 
             dev_engine = getattr(device, "engine_version", EngineVersion.UNKNOWN)
             use_peek_poke = dev_engine == EngineVersion.I1
-            for attempt in range(1, 4):
+            max_attempts = 4
+            for attempt in range(1, max_attempts + 1):
                 get_health(addr_obj).record_success()
-                prefer_bulk = (attempt == 1) and not is_recovery and len(device.aldb) == 0
+                prev_rec_count = len(device.aldb)
+                prefer_bulk = (attempt == 1) and not is_recovery and prev_rec_count == 0
                 mode_desc = "10-byte Standard PEEK_POKE" if use_peek_poke else ("bulk stream" if prefer_bulk else "1-by-1 gap fill")
-                logger.info(f"  -> {addr_str} ({friendly_label}): Reading ALDB Attempt {attempt}/3 ({mode_desc}, {len(device.aldb)} records in memory)...")
+                logger.info(f"  -> {addr_str} ({friendly_label}): Reading ALDB Attempt {attempt}/{max_attempts} ({mode_desc}, {prev_rec_count} records in memory)...")
                 try:
-                    timeout_s = 65.0 if use_peek_poke else 25.0
+                    timeout_s = 80.0 if use_peek_poke else (25.0 if prefer_bulk else 45.0)
                     await asyncio.wait_for(
                         self._read_aldb_robust(device.aldb, prefer_bulk=prefer_bulk, use_peek_poke=use_peek_poke),
                         timeout=timeout_s,
@@ -1315,6 +1332,8 @@ class InsteonManager:
                 if len(device.aldb) == 0 and not use_peek_poke and dev_engine in (EngineVersion.I1, EngineVersion.I2):
                     use_peek_poke = True
                     logger.info(f"  -> {addr_str} ({friendly_label}): Switching to 10-byte Standard PEEK_POKE ({dev_engine.name} fallback)...")
+                elif attempt >= 3 and len(device.aldb) <= prev_rec_count:
+                    break
                 await asyncio.sleep(1.2 * attempt)
 
             parsed_recs = self._parse_aldb_records(device.aldb, source_address=addr_str)
@@ -1447,7 +1466,6 @@ class InsteonManager:
                     )
         return all_records
 
-
     async def control_device(
         self,
         address: str,
@@ -1457,6 +1475,7 @@ class InsteonManager:
         button: int = 1,
     ) -> bool:
         """Control a physical device live over Insteon (on, off, fast_on, fast_off, dim/set_level)."""
+        import inspect
         clean_addr = address.strip().upper()
         action_clean = action.lower().strip()
 
@@ -1465,49 +1484,76 @@ class InsteonManager:
             return True
 
         addr_obj = Address(clean_addr)
+        get_health(addr_obj).record_success()
         dev = pyinsteon.devices.get(addr_obj)
+        group_num = max(1, int(button or 1))
 
         try:
+            logger.info(f"Sending '{action_clean}' (level={level}, group={group_num}) to {clean_addr}...")
             if action_clean in ("on", "set_level", "dim"):
                 on_level = max(0, min(255, level))
                 if dev and hasattr(dev, "async_on"):
-                    res = await dev.async_on(on_level=on_level, ramp_rate=ramp_rate, button=button)
-                    return res == ResponseStatus.SUCCESS
+                    sig = inspect.signature(dev.async_on)
+                    kwargs: Dict[str, Any] = {}
+                    if "on_level" in sig.parameters:
+                        kwargs["on_level"] = on_level
+                    if "group" in sig.parameters:
+                        kwargs["group"] = group_num
+                    res = await dev.async_on(**kwargs)
                 else:
                     from pyinsteon.handlers.to_device.on_level import OnLevelCommand
-                    cmd = OnLevelCommand(addr_obj)
+                    cmd = OnLevelCommand(addr_obj, group_num)
                     res = await cmd.async_send(on_level=on_level)
-                    return res == ResponseStatus.SUCCESS
+                ok = res in (ResponseStatus.SUCCESS, ResponseStatus.UNCLEAR)
+                if ok:
+                    logger.info(f"Device {clean_addr} '{action_clean}' (level={on_level}) succeeded ({res.name}).")
+                else:
+                    logger.warning(f"Device {clean_addr} '{action_clean}' returned status {res}.")
+                return ok
 
             elif action_clean == "off":
                 if dev and hasattr(dev, "async_off"):
-                    res = await dev.async_off(button=button)
-                    return res == ResponseStatus.SUCCESS
+                    sig = inspect.signature(dev.async_off)
+                    kwargs = {"group": group_num} if "group" in sig.parameters else {}
+                    res = await dev.async_off(**kwargs)
                 else:
                     from pyinsteon.handlers.to_device.off import OffCommand
-                    cmd = OffCommand(addr_obj)
+                    cmd = OffCommand(addr_obj, group_num)
                     res = await cmd.async_send()
-                    return res == ResponseStatus.SUCCESS
+                ok = res in (ResponseStatus.SUCCESS, ResponseStatus.UNCLEAR)
+                if ok:
+                    logger.info(f"Device {clean_addr} 'off' succeeded ({res.name}).")
+                else:
+                    logger.warning(f"Device {clean_addr} 'off' returned status {res}.")
+                return ok
 
             elif action_clean == "fast_on":
-                if dev and hasattr(dev, "async_fast_on"):
-                    res = await dev.async_fast_on(button=button)
-                    return res == ResponseStatus.SUCCESS
+                if dev and hasattr(dev, "async_on") and "fast" in inspect.signature(dev.async_on).parameters:
+                    res = await dev.async_on(on_level=255, group=group_num, fast=True)
                 else:
-                    from pyinsteon.handlers.to_device.fast_on import FastOnCommand
-                    cmd = FastOnCommand(addr_obj)
-                    res = await cmd.async_send()
-                    return res == ResponseStatus.SUCCESS
+                    from pyinsteon.handlers.to_device.on_fast import OnFastCommand
+                    cmd = OnFastCommand(addr_obj, group_num)
+                    res = await cmd.async_send(on_level=255)
+                ok = res in (ResponseStatus.SUCCESS, ResponseStatus.UNCLEAR)
+                if ok:
+                    logger.info(f"Device {clean_addr} 'fast_on' succeeded ({res.name}).")
+                else:
+                    logger.warning(f"Device {clean_addr} 'fast_on' returned status {res}.")
+                return ok
 
             elif action_clean == "fast_off":
-                if dev and hasattr(dev, "async_fast_off"):
-                    res = await dev.async_fast_off(button=button)
-                    return res == ResponseStatus.SUCCESS
+                if dev and hasattr(dev, "async_off") and "fast" in inspect.signature(dev.async_off).parameters:
+                    res = await dev.async_off(group=group_num, fast=True)
                 else:
-                    from pyinsteon.handlers.to_device.fast_off import FastOffCommand
-                    cmd = FastOffCommand(addr_obj)
+                    from pyinsteon.handlers.to_device.off_fast import OffFastCommand
+                    cmd = OffFastCommand(addr_obj, group_num)
                     res = await cmd.async_send()
-                    return res == ResponseStatus.SUCCESS
+                ok = res in (ResponseStatus.SUCCESS, ResponseStatus.UNCLEAR)
+                if ok:
+                    logger.info(f"Device {clean_addr} 'fast_off' succeeded ({res.name}).")
+                else:
+                    logger.warning(f"Device {clean_addr} 'fast_off' returned status {res}.")
+                return ok
 
             else:
                 raise ValueError(f"Unknown action '{action}'. Valid actions: on, off, fast_on, fast_off, dim, set_level.")
