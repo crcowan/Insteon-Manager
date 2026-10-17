@@ -116,10 +116,10 @@ class SceneTriggerRequest(BaseModel):
 class ReciprocalLinkRequest(BaseModel):
     controller_address: str = Field(description="Controller device address (or PLM)")
     responder_address: str = Field(description="Responder device address")
-    group: int = Field(default=1, ge=1, le=255, description="All-Link group")
-    data1: int = Field(default=255, ge=0, le=255, description="On-Level (0-255)")
-    data2: int = Field(default=28, ge=0, le=31, description="Ramp-Rate (0-31)")
-    data3: int = Field(default=1, description="Button/Sub-channel (1-8)")
+    group: int = Field(default=1, ge=0, le=255, description="All-Link group (0 for PLM I2CS Auth, 1-255 for scenes/buttons)")
+    data1: int = Field(default=255, ge=0, le=255, description="On-Level or Cat (0-255)")
+    data2: int = Field(default=28, ge=0, le=255, description="Ramp-Rate or Subcat (0-255)")
+    data3: int = Field(default=1, ge=0, le=255, description="Button/Sub-channel or Firmware (0-255)")
 
 
 class DeviceReplaceRequest(BaseModel):

@@ -234,7 +234,7 @@ public static class InsteonKeypadHelper
         Dictionary<string, string> friendlyNameMap)
     {
         var list = new List<KeypadButtonSummaryModel>();
-        var activeCtrlRecords = records.Where(r => r.InUse && !r.HighWaterMark && r.IsController).ToList();
+        var activeCtrlRecords = records.Where(r => r.InUse && !r.HighWaterMark && r.IsController && r.Group > 0).ToList();
 
         // Check if there are keys above 4
         int maxKey = 4;
@@ -298,7 +298,7 @@ public class MissingDefaultLinkItemModel
 
     public string DirectionBadge => (MissingDeviceToPlm && MissingPlmToDevice) 
         ? "🚨 Both Directions Missing" 
-        : (MissingDeviceToPlm ? "⚠️ Missing Dev ➔ PLM (Status Updates)" : "⚠️ Missing PLM ➔ Dev (Control)");
+        : (MissingDeviceToPlm ? "⚠️ Missing Dev ➔ PLM (Status Updates)" : "⚠️ Missing PLM ➔ Dev (Group 0 Auth/Control)");
 
     public string DisplayTitle => $"{DeviceName} ({DeviceAddress})";
 }
@@ -378,7 +378,7 @@ public class OrganizedAldbEntry
         : (IsDuplicate ? "⚠️ Duplicate Link" : (IsGroupZero ? "⚠️ Orphan Grp 0" : string.Empty));
     public string IssueTooltip => IsDuplicate 
         ? "Redundant duplicate record: An active link already exists for this same target device and group. Cleaning this up frees EEPROM space and eliminates repetitive All-Link retry traffic."
-        : (IsGroupZero ? "Group 0 is an invalid Insteon scene (scenes are Group 1-255). This is an orphaned/corrupted link or aborted handshake leftover from older software." : string.Empty);
+        : (IsGroupZero ? "Group 0 is reserved exclusively for PLM (Controller) -> Device (Responder) I2CS authorization links. A non-PLM Group 0 record is an orphaned/corrupted link." : string.Empty);
 
     public bool IsKeypadRecord { get; set; }
     public string KeypadButtonLabel { get; set; } = string.Empty;

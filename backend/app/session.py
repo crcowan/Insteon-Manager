@@ -55,23 +55,17 @@ class SessionManager:
             duration = lease_seconds or settings.session_timeout_seconds
             now = time.time()
 
-            # If already active
+            # If already active, transfer/renew lease for the requesting GUI client
             if self.is_active:
-                if self.locked_by == client_id:
-                    # Renew lease for existing client
-                    self.lease_expires_at = now + duration
-                    self.last_heartbeat_time = now
-                    logger.info(f"Renewed session lease for '{client_id}'. Expires in {duration}s.")
-                    return True
-                elif self.lease_expires_at and now < self.lease_expires_at:
-                    logger.warning(
-                        f"Session already held by '{self.locked_by}'. "
-                        f"Rejecting request from '{client_id}'."
+                if self.locked_by != client_id:
+                    logger.info(
+                        f"Transferring active management session from '{self.locked_by}' to '{client_id}'."
                     )
-                    return False
-                else:
-                    logger.info("Existing session expired; claiming lock for new client.")
-                    await self._do_release_hardware()
+                    self.locked_by = client_id
+                self.lease_expires_at = now + duration
+                self.last_heartbeat_time = now
+                logger.info(f"Renewed session lease for '{client_id}'. Expires in {duration}s.")
+                return True
 
             logger.info(f"Acquiring management session for '{client_id}'...")
 
@@ -88,8 +82,9 @@ class SessionManager:
                     await openhab_client.set_thing_enabled(True)
                     return False
 
-            # Allow OS serial driver 1 second to release handles
-            await asyncio.sleep(1.0)
+            # Allow OS serial driver 1 second to release handles on real hardware
+            if not settings.is_simulator:
+                await asyncio.sleep(1.0)
 
             # Step 2: Connect pyinsteon to hardware port
             logger.info("Step 2/2: Connecting pyinsteon to serial port...")
@@ -116,10 +111,11 @@ class SessionManager:
     async def heartbeat(self, client_id: str) -> bool:
         """Extend lease for active session."""
         async with self._lock:
-            if not self.is_active or self.locked_by != client_id:
-                logger.warning(f"Heartbeat rejected: Session not active or mismatched client '{client_id}'.")
+            if not self.is_active:
+                logger.warning(f"Heartbeat rejected: Session not active for client '{client_id}'.")
                 return False
 
+            self.locked_by = client_id
             self.lease_expires_at = time.time() + settings.session_timeout_seconds
             self.last_heartbeat_time = time.time()
             return True
@@ -131,13 +127,7 @@ class SessionManager:
                 logger.info("No active session to release.")
                 return True
 
-            if not force and client_id and self.locked_by != client_id:
-                logger.warning(
-                    f"Release rejected: Client '{client_id}' does not own active lock '{self.locked_by}'."
-                )
-                return False
-
-            logger.info(f"Releasing management session for '{self.locked_by}'...")
+            logger.info(f"Releasing management session for '{self.locked_by}' (requested by '{client_id}')...")
             await self._do_release_hardware()
             return True
 
@@ -150,8 +140,9 @@ class SessionManager:
         except Exception as exc:
             logger.error(f"Error disconnecting pyinsteon during release: {exc}")
 
-        # Allow OS serial driver 0.5s to close port
-        await asyncio.sleep(0.5)
+        # Allow OS serial driver 0.5s to close port on real hardware
+        if not settings.is_simulator:
+            await asyncio.sleep(0.5)
 
         # Step 2: Re-enable openHAB Insteon Thing
         logger.info("Step 2/2: Re-enabling openHAB Insteon Thing...")

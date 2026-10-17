@@ -33,6 +33,74 @@ public partial class MainWindow : Window
         Closed += (s, e) => System.IO.File.AppendAllText(LogPath, $"[INFO] MainWindow Closed event at {DateTime.Now}\n");
     }
 
+    private static System.Diagnostics.Process? _localBackendProcess;
+
+    private async Task EnsureLocalSimulatorBackendRunningAsync(string backendUrl)
+    {
+        try
+        {
+            if (!Uri.TryCreate(backendUrl, UriKind.Absolute, out var uri))
+                return;
+
+            if (!uri.Host.Equals("localhost", StringComparison.OrdinalIgnoreCase) &&
+                !uri.Host.Equals("127.0.0.1", StringComparison.OrdinalIgnoreCase))
+            {
+                return; // Connecting to remote Raspberry Pi production backend
+            }
+
+            int port = uri.Port > 0 ? uri.Port : 8000;
+            using (var tcp = new System.Net.Sockets.TcpClient())
+            {
+                var connectTask = tcp.ConnectAsync("127.0.0.1", port);
+                if (await Task.WhenAny(connectTask, Task.Delay(350)) == connectTask && tcp.Connected)
+                {
+                    return; // Local backend is already running
+                }
+            }
+
+            // Walk up directory tree from BaseDirectory to locate repo root containing backend\.venv\Scripts\python.exe
+            var dir = new System.IO.DirectoryInfo(AppDomain.CurrentDomain.BaseDirectory);
+            while (dir != null)
+            {
+                var backendDir = System.IO.Path.Combine(dir.FullName, "backend");
+                var pythonExe = System.IO.Path.Combine(backendDir, ".venv", "Scripts", "python.exe");
+                var mainPy = System.IO.Path.Combine(backendDir, "app", "main.py");
+                if (System.IO.File.Exists(pythonExe) && System.IO.File.Exists(mainPy))
+                {
+                    var psi = new System.Diagnostics.ProcessStartInfo
+                    {
+                        FileName = pythonExe,
+                        Arguments = $"-m uvicorn app.main:app --host 127.0.0.1 --port {port}",
+                        WorkingDirectory = backendDir,
+                        CreateNoWindow = true,
+                        UseShellExecute = false
+                    };
+                    psi.EnvironmentVariables["MOCK_MODE"] = "true";
+                    _localBackendProcess = System.Diagnostics.Process.Start(psi);
+                    System.IO.File.AppendAllText(LogPath, $"[INFO] Auto-started local simulator backend (PID {_localBackendProcess?.Id}) at {DateTime.Now}\n");
+
+                    // Wait up to 4 seconds for port to listen
+                    for (int i = 0; i < 16; i++)
+                    {
+                        await Task.Delay(250);
+                        using var checkTcp = new System.Net.Sockets.TcpClient();
+                        var checkTask = checkTcp.ConnectAsync("127.0.0.1", port);
+                        if (await Task.WhenAny(checkTask, Task.Delay(200)) == checkTask && checkTcp.Connected)
+                        {
+                            break;
+                        }
+                    }
+                    break;
+                }
+                dir = dir.Parent;
+            }
+        }
+        catch (Exception ex)
+        {
+            System.IO.File.AppendAllText(LogPath, $"[WARN] EnsureLocalSimulatorBackendRunningAsync error: {ex.Message}\n");
+        }
+    }
+
     private async void MainWindow_Loaded(object sender, RoutedEventArgs e)
     {
         System.IO.File.AppendAllText(LogPath, $"[INFO] MainWindow Loaded event at {DateTime.Now}\n");
@@ -49,6 +117,7 @@ public partial class MainWindow : Window
 
         if (DataContext is MainViewModel vm)
         {
+            await EnsureLocalSimulatorBackendRunningAsync(vm.BackendUrl);
             await vm.CheckStatusAsync();
             await vm.QueryAldbAsync();
         }

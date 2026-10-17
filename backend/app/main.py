@@ -318,7 +318,7 @@ async def create_reciprocal_link(req: ReciprocalLinkRequest):
 async def delete_reciprocal_link(
     controller_address: str = Query(..., description="Controller address"),
     responder_address: str = Query(..., description="Responder address"),
-    group: int = Query(..., ge=1, le=255, description="Scene/All-Link group"),
+    group: int = Query(..., ge=0, le=255, description="Scene/All-Link group"),
 ):
     """Atomically remove a reciprocal link pair from both devices."""
     try:

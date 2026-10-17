@@ -23,19 +23,30 @@ try:
     from pyinsteon.handlers.to_device.engine_version_request import EngineVersionRequest
     from pyinsteon.handlers.to_device.id_request import IdRequestCommand
     from pyinsteon.handlers.to_device.peek import PeekCommand
-    from pyinsteon.handlers.to_device.set_leds import SetMSBAddressCommand
+    from pyinsteon.handlers.to_device.set_msb import SetMsbCommand as SetMSBAddressCommand
     from pyinsteon.handlers.to_device.status_request import StatusRequestCommand
     from pyinsteon.managers import aldb_read_manager
-    from pyinsteon.managers.device_health import get_health
     from pyinsteon.managers.link_manager.default_links import async_add_default_links
     from pyinsteon.topics import ADD_DEFAULT_LINKS
     from pyinsteon.utils import unsubscribe_topic
     import async_timeout
+    try:
+        from pyinsteon.managers.device_health import get_health
+    except ImportError:
+        class _DummyHealth:
+            def can_continue_operation(self):
+                return True
+            def record_failure(self):
+                pass
+            def record_success(self):
+                pass
+        def get_health(_addr):
+            return _DummyHealth()
     PYINSTEON_AVAILABLE = True
 
-except ImportError:
+except ImportError as _imp_err:
     PYINSTEON_AVAILABLE = False
-    logger.warning("pyinsteon library is not installed. Running in mock/compatibility mode.")
+    logger.warning(f"pyinsteon library is not installed ({_imp_err}). Running in mock/compatibility mode.")
 
     class ALDBStatus:
         EMPTY = 0
@@ -133,8 +144,8 @@ class InsteonManager:
 
             os.makedirs(settings.cache_dir, exist_ok=True)
 
-            if not PYINSTEON_AVAILABLE:
-                logger.warning("pyinsteon not available; enabling mock mode.")
+            if not PYINSTEON_AVAILABLE or settings.mock_mode or (os.name == "nt" and settings.insteon_port.startswith("/dev/")):
+                logger.info("Simulator / mock mode enabled for Insteon session.")
                 self._mock_mode = True
                 self.is_connected = True
                 return True
@@ -620,6 +631,199 @@ class InsteonManager:
 
         return self._parse_aldb_records(device.aldb, source_address=clean_addr)
 
+    @staticmethod
+    def is_active_snapshot_device(d: Dict[str, Any]) -> bool:
+        """Return True if a snapshot device entry represents a real, active device (not a retired/failed 0-record ghost)."""
+        status_str = str(d.get("status", "OK")).upper()
+        if status_str == "REPLACED":
+            return False
+        if status_str.startswith("FAILED") and len(d.get("records", [])) == 0 and not d.get("is_battery", False):
+            return False
+        return True
+
+    def _seed_aldb_from_snapshot_records(self, aldb, records: List[Dict[str, Any]], is_modem: bool = False) -> int:
+        """Seed a pyinsteon ALDB or ModemALDB instance from verified snapshot records, ensuring a High-Water Mark exists."""
+        if not PYINSTEON_AVAILABLE or not records:
+            return 0
+
+        seeded = 0
+        min_mem = 0x1FFF if is_modem else 0x0FFF
+        has_hwm = False
+
+        for r in records:
+            try:
+                mem_str = str(r.get("mem_addr", "0x0FFF"))
+                mem_int = int(mem_str, 16) if mem_str.upper().startswith("0X") else int(mem_str)
+                if mem_int < min_mem:
+                    min_mem = mem_int
+
+                is_ctrl = bool(r.get("is_controller", False))
+                in_use = bool(r.get("in_use", True))
+                is_hwm = bool(r.get("high_water_mark", False))
+                if is_hwm:
+                    has_hwm = True
+
+                rec = ALDBRecord(
+                    memory=mem_int,
+                    controller=is_ctrl,
+                    group=int(r.get("group", 0)),
+                    target=Address(r.get("target_address", "00.00.00")),
+                    data1=int(r.get("data1", 0)),
+                    data2=int(r.get("data2", 0)),
+                    data3=int(r.get("data3", 0)),
+                    in_use=in_use,
+                    high_water_mark=is_hwm,
+                    bit5=True,
+                    bit4=False,
+                )
+                aldb._records[mem_int] = rec
+                seeded += 1
+            except Exception as ex:
+                logger.debug(f"Skipping invalid snapshot record during ALDB seed: {ex}")
+
+        # Ensure non-modem ALDB has a High-Water Mark record at the end so pyinsteon knows where the table terminates
+        if not is_modem and seeded > 0 and not has_hwm:
+            hwm_addr = max(0x0000, min_mem - 8)
+            aldb._records[hwm_addr] = ALDBRecord(
+                memory=hwm_addr,
+                controller=False,
+                group=0,
+                target=Address("00.00.00"),
+                data1=0,
+                data2=0,
+                data3=0,
+                in_use=False,
+                high_water_mark=True,
+                bit5=False,
+                bit4=False,
+            )
+
+        if seeded > 0:
+            try:
+                aldb._update_status(ALDBStatus.LOADED)
+            except Exception:
+                pass
+        return seeded
+
+    async def ensure_device_aldb_ready_for_write(
+        self, address: str, snapshot: Optional[Dict[str, Any]] = None
+    ) -> tuple[bool, Optional[Any], str]:
+        """Verify reachability and ensure pyinsteon's in-memory ALDB is fully populated before a hardware write."""
+        if not self.is_connected or self._mock_mode or not PYINSTEON_AVAILABLE:
+            return False, None, "Not connected to live hardware"
+
+        clean_addr = str(Address(address)).upper()
+        snapshot = snapshot or self._load_snapshot() or {}
+        modem = pyinsteon.devices.modem
+        modem_addr = str(modem.address).upper() if modem else ""
+
+        # Case 1: USB PowerLinc Modem (PLM)
+        if clean_addr == modem_addr:
+            if not modem:
+                return False, None, "PLM modem object not found."
+            if len(modem.aldb) == 0:
+                try:
+                    await asyncio.wait_for(modem.aldb.async_load(), timeout=30.0)
+                except Exception as ex:
+                    logger.warning(f"Live PLM ALDB load timed out ({ex}); seeding from verified snapshot...")
+                if len(modem.aldb) == 0:
+                    plm_recs = snapshot.get("plm", {}).get("records", [])
+                    self._seed_aldb_from_snapshot_records(modem.aldb, plm_recs, is_modem=True)
+            return True, modem, "PLM ALDB ready"
+
+        # Case 2: Peer Insteon Device
+        cached_dev = None
+        for d in snapshot.get("devices", []):
+            if d.get("address", "").upper() == clean_addr:
+                cached_dev = d
+                break
+
+        addr_obj = Address(clean_addr)
+        get_health(addr_obj).record_success()
+
+        ping_ok, live_delta, _ = await self._fast_ping_and_db_delta(addr_obj, timeout=5.5)
+        if not ping_ok:
+            is_batt = bool((cached_dev or {}).get("is_battery", False)) or int((cached_dev or {}).get("cat", 1) or 1) in (0x00, 0x10)
+            desc = (cached_dev or {}).get("label") or (cached_dev or {}).get("description") or clean_addr
+            if is_batt or "keypad" in desc.lower() or "remote" in desc.lower():
+                return (
+                    False,
+                    None,
+                    f"Device {clean_addr} ({desc}) did not respond to ping. If it is a battery-powered Mini Keypad/Remote, hold its Set button to wake it before writing to hardware.",
+                )
+            return (
+                False,
+                None,
+                f"Device {clean_addr} ({desc}) is unreachable on the powerline/RF mesh (failed 0x19 status ping). Write aborted.",
+            )
+
+        cat = int((cached_dev or {}).get("cat", 1) or 1)
+        subcat = int((cached_dev or {}).get("subcat", 0) or 0)
+        fw = int((cached_dev or {}).get("firmware", 0) or 0)
+
+        dev_obj = pyinsteon.devices.get(addr_obj)
+        if not dev_obj:
+            try:
+                pyinsteon.devices.set_id(addr_obj, cat, subcat, fw)
+                dev_obj = pyinsteon.devices.get(addr_obj)
+            except Exception:
+                pass
+        if not dev_obj:
+            dev_obj = pyinsteon.devices.add_x10_or_insteon_device(addr_obj, cat, subcat, fw)
+
+        if getattr(dev_obj, "engine_version", EngineVersion.UNKNOWN) == EngineVersion.UNKNOWN:
+            eng_str = str((cached_dev or {}).get("engine_version", "I2CS")).upper()
+            if "I1" in eng_str:
+                dev_obj.engine_version = EngineVersion.I1
+            elif "I2" in eng_str and "I2CS" not in eng_str:
+                dev_obj.engine_version = EngineVersion.I2
+            else:
+                dev_obj.engine_version = EngineVersion.I2CS
+
+        # Check if we can seed from verified snapshot via matching db_delta
+        snap_delta = (cached_dev or {}).get("db_delta")
+        snap_records = (cached_dev or {}).get("records", [])
+        if (
+            len(dev_obj.aldb) == 0
+            and snap_delta is not None
+            and live_delta is not None
+            and int(snap_delta) == int(live_delta)
+            and len(snap_records) > 0
+        ):
+            seeded_count = self._seed_aldb_from_snapshot_records(dev_obj.aldb, snap_records, is_modem=False)
+            logger.info(
+                f"Seeded {seeded_count} verified ALDB records into pyinsteon memory for {clean_addr} (db_delta=0x{live_delta:02X})."
+            )
+
+        # If still not loaded (e.g. db_delta changed on hardware since snapshot), read live ALDB first
+        if not dev_obj.aldb.is_loaded or len(dev_obj.aldb) == 0:
+            logger.info(f"Loading live ALDB from {clean_addr} before hardware write (live db_delta={live_delta}, cached={snap_delta})...")
+            use_peek_poke = dev_obj.engine_version == EngineVersion.I1
+            await self._read_aldb_robust(dev_obj.aldb, prefer_bulk=True, use_peek_poke=use_peek_poke)
+            if not dev_obj.aldb.is_loaded and len(dev_obj.aldb) == 0:
+                return (
+                    False,
+                    None,
+                    f"Failed to read existing ALDB from {clean_addr} before write. Aborting to prevent overwriting slot 0x0FFF.",
+                )
+
+        return True, dev_obj, "Device ALDB ready"
+
+    async def refresh_device_db_delta_after_write(self, address: str, snapshot: Optional[Dict[str, Any]]) -> None:
+        """Query the device's updated db_delta after a hardware ALDB write and persist it into the snapshot."""
+        if not self.is_connected or self._mock_mode or not PYINSTEON_AVAILABLE or not snapshot:
+            return
+        clean_addr = str(Address(address)).upper()
+        modem = pyinsteon.devices.modem
+        if modem and clean_addr == str(modem.address).upper():
+            return
+        ok, new_delta, _ = await self._fast_ping_and_db_delta(Address(clean_addr), timeout=4.5)
+        if ok and new_delta is not None:
+            for d in snapshot.get("devices", []):
+                if d.get("address", "").upper() == clean_addr:
+                    d["db_delta"] = int(new_delta)
+                    break
+
     async def get_devices(self) -> List[DeviceSummary]:
         """Get summary list of all known devices (merging live pyinsteon state with snapshot metadata)."""
         if not self.is_connected:
@@ -637,15 +841,19 @@ class InsteonManager:
         snap_by_addr: Dict[str, Dict[str, Any]] = {}
         if snapshot and "devices" in snapshot:
             for d in snapshot["devices"]:
-                if d.get("address"):
+                if d.get("address") and self.is_active_snapshot_device(d):
                     snap_by_addr[d["address"].upper()] = d
 
         results: List[DeviceSummary] = []
         seen_addrs = set()
         for addr, dev in pyinsteon.devices.items():
             addr_str = str(addr).upper()
-            seen_addrs.add(addr_str)
             snap_d = snap_by_addr.get(addr_str, {})
+            if dev != pyinsteon.devices.modem and addr_str not in snap_by_addr:
+                raw_snap = next((x for x in (snapshot or {}).get("devices", []) if x.get("address", "").upper() == addr_str), None)
+                if raw_snap and not self.is_active_snapshot_device(raw_snap):
+                    continue
+            seen_addrs.add(addr_str)
             live_count = len(dev.aldb) if hasattr(dev, "aldb") else 0
             snap_count = len(snap_d.get("records", []))
             desc = (
@@ -812,6 +1020,8 @@ class InsteonManager:
                     )
                 )
             for d in snapshot["devices"]:
+                if not self.is_active_snapshot_device(d):
+                    continue
                 results.append(
                     DeviceSummary(
                         address=d.get("address", ""),

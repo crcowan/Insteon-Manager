@@ -13,6 +13,7 @@ class Settings(BaseSettings):
     # Insteon Hardware Configuration
     insteon_port: str = "/dev/ttyUSB0"
     insteon_baud: int = 19200
+    mock_mode: bool = False
 
     # Safety Watchdog Settings
     # Auto-release lease after N seconds of silence to ensure openHAB is never left locked out
@@ -24,6 +25,11 @@ class Settings(BaseSettings):
     # Server settings
     host: str = "0.0.0.0"
     port: int = 8000
+
+    @property
+    def is_simulator(self) -> bool:
+        """Return True when running in local simulator mode (mock_mode=True or Windows with /dev/ port)."""
+        return bool(self.mock_mode or (os.name == "nt" and self.insteon_port.startswith("/dev/")))
 
     model_config = SettingsConfigDict(
         env_file=".env",

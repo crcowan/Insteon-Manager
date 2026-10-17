@@ -95,13 +95,16 @@ class SceneService:
     def _save_snapshot(self, data: Dict[str, Any]):
         path = self._find_snapshot_file() or os.path.join("backend", "network_snapshot.json")
         try:
-            os.makedirs(os.path.dirname(path), exist_ok=True)
+            dir_name = os.path.dirname(path)
+            if dir_name:
+                os.makedirs(dir_name, exist_ok=True)
             with open(path, "w", encoding="utf-8") as f:
                 json.dump(data, f, indent=2)
-            # Keep root network_snapshot.json in sync if it exists
-            if os.path.isfile("network_snapshot.json") and path != "network_snapshot.json":
-                with open("network_snapshot.json", "w", encoding="utf-8") as rf:
-                    json.dump(data, rf, indent=2)
+            # Keep all workspace network_snapshot.json locations in sync
+            for sync_candidate in ("network_snapshot.json", "backend/network_snapshot.json", "../network_snapshot.json"):
+                if os.path.isfile(sync_candidate) and os.path.abspath(sync_candidate) != os.path.abspath(path):
+                    with open(sync_candidate, "w", encoding="utf-8") as rf:
+                        json.dump(data, rf, indent=2)
         except Exception as ex:
             logger.error(f"Error writing snapshot to {path}: {ex}")
 
@@ -249,11 +252,13 @@ class SceneService:
 
         # 2. Hardware update if pyinsteon is active and connected
         from app.insteon import insteon_manager
-        if insteon_manager.is_connected and PYINSTEON_AVAILABLE:
-            addr_obj = Address(clean_addr)
-            dev_obj = pyinsteon.devices.get(addr_obj)
-            if dev_obj and hasattr(dev_obj, "aldb"):
-                mem_int = int(target_rec["mem_addr"], 16) if isinstance(target_rec["mem_addr"], str) else target_rec["mem_addr"]
+        if insteon_manager.is_connected and not insteon_manager._mock_mode and PYINSTEON_AVAILABLE:
+            ok, dev_obj, err_msg = await insteon_manager.ensure_device_aldb_ready_for_write(clean_addr, snapshot)
+            if not ok or not dev_obj:
+                raise RuntimeError(f"Hardware write pre-check failed for {clean_addr}: {err_msg}")
+
+            for r in matching_recs:
+                mem_int = int(r["mem_addr"], 16) if isinstance(r["mem_addr"], str) else int(r["mem_addr"])
                 rec_obj = dev_obj.aldb.get(mem_int)
                 if rec_obj:
                     dev_obj.aldb.modify(
@@ -261,10 +266,12 @@ class SceneService:
                         data1=new_data1,
                         data2=new_data2,
                     )
-                    logger.info(f"Writing updated preset to {clean_addr} slot 0x{mem_int:04X} (Level={new_data1}, Ramp={new_data2})...")
-                    done, failed = await dev_obj.aldb.async_write()
-                    if failed:
-                        logger.warning(f"Hardware write to {clean_addr} returned failure; will retry on next session.")
+            logger.info(f"Writing updated preset to {clean_addr} (Level={new_data1}, Ramp={new_data2})...")
+            done, failed = await dev_obj.aldb.async_write()
+            if failed:
+                dev_obj.aldb.clear_pending()
+                raise RuntimeError(f"Hardware EEPROM write to {clean_addr} failed.")
+            await insteon_manager.refresh_device_db_delta_after_write(clean_addr, snapshot)
 
         # 3. Persist to snapshot file
         self._save_snapshot(snapshot)

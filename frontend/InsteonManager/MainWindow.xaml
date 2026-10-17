@@ -2563,7 +2563,10 @@
                                                  Margin="0,0,10,0" Foreground="#89DCEB" />
                                     <RadioButton Content="Missing PLM Links" GroupName="AnalyzerFilterGroup"
                                                  Command="{Binding FilterAnalyzerCommand}" CommandParameter="missing_default"
-                                                 Foreground="#89B4FA" />
+                                                 Margin="0,0,10,0" Foreground="#89B4FA" />
+                                    <RadioButton Content="Ghost Targets" GroupName="AnalyzerFilterGroup"
+                                                 Command="{Binding FilterAnalyzerCommand}" CommandParameter="ghost"
+                                                 Foreground="#A6ADC8" />
                                 </StackPanel>
 
                                 <TextBlock DockPanel.Dock="Right" Text="{Binding FilteredNetworkIssues.Count, StringFormat='Showing {0} issue(s)'}" FontSize="11" Foreground="{StaticResource TextMuted}" VerticalAlignment="Center" />

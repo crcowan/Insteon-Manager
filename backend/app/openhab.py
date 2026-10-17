@@ -18,6 +18,7 @@ class OpenhabClient:
         self.base_url = settings.openhab_url.rstrip("/")
         self.thing_uid = settings.openhab_thing_uid
         self.token = settings.openhab_token
+        self._mock_enabled: bool = True
 
     def _get_headers(self) -> Dict[str, str]:
         headers = {
@@ -30,6 +31,15 @@ class OpenhabClient:
 
     async def get_thing_status(self) -> OpenhabStatusResponse:
         """Fetch current status and enabled state of the Insteon Thing."""
+        if settings.is_simulator:
+            return OpenhabStatusResponse(
+                thing_uid=self.thing_uid,
+                status="ONLINE" if self._mock_enabled else "UNINITIALIZED",
+                status_detail="NONE" if self._mock_enabled else "DISABLED",
+                is_enabled=self._mock_enabled,
+                reachable=True,
+            )
+
         url = f"{self.base_url}/rest/things/{self.thing_uid}"
         try:
             async with httpx.AsyncClient(timeout=1.5) as client:
@@ -47,7 +57,7 @@ class OpenhabClient:
                         thing_uid=self.thing_uid,
                         status=status,
                         status_detail=detail,
-                        is_enabled=is_enabled,
+                        is_enabled=self_enabled if hasattr(self, "self_enabled") else is_enabled,
                         reachable=True,
                     )
                 else:
@@ -81,6 +91,11 @@ class OpenhabClient:
         Returns:
             True if state change succeeded and verified, False otherwise.
         """
+        if settings.is_simulator:
+            self._mock_enabled = enable
+            logger.info(f"[Simulator] openHAB Thing {self.thing_uid} enabled={enable}")
+            return True
+
         url = f"{self.base_url}/rest/things/{self.thing_uid}/enable"
         headers = self._get_headers()
         # openHAB expects text/plain or JSON boolean

@@ -131,7 +131,7 @@ public class MainViewModel : ViewModelBase
         AnalyzeNetworkCommand = new AsyncRelayCommand(() => RunNetworkAnalysisAsync(false), () => !IsLoading && !IsAnalyzingNetwork);
         FilterAnalyzerCommand = new RelayCommand<string>(filter => { if (filter != null) SelectedAnalyzerFilter = filter; });
         FixNetworkIssueCommand = new AsyncRelayCommand<NetworkIssueItemModel>(FixNetworkIssueAsync, issue => issue != null && !IsLoading);
-        DeleteNetworkIssueSlotCommand = new AsyncRelayCommand<NetworkIssueModel>(DeleteNetworkIssueSlotAsync, issue => issue != null && !string.IsNullOrEmpty(issue.MemAddr) && !IsLoading);
+        DeleteNetworkIssueSlotCommand = new AsyncRelayCommand<NetworkIssueModel>(DeleteNetworkIssueSlotAsync, issue => issue != null && issue.HasSecondaryAction && !IsLoading);
         StageNetworkIssueFixCommand = new RelayCommand<NetworkIssueModel>(StageNetworkIssueFix, issue => issue != null);
         FixAllHalfLinksCommand = new AsyncRelayCommand(FixAllHalfLinksAsync, () => AnalyzerHalfLinksCount > 0 && !IsLoading);
         StageAllAnalyzerFixesCommand = new RelayCommand(StageAllAnalyzerFixes, () => NetworkIssues.Count > 0 && !IsLoading);
@@ -1690,11 +1690,12 @@ public class MainViewModel : ViewModelBase
                 }
             }
 
-            // Flag duplicate links and Group 0 anomalies for clear user visibility
+            // Flag duplicate links and non-PLM Group 0 anomalies for clear user visibility
             var seenCtrl = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             foreach (var entry in org.ControllerRecords)
             {
-                entry.IsGroupZero = (entry.Group == 0);
+                // On the PLM, Group 0 Controller records are valid PLM Device Management & I2CS Auth records
+                entry.IsGroupZero = (entry.Group == 0 && !org.IsModem);
                 string key = $"{entry.TargetAddress}|{entry.Group}";
                 if (!seenCtrl.Add(key))
                 {
@@ -1705,8 +1706,14 @@ public class MainViewModel : ViewModelBase
             var seenResp = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             foreach (var entry in org.ResponderRecords)
             {
-                entry.IsGroupZero = (entry.Group == 0);
-                string key = $"{entry.TargetAddress}|{entry.Group}";
+                // On a peer device, a Group 0 Responder record targeting the PLM is its valid I2CS Authorization link
+                bool isValidPlmAuth = !org.IsModem && entry.Group == 0 &&
+                    (entry.TargetAddress.Equals(PlmModemAddress, StringComparison.OrdinalIgnoreCase) ||
+                     entry.TargetFriendlyName.Contains("PLM", StringComparison.OrdinalIgnoreCase) ||
+                     entry.TargetFriendlyName.Contains("Modem", StringComparison.OrdinalIgnoreCase));
+                entry.IsGroupZero = (entry.Group == 0 && !isValidPlmAuth);
+                int btnDisc = org.IsKeypad ? entry.Data3 : 0;
+                string key = $"{entry.TargetAddress}|{entry.Group}|{btnDisc}";
                 if (!seenResp.Add(key))
                 {
                     entry.IsDuplicate = true;
@@ -1726,6 +1733,18 @@ public class MainViewModel : ViewModelBase
         if (!r.InUse)
         {
             return "Unused / Cleared Database Slot";
+        }
+
+        if (r.Group == 0)
+        {
+            if (r.IsController)
+            {
+                return $"PLM Device Management & I2CS Link to {targetFriendlyName} (Group 0 | Cat: 0x{r.Data1:X2}, Subcat: 0x{r.Data2:X2})";
+            }
+            if (r.IsResponder)
+            {
+                return $"I2CS Authorization & Direct Control Link with {targetFriendlyName} (Group 0 | Cat: 0x{r.Data1:X2}, Subcat: 0x{r.Data2:X2})";
+            }
         }
 
         if (r.IsResponder)
@@ -3056,45 +3075,45 @@ public class MainViewModel : ViewModelBase
             TargetAddress = $"{plm} ⇄ {devAddr}",
             TargetLabel = $"PLM Modem ⇄ {name}",
             Operation = "CREATE_DEFAULT_PLM_LINK",
-            CurrentState = issue ?? "Missing default Group 1 link pair with PLM",
-            ProposedState = $"Reciprocal Group 1 Link Pair with PLM ({plm})",
-            Description = $"Establish default reciprocal All-Link Group 1 records between PLM ({plm}) and {name} ({devAddr}) for status reporting and remote control.",
+            CurrentState = issue ?? "Missing default Group 0 / Group 1 link pair with PLM",
+            ProposedState = $"Group 0 I2CS Auth + Group 1 Status Link Pair with PLM ({plm})",
+            Description = $"Establish default Group 0 (I2CS Auth & Direct Management) and Group 1 (Status Reporting) links between PLM ({plm}) and {name} ({devAddr}).",
             Risk = ChangeRisk.Low,
             ExecutionHandler = async () =>
             {
-                // Link 1: PLM (Controller) <-> Device (Responder) on Group 1
+                // Link 1: PLM (Controller) <-> Device (Responder) on Group 0 (I2CS Auth & Direct Management)
                 var req1 = new ReciprocalLinkRequestModel
                 {
                     ControllerAddress = plm,
                     ResponderAddress = devAddr,
-                    Group = 1,
-                    Data1 = 255,
-                    Data2 = 28,
-                    Data3 = 1
+                    Group = 0,
+                    Data1 = 3,
+                    Data2 = 21,
+                    Data3 = 158
                 };
                 var (s1, m1) = await _apiClient.CreateReciprocalLinkAsync(req1);
-                if (!s1) return (false, $"PLM->Device link failed: {m1}");
+                if (!s1) return (false, $"PLM->Device Group 0 link failed: {m1}");
 
-                // Link 2: Device (Controller) <-> PLM (Responder) on Group 1
+                // Link 2: Device (Controller) <-> PLM (Responder) on Group 1 (Status Reporting)
                 var req2 = new ReciprocalLinkRequestModel
                 {
                     ControllerAddress = devAddr,
                     ResponderAddress = plm,
                     Group = 1,
-                    Data1 = 255,
-                    Data2 = 28,
+                    Data1 = 3,
+                    Data2 = 0,
                     Data3 = 1
                 };
                 var (s2, m2) = await _apiClient.CreateReciprocalLinkAsync(req2);
-                if (!s2) return (false, $"Device->PLM link failed: {m2}");
+                if (!s2) return (false, $"Device->PLM Group 1 link failed: {m2}");
 
-                return (true, $"Reciprocal default Group 1 link pair established between PLM {plm} and {devAddr}.");
+                return (true, $"Default Group 0 (I2CS Auth) and Group 1 (Status) link pair established between PLM {plm} and {devAddr}.");
             }
         };
 
         StagedChanges.Add(staged);
         StatusMessage = $"Staged default PLM link pair for {name} ({devAddr}). Review in Pending Changes.";
-        AddLog(LogLevel.Info, "Staging", $"Staged default PLM link pair: {plm} <-> {devAddr} (Group 1).");
+        AddLog(LogLevel.Info, "Staging", $"Staged default PLM link pair: {plm} <-> {devAddr} (Group 0 Auth + Group 1 Status).");
         if (switchTab) SelectedTabIndex = 4;
         CommitStagedChangesCommand?.NotifyCanExecuteChanged();
     }
@@ -3126,48 +3145,48 @@ public class MainViewModel : ViewModelBase
         string plm = PlmModemAddress;
         string name = string.IsNullOrWhiteSpace(devName) ? devAddr : devName;
         StatusMessage = $"Creating default PLM link pair for {name} ({devAddr})...";
-        AddLog(LogLevel.Info, "DefaultLink", $"Establishing default reciprocal Group 1 links between PLM {plm} and {devAddr}...");
+        AddLog(LogLevel.Info, "DefaultLink", $"Establishing default Group 0 (I2CS Auth) and Group 1 (Status) links between PLM {plm} and {devAddr}...");
 
         try
         {
-            // Link 1: PLM (Controller) <-> Device (Responder) on Group 1
+            // Link 1: PLM (Controller) <-> Device (Responder) on Group 0 (I2CS Auth & Direct Management)
             var req1 = new ReciprocalLinkRequestModel
             {
                 ControllerAddress = plm,
                 ResponderAddress = devAddr,
-                Group = 1,
-                Data1 = 255,
-                Data2 = 28,
-                Data3 = 1
+                Group = 0,
+                Data1 = 3,
+                Data2 = 21,
+                Data3 = 158
             };
             var (s1, m1) = await _apiClient.CreateReciprocalLinkAsync(req1);
             if (!s1)
             {
-                StatusMessage = $"Failed to create PLM->Device link: {m1}";
+                StatusMessage = $"Failed to create PLM->Device Group 0 link: {m1}";
                 AddLog(LogLevel.Error, "DefaultLink", m1);
                 return;
             }
 
-            // Link 2: Device (Controller) <-> PLM (Responder) on Group 1
+            // Link 2: Device (Controller) <-> PLM (Responder) on Group 1 (Status Reporting)
             var req2 = new ReciprocalLinkRequestModel
             {
                 ControllerAddress = devAddr,
                 ResponderAddress = plm,
                 Group = 1,
-                Data1 = 255,
-                Data2 = 28,
+                Data1 = 3,
+                Data2 = 0,
                 Data3 = 1
             };
             var (s2, m2) = await _apiClient.CreateReciprocalLinkAsync(req2);
             if (!s2)
             {
-                StatusMessage = $"Failed to create Device->PLM link: {m2}";
+                StatusMessage = $"Failed to create Device->PLM Group 1 link: {m2}";
                 AddLog(LogLevel.Error, "DefaultLink", m2);
                 return;
             }
 
             StatusMessage = $"Default PLM links created successfully for {name}.";
-            AddLog(LogLevel.Success, "DefaultLink", $"Verified reciprocal default links created between PLM {plm} and {devAddr}.");
+            AddLog(LogLevel.Success, "DefaultLink", $"Verified default Group 0 & Group 1 links created between PLM {plm} and {devAddr}.");
 
             // Immediately clear missing default link state on the device card and audit collection
             var targetOrg = OrganizedDevices.FirstOrDefault(o => o.Address.Equals(devAddr, StringComparison.OrdinalIgnoreCase));
@@ -3245,7 +3264,7 @@ public class MainViewModel : ViewModelBase
             Operation = "ADD_DEVICE",
             CurrentState = "Unregistered device",
             ProposedState = $"Add to network as {catOption?.Name ?? "Insteon Device"} (CreateDefaultLinks: {createDefault})",
-            Description = $"Register new device {cleanAddr} ({name}) into network and automatically create default reciprocal Group 1 links with PLM {PlmModemAddress}.",
+            Description = $"Register new device {cleanAddr} ({name}) into network and automatically create default Group 0 & Group 1 links with PLM {PlmModemAddress}.",
             Risk = ChangeRisk.Low,
             ExecutionHandler = async () =>
             {
@@ -3452,14 +3471,15 @@ public class MainViewModel : ViewModelBase
             {
                 string devAddr = issue.OwnerAddress;
                 string plm = PlmModemAddress;
+                // Link 1: PLM (Controller) -> Device (Responder) on Group 0 (I2CS Auth & Direct Management)
                 var req1 = new ReciprocalLinkRequestModel
                 {
                     ControllerAddress = plm,
                     ResponderAddress = devAddr,
-                    Group = 1,
-                    Data1 = 255,
-                    Data2 = 28,
-                    Data3 = 1
+                    Group = 0,
+                    Data1 = 3,
+                    Data2 = 21,
+                    Data3 = 158
                 };
                 var (s1, m1) = await _apiClient.CreateReciprocalLinkAsync(req1);
                 if (!s1)
@@ -3469,13 +3489,14 @@ public class MainViewModel : ViewModelBase
                 }
                 else
                 {
+                    // Link 2: Device (Controller) -> PLM (Responder) on Group 1 (Status Reporting)
                     var req2 = new ReciprocalLinkRequestModel
                     {
                         ControllerAddress = devAddr,
                         ResponderAddress = plm,
                         Group = 1,
-                        Data1 = 255,
-                        Data2 = 28,
+                        Data1 = 3,
+                        Data2 = 0,
                         Data3 = 1
                     };
                     var res2 = await _apiClient.CreateReciprocalLinkAsync(req2);
@@ -3515,7 +3536,81 @@ public class MainViewModel : ViewModelBase
 
     public async Task DeleteNetworkIssueSlotAsync(NetworkIssueModel? issue)
     {
-        if (issue == null || string.IsNullOrEmpty(issue.MemAddr)) return;
+        if (issue == null) return;
+
+        string secAction = issue.SecondaryAction ?? "delete_record";
+
+        if (secAction == "create_reciprocal")
+        {
+            IsLoading = true;
+            StatusMessage = $"Adding reciprocal link: {issue.ControllerAddress} <-> {issue.ResponderAddress} (Group {issue.Group})...";
+            AddLog(LogLevel.Info, "Analyzer", $"Executing secondary action: Creating reciprocal link {issue.ControllerAddress} <-> {issue.ResponderAddress} (Group {issue.Group})...");
+            try
+            {
+                var req = new ReciprocalLinkRequestModel
+                {
+                    ControllerAddress = issue.ControllerAddress,
+                    ResponderAddress = issue.ResponderAddress,
+                    Group = issue.Group,
+                    Data1 = issue.Data1,
+                    Data2 = issue.Data2,
+                    Data3 = issue.Data3
+                };
+                var res = await _apiClient.CreateReciprocalLinkAsync(req);
+                if (res.Success)
+                {
+                    StatusMessage = res.Message;
+                    AddLog(LogLevel.Success, "Analyzer", res.Message);
+                    await QueryAldbAsync(silent: true);
+                }
+                else
+                {
+                    StatusMessage = $"Failed to add reciprocal link: {res.Message}";
+                    AddLog(LogLevel.Error, "Analyzer", res.Message);
+                }
+            }
+            finally
+            {
+                IsLoading = false;
+            }
+            return;
+        }
+
+        if (secAction == "purge_ghost")
+        {
+            var ghostConfirm = MessageBox.Show(
+                $"Purge all ghost references to retired/offline device {issue.TargetAddress} across the entire network?",
+                "Confirm Network-Wide Ghost Purge",
+                MessageBoxButton.YesNo,
+                MessageBoxImage.Question);
+            if (ghostConfirm != MessageBoxResult.Yes) return;
+
+            IsLoading = true;
+            StatusMessage = $"Purging all ghost references to {issue.TargetAddress}...";
+            AddLog(LogLevel.Warning, "Analyzer", $"Purging all ghost references to {issue.TargetAddress} across the network...");
+            try
+            {
+                var res = await _apiClient.PurgeGhostLinksAsync(issue.TargetAddress);
+                if (res.Success)
+                {
+                    StatusMessage = res.Message;
+                    AddLog(LogLevel.Success, "Analyzer", res.Message);
+                    await QueryAldbAsync(silent: true);
+                }
+                else
+                {
+                    StatusMessage = $"Ghost purge failed: {res.Message}";
+                    AddLog(LogLevel.Error, "Analyzer", res.Message);
+                }
+            }
+            finally
+            {
+                IsLoading = false;
+            }
+            return;
+        }
+
+        if (string.IsNullOrEmpty(issue.MemAddr)) return;
 
         var confirm = MessageBox.Show(
             $"Are you sure you want to delete invalid ALDB record slot {issue.MemAddr} on device {issue.OwnerName} ({issue.OwnerAddress})?",
@@ -3566,7 +3661,7 @@ public class MainViewModel : ViewModelBase
         }
         else if (issue.RecommendedAction == "create_default_link")
         {
-            proposedState = $"Establish default bidirectional Group 1 links with PLM {PlmModemAddress}";
+            proposedState = $"Establish default Group 0 (I2CS Auth) & Group 1 (Status) links with PLM {PlmModemAddress}";
         }
         else if (issue.RecommendedAction == "purge_ghost")
         {
@@ -3614,25 +3709,27 @@ public class MainViewModel : ViewModelBase
                 {
                     string devAddr = issue.OwnerAddress;
                     string plm = PlmModemAddress;
+                    // Link 1: PLM (Controller) -> Device (Responder) on Group 0 (I2CS Auth & Direct Management)
                     var req1 = new ReciprocalLinkRequestModel
                     {
                         ControllerAddress = plm,
                         ResponderAddress = devAddr,
-                        Group = 1,
-                        Data1 = 255,
-                        Data2 = 28,
-                        Data3 = 1
+                        Group = 0,
+                        Data1 = 3,
+                        Data2 = 21,
+                        Data3 = 158
                     };
                     var (s1, m1) = await _apiClient.CreateReciprocalLinkAsync(req1);
                     if (!s1) return (false, m1);
 
+                    // Link 2: Device (Controller) -> PLM (Responder) on Group 1 (Status Reporting)
                     var req2 = new ReciprocalLinkRequestModel
                     {
                         ControllerAddress = devAddr,
                         ResponderAddress = plm,
                         Group = 1,
-                        Data1 = 255,
-                        Data2 = 28,
+                        Data1 = 3,
+                        Data2 = 0,
                         Data3 = 1
                     };
                     return await _apiClient.CreateReciprocalLinkAsync(req2);
