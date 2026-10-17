@@ -457,8 +457,7 @@ class InsteonManager:
             except Exception:
                 self._drain_outbound_queue()
             aldb.set_load_status()
-            if aldb.is_loaded:
-                return aldb.status
+            return aldb.status
 
         await self._walk_missing_records_one_by_one(
             aldb,
@@ -1190,7 +1189,11 @@ class InsteonManager:
 
             friendly_label = meta.get("label") or prev_dev.get("label") or f"Device {addr_str}"
             is_sensor_battery = bool(meta.get("is_battery", False)) or cat_val == 0x10
-            is_remote_battery = cat_val == 0x00 or ("keypad" in friendly_label.lower() and cat_val == 0)
+            is_remote_battery = (
+                (cat_val == 0x00 and subcat_val > 0)
+                or ("mini keypad" in friendly_label.lower())
+                or ("remote" in friendly_label.lower())
+            )
 
             # Sleeping RF sensors (Leak/Motion/Door sensors, Cat 0x10) never answer unsolicited pings
             if is_sensor_battery and not is_remote_battery:
