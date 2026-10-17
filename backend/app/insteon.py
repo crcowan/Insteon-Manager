@@ -488,6 +488,15 @@ class InsteonManager:
             use_peek_poke=use_peek_poke,
         )
         aldb.set_load_status()
+        if not aldb.is_loaded and len(aldb) == 0 and not use_peek_poke:
+            logger.info(f"Standard ALDB walk yielded 0 records on {aldb.address}; trying PEEK/POKE read...")
+            await self._walk_missing_records_one_by_one(
+                aldb,
+                max_records_to_walk=35,
+                per_record_timeout=8.0,
+                use_peek_poke=True,
+            )
+            aldb.set_load_status()
         return aldb.status
 
 
@@ -869,11 +878,17 @@ class InsteonManager:
             use_peek_poke = dev_obj.engine_version == EngineVersion.I1
             await self._read_aldb_robust(dev_obj.aldb, prefer_bulk=True, use_peek_poke=use_peek_poke)
             if not dev_obj.aldb.is_loaded and len(dev_obj.aldb) == 0:
-                return (
-                    False,
-                    None,
-                    f"Failed to read existing ALDB from {clean_addr} before write. Aborting to prevent overwriting slot 0x0FFF.",
-                )
+                if len(snap_records) > 0:
+                    seeded = self._seed_aldb_from_snapshot_records(dev_obj.aldb, snap_records, is_modem=False)
+                    logger.warning(
+                        f"Live ALDB read refused/NAKed by {clean_addr}. Falling back to {seeded} verified snapshot records for safe targeted slot update."
+                    )
+                else:
+                    return (
+                        False,
+                        None,
+                        f"Failed to read existing ALDB from {clean_addr} before write. Aborting to prevent overwriting slot 0x0FFF.",
+                    )
 
         return True, dev_obj, "Device ALDB ready"
 
