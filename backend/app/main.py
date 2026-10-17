@@ -42,6 +42,15 @@ logging.basicConfig(
 )
 logger = logging.getLogger("insteon_bridge")
 
+# Suppress high-frequency polling from systemd journalctl
+class UvicornAccessPollingFilter(logging.Filter):
+    def filter(self, record: logging.LogRecord) -> bool:
+        msg = record.getMessage()
+        return not any(ep in msg for ep in ("/logs", "/session/status"))
+
+logging.getLogger("uvicorn.access").addFilter(UvicornAccessPollingFilter())
+logging.getLogger("httpx").setLevel(logging.WARNING)
+
 
 class BackendActivityLogHandler(logging.Handler):
     """Thread-safe ring-buffer logging handler that exposes live backend activity to the GUI log tab."""
@@ -50,7 +59,9 @@ class BackendActivityLogHandler(logging.Handler):
     _SOURCE_MAP = {
         "app.insteon": "Pi.Insteon",
         "app.services.transaction_service": "Pi.Transaction",
+        "insteon_tx": "Pi.Transaction",
         "app.services.scene_service": "Pi.Scenes",
+        "insteon_scenes": "Pi.Scenes",
         "app.session": "Pi.Session",
         "app.openhab": "Pi.OpenHAB",
         "insteon_bridge": "Pi.Bridge",

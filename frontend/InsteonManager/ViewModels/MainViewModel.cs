@@ -2662,13 +2662,19 @@ public class MainViewModel : ViewModelBase
     {
         GhostTargets.Clear();
         var known = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        if (!string.IsNullOrWhiteSpace(PlmModemAddress))
+        {
+            known.Add(PlmModemAddress);
+        }
+        known.Add("53.C1.42"); // Fallback PLM hub address
+
         foreach (var dev in _currentDevices)
         {
             if (!string.IsNullOrWhiteSpace(dev.Address) && (dev.AldbRecordCount > 0 || dev.IsBattery))
                 known.Add(dev.Address);
         }
 
-        // Count references to unknown target addresses
+        // Count references to unknown target addresses (excluding 00.00.00 and PLM)
         var ghostCounts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
         foreach (var rec in records)
         {
@@ -2683,7 +2689,7 @@ public class MainViewModel : ViewModelBase
             GhostTargets.Add($"{kvp.Key} ({kvp.Value} dead links)");
         }
 
-        if (GhostTargets.Count > 0 && string.IsNullOrEmpty(SelectedGhostTarget))
+        if (GhostTargets.Count > 0 && (string.IsNullOrEmpty(SelectedGhostTarget) || !GhostTargets.Contains(SelectedGhostTarget)))
         {
             SelectedGhostTarget = GhostTargets[0];
         }
@@ -2695,6 +2701,13 @@ public class MainViewModel : ViewModelBase
 
         // Extract raw address (e.g. "2C.E7.EF" from "2C.E7.EF (63 dead links)")
         var targetAddr = SelectedGhostTarget.Split(' ')[0].Trim();
+
+        if (targetAddr.Equals("53.C1.42", StringComparison.OrdinalIgnoreCase) || 
+            (!string.IsNullOrWhiteSpace(PlmModemAddress) && targetAddr.Equals(PlmModemAddress, StringComparison.OrdinalIgnoreCase)))
+        {
+            AddLog(LogLevel.Error, "NetworkTools", $"Target address {targetAddr} is the central PLM Hub modem. It cannot be purged as a ghost.");
+            return;
+        }
 
         IsLoading = true;
         StatusMessage = $"Purging all ghost references to {targetAddr} across the network...";

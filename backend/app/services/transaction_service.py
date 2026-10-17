@@ -385,12 +385,20 @@ class TransactionService:
         purged_count = 0
         modified_devices: List[str] = []
 
+        plm = snapshot.get("plm", {})
+        plm_addr = plm.get("address", "53.C1.42").upper()
+
+        if clean_target == plm_addr or clean_target in ("53.C1.42", "00.00.00", "000000"):
+            logger.warning(f"Rejected attempt to purge primary PLM Hub modem ({clean_target}) as a ghost target.")
+            return GenericResponse(
+                success=False,
+                message=f"Aborted: {clean_target} is the primary PLM Hub modem and cannot be purged as a ghost target.",
+            )
+
         from app.insteon import insteon_manager
         live_hw = insteon_manager.is_connected and not insteon_manager._mock_mode and PYINSTEON_AVAILABLE
 
         # Identify which devices have active links to clean_target
-        plm = snapshot.get("plm", {})
-        plm_addr = plm.get("address", "53.C1.42").upper()
         owners_to_purge: List[str] = []
 
         if any(r.get("in_use") and r.get("target_address", "").upper() == clean_target for r in plm.get("records", [])):
