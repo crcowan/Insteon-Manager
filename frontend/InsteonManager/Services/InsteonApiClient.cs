@@ -366,7 +366,48 @@ public class InsteonApiClient
             return null;
         }
     }
+
+    public async Task<BackendLogsResponse?> GetBackendLogsAsync(long sinceSeq = 0)
+    {
+        try
+        {
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(4));
+            return await _httpClient.GetFromJsonAsync<BackendLogsResponse>($"{_baseUrl}/logs?since_seq={sinceSeq}", cts.Token);
+        }
+        catch
+        {
+            return null;
+        }
+    }
 }
+
+public class BackendLogsResponse
+{
+    [System.Text.Json.Serialization.JsonPropertyName("latest_seq")]
+    public long LatestSeq { get; set; }
+
+    [System.Text.Json.Serialization.JsonPropertyName("entries")]
+    public List<BackendLogItem> Entries { get; set; } = new();
+}
+
+public class BackendLogItem
+{
+    [System.Text.Json.Serialization.JsonPropertyName("seq")]
+    public long Seq { get; set; }
+
+    [System.Text.Json.Serialization.JsonPropertyName("timestamp")]
+    public string Timestamp { get; set; } = string.Empty;
+
+    [System.Text.Json.Serialization.JsonPropertyName("level")]
+    public string Level { get; set; } = "Info";
+
+    [System.Text.Json.Serialization.JsonPropertyName("source")]
+    public string Source { get; set; } = "Pi";
+
+    [System.Text.Json.Serialization.JsonPropertyName("message")]
+    public string Message { get; set; } = string.Empty;
+}
+
 
 
 

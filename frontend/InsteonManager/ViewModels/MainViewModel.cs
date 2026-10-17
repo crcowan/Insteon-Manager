@@ -12,7 +12,10 @@ public class MainViewModel : ViewModelBase
     private readonly NodePositionService _positionService;
     private readonly DispatcherTimer _heartbeatTimer;
     private readonly DispatcherTimer _statusPollTimer;
+    private readonly DispatcherTimer _logPollTimer;
     private readonly string _clientId;
+    private long _lastBackendLogSeq = -1;
+    private bool _isPollingBackendLogs;
 
     private string _backendUrl = "http://localhost:8000";
     private bool _isSessionActive;
@@ -91,6 +94,14 @@ public class MainViewModel : ViewModelBase
         };
         _statusPollTimer.Tick += async (s, e) => await CheckStatusAsync();
         _statusPollTimer.Start();
+
+        // Backend activity log poll timer (every 1.2 seconds for real-time Pi / bridge logs)
+        _logPollTimer = new DispatcherTimer
+        {
+            Interval = TimeSpan.FromMilliseconds(1200)
+        };
+        _logPollTimer.Tick += async (s, e) => await PollBackendLogsAsync();
+        _logPollTimer.Start();
 
         // Commands
         ToggleSessionCommand = new AsyncRelayCommand(ToggleSessionAsync, () => !IsLoading);
@@ -1089,6 +1100,81 @@ public class MainViewModel : ViewModelBase
     private void UpdateBackendUrl()
     {
         _apiClient.SetBaseUrl(_backendUrl);
+        _lastBackendLogSeq = -1;
+    }
+
+    public async Task PollBackendLogsAsync()
+    {
+        if (_isPollingBackendLogs) return;
+        _isPollingBackendLogs = true;
+
+        try
+        {
+            long querySeq = _lastBackendLogSeq < 0 ? 0 : _lastBackendLogSeq;
+            var resp = await _apiClient.GetBackendLogsAsync(querySeq);
+            if (resp == null) return;
+
+            // Detect initial connection or backend restart where sequence reset
+            bool isInitialBatch = _lastBackendLogSeq < 0 || resp.LatestSeq < _lastBackendLogSeq;
+            if (resp.LatestSeq < _lastBackendLogSeq && resp.Entries.Count == 0)
+            {
+                resp = await _apiClient.GetBackendLogsAsync(0);
+                if (resp == null) return;
+                isInitialBatch = true;
+            }
+
+            var entriesToProcess = isInitialBatch
+                ? resp.Entries.TakeLast(25).ToList()
+                : resp.Entries;
+
+            foreach (var item in entriesToProcess)
+            {
+                var level = item.Level switch
+                {
+                    "Success" => LogLevel.Success,
+                    "Warning" => LogLevel.Warning,
+                    "Error" => LogLevel.Error,
+                    _ => LogLevel.Info
+                };
+
+                DateTime ts = DateTime.Now;
+                if (!string.IsNullOrWhiteSpace(item.Timestamp) &&
+                    TimeSpan.TryParse(item.Timestamp, out var parsedTime))
+                {
+                    ts = DateTime.Today.Add(parsedTime);
+                }
+
+                var entry = new LogEntryModel
+                {
+                    Timestamp = ts,
+                    Level = level,
+                    Source = string.IsNullOrWhiteSpace(item.Source) ? "Pi.Bridge" : item.Source,
+                    Message = item.Message
+                };
+
+                LogEntries.Insert(0, entry);
+                while (LogEntries.Count > 500)
+                {
+                    LogEntries.RemoveAt(LogEntries.Count - 1);
+                }
+
+                // While an operation (such as Hardware Pull or Transaction Commit) is active, mirror live Pi status to the bottom status bar
+                if (IsLoading && !isInitialBatch && !string.IsNullOrWhiteSpace(item.Message))
+                {
+                    StatusMessage = $"{entry.Source}: {item.Message}";
+                }
+            }
+
+            _lastBackendLogSeq = resp.LatestSeq;
+        }
+        catch
+        {
+            // Ignore transient polling errors
+        }
+        finally
+        {
+            _isPollingBackendLogs = false;
+        }
     }
 
     public async Task CheckStatusAsync()

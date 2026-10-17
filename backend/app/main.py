@@ -1,8 +1,11 @@
 """FastAPI Insteon Bridge Application."""
 
 import logging
+import threading
+from collections import deque
 from contextlib import asynccontextmanager
-from typing import List, Optional
+from datetime import datetime
+from typing import Any, Deque, Dict, List, Optional
 
 from fastapi import FastAPI, HTTPException, status, Query
 from fastapi.middleware.cors import CORSMiddleware
@@ -38,6 +41,94 @@ logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
 )
 logger = logging.getLogger("insteon_bridge")
+
+
+class BackendActivityLogHandler(logging.Handler):
+    """Thread-safe ring-buffer logging handler that exposes live backend activity to the GUI log tab."""
+
+    _IGNORED_PREFIXES = ("uvicorn", "httpx", "httpcore", "watchfiles", "asyncio")
+    _SOURCE_MAP = {
+        "app.insteon": "Pi.Insteon",
+        "app.services.transaction_service": "Pi.Transaction",
+        "app.services.scene_service": "Pi.Scenes",
+        "app.session": "Pi.Session",
+        "app.openhab": "Pi.OpenHAB",
+        "insteon_bridge": "Pi.Bridge",
+    }
+
+    def __init__(self, max_entries: int = 500):
+        super().__init__(level=logging.INFO)
+        self._entries: Deque[Dict[str, Any]] = deque(maxlen=max_entries)
+        self._seq: int = 0
+        self._lock = threading.Lock()
+
+    def emit(self, record: logging.LogRecord) -> None:
+        try:
+            name = record.name or ""
+            if any(name.startswith(prefix) for prefix in self._IGNORED_PREFIXES):
+                return
+
+            msg = record.getMessage()
+            if not msg:
+                return
+
+            if name in self._SOURCE_MAP:
+                source = self._SOURCE_MAP[name]
+            elif name.startswith("pyinsteon"):
+                source = "Pi.pyinsteon"
+            else:
+                source = f"Pi.{name.split('.')[-1]}"
+
+            if record.levelno >= logging.ERROR:
+                level_str = "Error"
+            elif record.levelno >= logging.WARNING:
+                level_str = "Warning"
+            elif any(
+                kw in msg
+                for kw in (
+                    "Complete ALDB loaded",
+                    "Hardware pull complete",
+                    "PLM ALDB read complete",
+                    "ALDB read complete",
+                    "Ping OK",
+                    "Fast-skipping",
+                    "Adding device to INSTEON",
+                    "Session acquired",
+                    "Session released",
+                )
+            ):
+                level_str = "Success"
+            else:
+                level_str = "Info"
+
+            ts = datetime.fromtimestamp(record.created).strftime("%H:%M:%S.%f")[:-3]
+            with self._lock:
+                self._seq += 1
+                self._entries.append(
+                    {
+                        "seq": self._seq,
+                        "timestamp": ts,
+                        "level": level_str,
+                        "source": source,
+                        "message": msg,
+                    }
+                )
+        except Exception:
+            pass
+
+    def get_since(self, since_seq: int = 0) -> Dict[str, Any]:
+        with self._lock:
+            items = [e for e in self._entries if e["seq"] > since_seq]
+            return {
+                "latest_seq": self._seq,
+                "entries": items,
+            }
+
+
+activity_log_handler = BackendActivityLogHandler(max_entries=500)
+root_logger = logging.getLogger()
+if not any(isinstance(h, BackendActivityLogHandler) for h in root_logger.handlers):
+    root_logger.addHandler(activity_log_handler)
 
 
 @asynccontextmanager
@@ -84,6 +175,12 @@ async def health_check():
             "port": settings.insteon_port,
         },
     )
+
+
+@app.get("/logs")
+async def get_backend_logs(since_seq: int = Query(default=0, ge=0, description="Return log entries with seq > since_seq")):
+    """Return incremental backend activity logs for real-time display in the GUI Diagnostic Log tab."""
+    return activity_log_handler.get_since(since_seq=since_seq)
 
 
 # --- Session Management Endpoints ---

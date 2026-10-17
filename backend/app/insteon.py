@@ -526,10 +526,12 @@ class InsteonManager:
                 return []
 
         addr_obj = Address(clean_addr)
+        dev_label = (cached_dev or {}).get("label") or (cached_dev or {}).get("description") or clean_addr
+        logger.info(f"[Device Query] Pinging {clean_addr} ({dev_label})...")
         ping_ok, live_delta, _ = await self._fast_ping_and_db_delta(addr_obj, timeout=6.0)
         if not ping_ok:
             if cached_dev and cached_dev.get("records"):
-                logger.info(f"Device {clean_addr} asleep/offline; returning {len(cached_dev['records'])} cached ALDB records.")
+                logger.info(f"Device {clean_addr} ({dev_label}) asleep/offline; returning {len(cached_dev['records'])} cached ALDB records.")
                 return [
                     ALDBRecordResponse(
                         mem_addr=r.get("mem_addr", "0x0000"),
@@ -547,6 +549,7 @@ class InsteonManager:
                     )
                     for r in cached_dev.get("records", [])
                 ]
+            logger.warning(f"Device {clean_addr} ({dev_label}) did not respond to ping.")
             return []
 
         if (
@@ -557,7 +560,7 @@ class InsteonManager:
             and int(cached_dev.get("db_delta")) == live_delta
             and cached_dev.get("records")
         ):
-            logger.info(f"Fast-skipping {clean_addr}: db_delta 0x{live_delta:02X} unchanged.")
+            logger.info(f"Fast-skipping {clean_addr} ({dev_label}): db_delta 0x{live_delta:02X} unchanged.")
             return [
                 ALDBRecordResponse(
                     mem_addr=r.get("mem_addr", "0x0000"),
@@ -596,6 +599,8 @@ class InsteonManager:
         use_peek_poke = getattr(device, "engine_version", EngineVersion.UNKNOWN) == EngineVersion.I1
         for attempt in range(1, 4):
             prefer_bulk = attempt == 1 and len(device.aldb) == 0
+            mode_desc = "10-byte Standard PEEK_POKE" if use_peek_poke else ("bulk stream" if prefer_bulk else "1-by-1 gap fill")
+            logger.info(f"[Device Query] Reading ALDB from {clean_addr} ({dev_label}) Attempt {attempt}/3 ({mode_desc})...")
             try:
                 timeout_s = 65.0 if use_peek_poke else 22.0
                 await asyncio.wait_for(
@@ -603,15 +608,17 @@ class InsteonManager:
                     timeout=timeout_s,
                 )
             except asyncio.TimeoutError:
-                pass
+                self._drain_outbound_queue()
             if device.aldb.is_loaded:
                 break
             if len(device.aldb) == 0 and not use_peek_poke and device.engine_version in (EngineVersion.I1, EngineVersion.I2):
                 use_peek_poke = True
+                logger.info(f"[Device Query] {clean_addr} ({dev_label}): Switching to 10-byte Standard PEEK_POKE...")
             await asyncio.sleep(1.5 * attempt)
 
         parsed = self._parse_aldb_records(device.aldb, source_address=clean_addr)
         if parsed:
+            logger.info(f"[Device Query] {clean_addr} ({dev_label}) ALDB read complete ({len(parsed)} records).")
             self._update_device_in_snapshot(
                 address=clean_addr,
                 device=device,
@@ -911,7 +918,7 @@ class InsteonManager:
         try:
             with open(path, "r", encoding="utf-8") as f:
                 data = json.load(f)
-                logger.info(f"Loaded live network snapshot from '{path}'.")
+                logger.debug(f"Loaded live network snapshot from '{path}'.")
                 return data
         except Exception as exc:
             logger.error(f"Error loading snapshot from '{path}': {exc}")
@@ -1109,7 +1116,9 @@ class InsteonManager:
             except Exception:
                 pass
 
+        logger.info(f"Reading PLM All-Link Database from hardware ({modem.address})...")
         plm_info = await self.get_plm_info(force_refresh_aldb=True)
+        logger.info(f"PLM ALDB read complete: {len(plm_info.records)} records captured from {plm_info.address}.")
         plm_rec_dicts = [
             {
                 "mem_addr": r.mem_addr,
@@ -1197,7 +1206,7 @@ class InsteonManager:
 
             # Sleeping RF sensors (Leak/Motion/Door sensors, Cat 0x10) never answer unsolicited pings
             if is_sensor_battery and not is_remote_battery:
-                logger.info(f"Skipping sleeping RF sensor {addr_str} ({friendly_label}).")
+                logger.info(f"  -> {addr_str} ({friendly_label}): Skipping sleeping RF sensor.")
                 return {
                     "address": addr_str,
                     "label": friendly_label,
@@ -1214,19 +1223,20 @@ class InsteonManager:
             addr_obj = Address(addr_str)
             get_health(addr_obj).record_success()
 
-            ping_ok, live_delta, _ = await self._fast_ping_and_db_delta(addr_obj, timeout=4.5)
+            ping_ok, live_delta, on_lvl = await self._fast_ping_and_db_delta(addr_obj, timeout=4.5)
             if not ping_ok and not is_recovery:
                 await asyncio.sleep(0.5)
-                ping_ok, live_delta, _ = await self._fast_ping_and_db_delta(addr_obj, timeout=4.5)
+                ping_ok, live_delta, on_lvl = await self._fast_ping_and_db_delta(addr_obj, timeout=4.5)
 
             if not ping_ok:
                 if prev_dev.get("records"):
-                    logger.info(f"Device {addr_str} ({friendly_label}) asleep/offline; preserving {len(prev_dev['records'])} cached records.")
+                    logger.info(f"  -> {addr_str} ({friendly_label}): Asleep/offline; preserving {len(prev_dev['records'])} cached ALDB records.")
                     return {
                         **prev_dev,
                         "address": addr_str,
                         "label": friendly_label,
                     }
+                logger.warning(f"  -> {addr_str} ({friendly_label}): No response to Standard Ping (asleep or retired).")
                 return {
                     "address": addr_str,
                     "label": friendly_label,
@@ -1241,6 +1251,9 @@ class InsteonManager:
                     "records": [],
                 }
 
+            delta_hex = f"0x{live_delta:02X}" if live_delta is not None else "N/A"
+            logger.info(f"  -> {addr_str} ({friendly_label}): Ping OK (DB Delta: {delta_hex}, Level: {on_lvl})")
+
             # If not force_full and db_delta matches cached snapshot, fast-skip
             if (
                 not force_full
@@ -1250,7 +1263,7 @@ class InsteonManager:
                 and int(prev_dev.get("db_delta")) == int(live_delta)
                 and len(prev_dev.get("records", [])) > 0
             ):
-                logger.info(f"Fast-skipping {addr_str} ({friendly_label}): db_delta 0x{live_delta:02X} unchanged.")
+                logger.info(f"  -> {addr_str} ({friendly_label}): Fast-skipping (DB Delta {delta_hex} unchanged, {len(prev_dev['records'])} cached records).")
                 return {
                     **prev_dev,
                     "address": addr_str,
@@ -1287,6 +1300,8 @@ class InsteonManager:
             for attempt in range(1, 4):
                 get_health(addr_obj).record_success()
                 prefer_bulk = (attempt == 1) and not is_recovery and len(device.aldb) == 0
+                mode_desc = "10-byte Standard PEEK_POKE" if use_peek_poke else ("bulk stream" if prefer_bulk else "1-by-1 gap fill")
+                logger.info(f"  -> {addr_str} ({friendly_label}): Reading ALDB Attempt {attempt}/3 ({mode_desc}, {len(device.aldb)} records in memory)...")
                 try:
                     timeout_s = 65.0 if use_peek_poke else 25.0
                     await asyncio.wait_for(
@@ -1299,6 +1314,7 @@ class InsteonManager:
                     break
                 if len(device.aldb) == 0 and not use_peek_poke and dev_engine in (EngineVersion.I1, EngineVersion.I2):
                     use_peek_poke = True
+                    logger.info(f"  -> {addr_str} ({friendly_label}): Switching to 10-byte Standard PEEK_POKE ({dev_engine.name} fallback)...")
                 await asyncio.sleep(1.2 * attempt)
 
             parsed_recs = self._parse_aldb_records(device.aldb, source_address=addr_str)
@@ -1321,10 +1337,13 @@ class InsteonManager:
 
             if device.aldb.is_loaded:
                 st_str = "OK"
+                logger.info(f"  -> {addr_str} ({friendly_label}): Complete ALDB loaded ({len(rec_dicts)} records).")
             elif rec_dicts:
                 st_str = f"PARTIAL ({len(rec_dicts)} records)"
+                logger.warning(f"  -> {addr_str} ({friendly_label}): Partial ALDB read ({len(rec_dicts)} records).")
             else:
                 st_str = "FAILED: Unresponsive to ALDB Read"
+                logger.error(f"  -> {addr_str} ({friendly_label}): Failed to read ALDB (0 records).")
 
             dev_desc = getattr(device, "description", "") or meta.get("thing_type") or prev_dev.get("description") or friendly_label
             return {
@@ -1344,7 +1363,11 @@ class InsteonManager:
 
         straggler_indices: List[int] = []
         for idx, addr_str in enumerate(sorted_addresses, start=1):
-            logger.info(f"[Hardware Pull {idx}/{len(sorted_addresses)}] Interrogating {addr_str}...")
+            clean_compact = addr_str.replace(".", "").upper()
+            meta = oh_meta.get(addr_str, {}) or oh_meta.get(clean_compact, {})
+            lbl = meta.get("label") or prev_by_addr.get(addr_str, {}).get("label") or ""
+            lbl_suffix = f" ({lbl})" if lbl else ""
+            logger.info(f"[Hardware Pull {idx}/{len(sorted_addresses)}] Interrogating {addr_str}{lbl_suffix}...")
             entry = await _interrogate_peer(addr_str, is_recovery=False)
             dev_idx = len(snapshot_data["devices"])
             snapshot_data["devices"].append(entry)
