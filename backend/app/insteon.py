@@ -880,8 +880,9 @@ class InsteonManager:
             if not dev_obj.aldb.is_loaded and len(dev_obj.aldb) == 0:
                 if len(snap_records) > 0:
                     seeded = self._seed_aldb_from_snapshot_records(dev_obj.aldb, snap_records, is_modem=False)
-                    from pyinsteon.constants import ReadWriteMode
+                    from pyinsteon.constants import ReadWriteMode, ALDBStatus
                     dev_obj.aldb._read_write_mode = ReadWriteMode.PEEK_POKE
+                    dev_obj.aldb._status = ALDBStatus.LOADED
                     logger.warning(
                         f"Live ALDB read refused/NAKed by {clean_addr}. Falling back to {seeded} verified snapshot records and PEEK/POKE write mode."
                     )

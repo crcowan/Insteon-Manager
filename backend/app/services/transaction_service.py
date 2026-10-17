@@ -430,13 +430,15 @@ class TransactionService:
                         modified_slots += 1
                         logger.info(f"Hardware EEPROM: Marked slot 0x{mem_k:04X} (Group {rec.group}, target {clean_target}) deleted on {owner_addr}.")
                 if modified_slots > 0:
-                    _, failed = await dev_obj.aldb.async_write()
+                    from pyinsteon.constants import ALDBStatus, ReadWriteMode
+                    dev_obj.aldb._status = ALDBStatus.LOADED
+                    _, failed = await dev_obj.aldb.async_write(force=True)
                     if failed:
-                        from pyinsteon.constants import ReadWriteMode
                         if getattr(dev_obj.aldb, "_read_write_mode", None) != ReadWriteMode.PEEK_POKE:
                             logger.info(f"Standard write failed on {owner_addr}; retrying with legacy PEEK/POKE mode...")
                             dev_obj.aldb._read_write_mode = ReadWriteMode.PEEK_POKE
-                            _, failed = await dev_obj.aldb.async_write()
+                            dev_obj.aldb._status = ALDBStatus.LOADED
+                            _, failed = await dev_obj.aldb.async_write(force=True)
                     if failed:
                         dev_obj.aldb.clear_pending()
                         logger.error(f"Hardware write failed on {owner_addr} while purging ghost {clean_target}.")
