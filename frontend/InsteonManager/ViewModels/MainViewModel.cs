@@ -81,10 +81,10 @@ public class MainViewModel : ViewModelBase
         };
         _selectedDeviceCategory = DeviceCategoryOptions[0];
 
-        // Heartbeat timer (every 30 seconds while session is active)
+        // Heartbeat timer (every 10 seconds while session is active)
         _heartbeatTimer = new DispatcherTimer
         {
-            Interval = TimeSpan.FromSeconds(30)
+            Interval = TimeSpan.FromSeconds(10)
         };
         _heartbeatTimer.Tick += async (s, e) => await OnHeartbeatTickAsync();
 

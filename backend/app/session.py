@@ -33,21 +33,37 @@ class SessionManager:
 
     async def _watchdog_loop(self):
         """Periodically check for expired sessions and restore openHAB."""
+        last_self_heal_check = 0.0
         while True:
             try:
-                await asyncio.sleep(5.0)
+                await asyncio.sleep(2.5)
+                now = time.time()
                 if self.is_active and self.lease_expires_at:
-                    now = time.time()
                     if now > self.lease_expires_at:
                         logger.warning(
                             f"Session lease for '{self.locked_by}' expired! "
                             f"Auto-releasing serial port and re-enabling openHAB."
                         )
                         await self.release_session(force=True)
+                elif not self.is_active and not insteon_manager.is_connected:
+                    # Self-healing safety net: every 15s, ensure openHAB is not accidentally left disabled
+                    if (now - last_self_heal_check) > 15.0:
+                        last_self_heal_check = now
+                        try:
+                            oh_stat = await openhab_client.get_thing_status()
+                            if oh_stat.reachable and not oh_stat.is_enabled:
+                                logger.warning(
+                                    "Watchdog detected openHAB Insteon Thing in DISABLED state while bridge is idle! "
+                                    "Auto-restoring openHAB to ENABLED..."
+                                )
+                                await openhab_client.set_thing_enabled(True)
+                        except Exception as heal_ex:
+                            logger.debug(f"Watchdog openHAB idle check note: {heal_ex}")
             except asyncio.CancelledError:
                 break
             except Exception as exc:
                 logger.error(f"Error in session watchdog loop: {exc}", exc_info=True)
+
 
     async def acquire_session(self, client_id: str, lease_seconds: Optional[int] = None) -> bool:
         """Acquire lock: Disables openHAB Insteon Thing, then connects pyinsteon."""

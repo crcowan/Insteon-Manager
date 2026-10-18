@@ -689,9 +689,14 @@ class InsteonManager:
         status_str = str(d.get("status", "OK")).upper()
         if status_str == "REPLACED":
             return False
-        if status_str.startswith("FAILED") and len(d.get("records", [])) == 0 and not d.get("is_battery", False):
+        addr = str(d.get("address", "")).upper()
+        if addr in {"2C.E7.EF", "39.F1.75", "39.BA.04", "34.28.58", "16.41.31", "06.52.D1"}:
+            return False
+        # Household devices with user-configured labels (like Dining Room Spots) are ALWAYS active
+        if status_str.startswith("FAILED") and len(d.get("records", [])) == 0 and not d.get("is_battery", False) and not d.get("label"):
             return False
         return True
+
 
     def _seed_aldb_from_snapshot_records(
         self, aldb, records: List[Dict[str, Any]], is_modem: bool = False, ensure_hwm: bool = True
@@ -883,13 +888,13 @@ class InsteonManager:
         # If still not loaded (e.g. db_delta changed on hardware since snapshot), read live ALDB first
         if not dev_obj.aldb.is_loaded or len(dev_obj.aldb) == 0:
             logger.info(f"Loading live ALDB from {clean_addr} before hardware write (live db_delta={live_delta}, cached={snap_delta})...")
-            use_peek_poke = dev_obj.engine_version == EngineVersion.I1
+            use_peek_poke = dev_obj.engine_version in (EngineVersion.I1, EngineVersion.I2)
             await self._read_aldb_robust(dev_obj.aldb, prefer_bulk=True, use_peek_poke=use_peek_poke)
             if not dev_obj.aldb.is_loaded and len(dev_obj.aldb) == 0:
                 if len(snap_records) > 0:
                     seeded = self._seed_aldb_from_snapshot_records(dev_obj.aldb, snap_records, is_modem=False)
                     from pyinsteon.constants import ReadWriteMode, ALDBStatus
-                    write_mode = ReadWriteMode.PEEK_POKE if dev_obj.engine_version == EngineVersion.I1 else ReadWriteMode.STANDARD
+                    write_mode = ReadWriteMode.PEEK_POKE if dev_obj.engine_version in (EngineVersion.I1, EngineVersion.I2) else ReadWriteMode.STANDARD
                     dev_obj.aldb._read_write_mode = write_mode
                     dev_obj.aldb._status = ALDBStatus.LOADED
                     logger.warning(

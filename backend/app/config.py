@@ -17,7 +17,8 @@ class Settings(BaseSettings):
 
     # Safety Watchdog Settings
     # Auto-release lease after N seconds of silence to ensure openHAB is never left locked out
-    session_timeout_seconds: int = 300
+    session_timeout_seconds: int = 45
+
 
     # Cache directory for pyinsteon device/ALDB state
     cache_dir: str = "./insteon_cache"

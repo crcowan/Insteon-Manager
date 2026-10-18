@@ -144,15 +144,29 @@ if not any(isinstance(h, BackendActivityLogHandler) for h in root_logger.handler
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Lifecycle manager: Start watchdog on startup, clean up on shutdown."""
+    """Lifecycle manager: Check openHAB, start watchdog on startup, clean up on shutdown."""
     logger.info("Starting Insteon Bridge Service...")
+    # Critical startup safety: If openHAB was left disabled from a previous abrupt restart, re-enable it immediately!
+    try:
+        oh_status = await openhab_client.get_thing_status()
+        if oh_status.reachable and not oh_status.is_enabled:
+            logger.warning("openHAB Insteon Thing was found DISABLED at startup. Restoring openHAB to ONLINE...")
+            await openhab_client.set_thing_enabled(True)
+        else:
+            logger.info(f"Startup openHAB check: status={oh_status.status}, enabled={oh_status.is_enabled}")
+    except Exception as exc:
+        logger.warning(f"Startup openHAB check notice: {exc}")
+
     session_manager.start_watchdog()
     yield
     logger.info("Shutting down Insteon Bridge Service...")
     # Clean up hardware lock and guarantee openHAB is re-enabled on shutdown
-    if session_manager.is_active:
-        logger.warning("Active session detected during shutdown; restoring openHAB...")
+    try:
         await session_manager.release_session(force=True)
+        await openhab_client.set_thing_enabled(True)
+    except Exception as exc:
+        logger.error(f"Error restoring openHAB during shutdown: {exc}")
+
 
 
 app = FastAPI(
@@ -506,6 +520,22 @@ async def analyze_network():
     except Exception as exc:
         logger.error(f"Error analyzing network: {exc}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(exc))
+
+
+@app.post("/insteon/network/restore-pristine", response_model=GenericResponse)
+async def restore_pristine_network(dry_run: bool = Query(False, description="Dry-run simulation only")):
+    """Surgically restore legitimate links to active PLM (53.C1.42) and peers, while keeping ghosts purged."""
+    try:
+        from scripts.restore_pristine_links import execute_link_restoration
+        await execute_link_restoration(dry_run=dry_run)
+        return GenericResponse(
+            success=True,
+            message="Pristine link restoration executed successfully. Legitimate links restored."
+        )
+    except Exception as exc:
+        logger.error(f"Error in restore_pristine_network: {exc}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(exc))
+
 
 
 
