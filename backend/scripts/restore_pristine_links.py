@@ -83,8 +83,11 @@ def load_live_data(api_url: Optional[str] = None) -> Dict[str, Any]:
 
 
 
+AFFECTED_HARDWARE_DEVICES = {"15.89.BA", "15.88.E3", "18.9A.A2", "18.96.F5", "3C.6E.04", "3C.75.99"}
+
+
 def identify_links_to_restore(pristine_data: Dict[str, Any], live_snapshot: Dict[str, Any]) -> List[Dict[str, Any]]:
-    """Identify all legitimate links that are marked in_use=True in pristine but False/missing in live."""
+    """Identify all legitimate links to restore on physical hardware and snapshot."""
     p_devs = {d["address"].upper(): d for d in pristine_data.get("devices", []) if "address" in d}
     l_devs = {d["address"].upper(): d for d in live_snapshot.get("devices", []) if "address" in d}
 
@@ -112,7 +115,14 @@ def identify_links_to_restore(pristine_data: Dict[str, Any], live_snapshot: Dict
             lr = l_recs.get(mem)
             now_in_use = lr.get("in_use", False) if lr else False
 
-            if was_in_use and not now_in_use:
+            # Condition 1: Known affected hardware devices that underwent ghost purge testing
+            # Must unconditionally verify and write all legitimate active PLM links to physical EEPROM
+            is_affected_plm_link = (addr in AFFECTED_HARDWARE_DEVICES and target == PLM_ADDRESS and was_in_use)
+
+            # Condition 2: Any slot that was in_use in pristine but disabled in live
+            is_disabled_diff = (was_in_use and not now_in_use)
+
+            if is_affected_plm_link or is_disabled_diff:
                 to_restore.append({
                     "device_address": addr,
                     "device_label": pd.get("label", addr),
