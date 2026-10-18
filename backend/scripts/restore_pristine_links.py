@@ -55,6 +55,19 @@ def load_pristine_snapshot() -> Dict[str, Any]:
     raise FileNotFoundError("Could not find network_snapshot.pristine.json")
 
 
+def get_snapshot_path() -> str:
+    """Resolve the live snapshot file path."""
+    paths = [
+        os.path.join("backend", "network_snapshot.json"),
+        "network_snapshot.json",
+        os.path.join(os.path.dirname(__file__), "..", "network_snapshot.json"),
+    ]
+    for p in paths:
+        if os.path.isfile(p):
+            return p
+    return paths[0]
+
+
 def load_live_data(api_url: Optional[str] = None) -> Dict[str, Any]:
     """Load live data from bridge API if available, or fall back to local snapshot file."""
     if api_url:
@@ -72,9 +85,7 @@ def load_live_data(api_url: Optional[str] = None) -> Dict[str, Any]:
         except Exception as ex:
             logger.warning(f"Could not fetch from API {api_url}: {ex}; falling back to file.")
 
-    snap_path = os.path.join("backend", "network_snapshot.json")
-    if not os.path.isfile(snap_path):
-        snap_path = "network_snapshot.json"
+    snap_path = get_snapshot_path()
     if os.path.isfile(snap_path):
         with open(snap_path, "r", encoding="utf-8") as f:
             return json.load(f)
@@ -159,8 +170,24 @@ async def execute_link_restoration(dry_run: bool = False, api_url: Optional[str]
         logger.info("Dry-run mode: No hardware or snapshot changes applied.")
         return
 
+    # If api_url is provided and bridge is running, dispatch via the bridge service
+    # which already owns the serial connection and openHAB arbitration
+    if api_url:
+        import urllib.request
+        try:
+            url = f"{api_url.rstrip('/')}/insteon/network/restore-pristine?dry_run=false"
+            logger.info(f"Triggering restoration via running bridge service API at {url}...")
+            req = urllib.request.Request(url, data=b"", method="POST")
+            with urllib.request.urlopen(req, timeout=300) as response:
+                res_data = json.loads(response.read().decode("utf-8"))
+                logger.info(f"Bridge service completed restoration: {res_data.get('message', 'Success')}")
+                return
+        except Exception as ex:
+            logger.warning(f"Could not dispatch via bridge API ({ex}); proceeding with direct hardware execution...")
+
     # 1. Update snapshot file to ensure Dining Room Spots (1A.EB.C5) and all restored slots are intact
-    logger.info("Updating local network_snapshot.json with pristine records...")
+    snap_path = get_snapshot_path()
+    logger.info(f"Updating local {snap_path} with pristine records...")
     p_devs = {d["address"].upper(): d for d in pristine_data.get("devices", []) if "address" in d}
     l_devs = {d["address"].upper(): d for d in live_snapshot.get("devices", []) if "address" in d}
 
