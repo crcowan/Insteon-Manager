@@ -34,23 +34,24 @@ except ImportError:
     logger.error("pyinsteon is not installed.")
 
 
-# Exact slots to re-enable (in_use = True) based on verified live EEPROM layout
+# Exact slots to configure and re-enable based on verified live EEPROM layout
 SLOTS_TO_ENABLE = {
     "1A.EB.C5": [
-        {"mem_addr": 0x0FEF, "group": 1, "is_ctrl": True, "target": "53.C1.42", "desc": "Wall paddle to PLM (Controller)"},
-        {"mem_addr": 0x0FB7, "group": 0, "is_ctrl": False, "target": "53.C1.42", "desc": "I2CS Engine Auth to PLM"},
-        {"mem_addr": 0x0FE7, "group": 23, "is_ctrl": False, "target": "53.C1.42", "desc": "Scene Group 23 Responder"},
-        {"mem_addr": 0x0FD7, "group": 24, "is_ctrl": False, "target": "53.C1.42", "desc": "Scene Group 24 Responder"},
-        {"mem_addr": 0x0FCF, "group": 25, "is_ctrl": False, "target": "53.C1.42", "desc": "Scene Group 25 Responder"},
+        {"mem_addr": 0x0FAF, "group": 22, "is_ctrl": False, "target": "53.C1.42", "data1": 77, "data2": 27, "data3": 1, "desc": "Scene Group 22 Responder (30% Level, 0.5s Ramp)"},
+        {"mem_addr": 0x0FEF, "group": 1, "is_ctrl": True, "target": "53.C1.42", "data1": 3, "data2": 0, "data3": 1, "desc": "Wall paddle to PLM (Controller)"},
+        {"mem_addr": 0x0FB7, "group": 0, "is_ctrl": False, "target": "53.C1.42", "data1": 3, "data2": 21, "data3": 158, "desc": "I2CS Engine Auth to PLM"},
+        {"mem_addr": 0x0FE7, "group": 23, "is_ctrl": False, "target": "53.C1.42", "data1": 77, "data2": 27, "data3": 1, "desc": "Scene Group 23 Responder"},
+        {"mem_addr": 0x0FD7, "group": 24, "is_ctrl": False, "target": "53.C1.42", "data1": 0, "data2": 27, "data3": 1, "desc": "Scene Group 24 Responder (OFF)"},
+        {"mem_addr": 0x0FCF, "group": 25, "is_ctrl": False, "target": "53.C1.42", "data1": 77, "data2": 27, "data3": 1, "desc": "Scene Group 25 Responder"},
     ],
     "15.89.BA": [
-        {"mem_addr": 0x0FF7, "group": 1, "is_ctrl": True, "target": "53.C1.42", "desc": "Wall paddle to PLM (Controller)"},
-        {"mem_addr": 0x0F77, "group": 0, "is_ctrl": False, "target": "53.C1.42", "desc": "I2CS Engine Auth to PLM"},
-        {"mem_addr": 0x0FE7, "group": 24, "is_ctrl": False, "target": "53.C1.42", "desc": "Scene Group 24 Responder"},
-        {"mem_addr": 0x0FDF, "group": 21, "is_ctrl": False, "target": "53.C1.42", "desc": "Scene Group 21 Responder"},
-        {"mem_addr": 0x0FD7, "group": 25, "is_ctrl": False, "target": "53.C1.42", "desc": "Scene Group 25 Responder"},
-        {"mem_addr": 0x0FBF, "group": 22, "is_ctrl": False, "target": "53.C1.42", "desc": "Scene Group 22 Responder"},
-        {"mem_addr": 0x0F87, "group": 23, "is_ctrl": False, "target": "53.C1.42", "desc": "Scene Group 23 Responder"},
+        {"mem_addr": 0x0FF7, "group": 1, "is_ctrl": True, "target": "53.C1.42", "data1": 3, "data2": 0, "data3": 1, "desc": "Wall paddle to PLM (Controller)"},
+        {"mem_addr": 0x0F77, "group": 0, "is_ctrl": False, "target": "53.C1.42", "data1": 3, "data2": 21, "data3": 158, "desc": "I2CS Engine Auth to PLM"},
+        {"mem_addr": 0x0FE7, "group": 24, "is_ctrl": False, "target": "53.C1.42", "data1": 179, "data2": 27, "data3": 1, "desc": "Scene Group 24 Responder"},
+        {"mem_addr": 0x0FDF, "group": 21, "is_ctrl": False, "target": "53.C1.42", "data1": 179, "data2": 28, "data3": 1, "desc": "Scene Group 21 Responder"},
+        {"mem_addr": 0x0FD7, "group": 25, "is_ctrl": False, "target": "53.C1.42", "data1": 255, "data2": 10, "data3": 1, "desc": "Scene Group 25 Responder"},
+        {"mem_addr": 0x0FBF, "group": 22, "is_ctrl": False, "target": "53.C1.42", "data1": 179, "data2": 27, "data3": 1, "desc": "Scene Group 22 Responder"},
+        {"mem_addr": 0x0F87, "group": 23, "is_ctrl": False, "target": "53.C1.42", "data1": 179, "data2": 27, "data3": 1, "desc": "Scene Group 23 Responder"},
     ]
 }
 
@@ -70,7 +71,8 @@ async def restore_device_links(dry_run: bool = False):
         logger.info(f"\nPlanned changes for {addr}:")
         for s in slots:
             role = "Controller" if s["is_ctrl"] else "Responder"
-            logger.info(f"  -> [0x{s['mem_addr']:04X}]: Grp {s['group']} -> {s['target']} ({role}) - {s['desc']}")
+            mem_label = f"[0x{s['mem_addr']:04X}]" if s.get("mem_addr") else "[Auto Slot]"
+            logger.info(f"  -> {mem_label}: Grp {s['group']} -> {s['target']} ({role}, d1={s.get('data1')}, d2={s.get('data2')}) - {s['desc']}")
 
     if dry_run:
         logger.info("\n[Dry-Run] No hardware modifications applied.")
@@ -91,23 +93,39 @@ async def restore_device_links(dry_run: bool = False):
                 logger.error(f"Could not prepare {addr_str} for write: {err_msg}")
                 continue
 
-            # Modify the specific slots
+            # Modify or add the specific slots
             modified_count = 0
             for s in slots:
-                mem = s["mem_addr"]
-                rec = dev_obj.aldb.get(mem)
+                mem = s.get("mem_addr")
+                rec = dev_obj.aldb.get(mem) if mem else None
+                d1 = s.get("data1", getattr(rec, "data1", 0) if rec else 255)
+                d2 = s.get("data2", getattr(rec, "data2", 0) if rec else 28)
+                d3 = s.get("data3", getattr(rec, "data3", 1) if rec else 1)
+
                 if rec:
-                    logger.info(f"Flipping 0x{mem:04X} (Grp {s['group']} -> {s['target']}) to in_use=True...")
+                    logger.info(f"Configuring 0x{mem:04X} (Grp {s['group']} -> {s['target']}) to in_use=True, d1={d1}, d2={d2}...")
                     dev_obj.aldb.modify(
                         mem_addr=mem,
                         in_use=True,
                         controller=s["is_ctrl"],
                         group=s["group"],
                         target=Address(s["target"]),
+                        data1=d1,
+                        data2=d2,
+                        data3=d3,
                     )
                     modified_count += 1
                 else:
-                    logger.warning(f"Slot 0x{mem:04X} was not present in loaded ALDB for {addr_str}; skipping.")
+                    logger.info(f"Adding new slot for Grp {s['group']} -> {s['target']} (is_ctrl={s['is_ctrl']}, d1={d1}, d2={d2})...")
+                    dev_obj.aldb.add(
+                        group=s["group"],
+                        target=Address(s["target"]),
+                        controller=s["is_ctrl"],
+                        data1=d1,
+                        data2=d2,
+                        data3=d3,
+                    )
+                    modified_count += 1
 
             if modified_count > 0:
                 logger.info(f"Writing {modified_count} restored slot(s) to {addr_str} physical EEPROM...")
