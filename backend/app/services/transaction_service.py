@@ -384,6 +384,20 @@ class TransactionService:
                     message=f"Slot {clean_mem} was not found in live ALDB for {clean_addr}.",
                 )
 
+            # Safety check: Verify the live slot actually contains the intended target/group before deleting
+            if target_snap_rec is not None:
+                exp_tgt = str(target_snap_rec.get("target_address", "")).upper()
+                live_tgt = str(rec.target).upper()
+                if exp_tgt and live_tgt != exp_tgt:
+                    logger.error(
+                        f"Safety abort: Slot {clean_mem} on {clean_addr} contains target {live_tgt}, "
+                        f"which does not match expected target {exp_tgt}. Aborting deletion to prevent data loss."
+                    )
+                    return GenericResponse(
+                        success=False,
+                        message=f"Safety abort: Slot {clean_mem} holds target {live_tgt}, expected {exp_tgt}.",
+                    )
+
             dev_obj.aldb.modify(mem_addr=mem_int, in_use=False)
             logger.info(f"Hardware EEPROM: Marked slot {clean_mem} (Group {getattr(rec, 'group', '?')}, target {getattr(rec, 'target', '?')}) deleted on {clean_addr}.")
             _, failed = await dev_obj.aldb.async_write(force=True)

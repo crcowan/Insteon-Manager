@@ -854,19 +854,10 @@ class InsteonManager:
         dev_obj = await self._get_or_create_pyinsteon_device(addr_obj, cat, subcat, fw)
 
         if getattr(dev_obj, "engine_version", EngineVersion.UNKNOWN) == EngineVersion.UNKNOWN:
-            eng_str = str((cached_dev or {}).get("engine_version") or "").upper()
-            if "I1" in eng_str:
-                dev_obj.engine_version = EngineVersion.I1
-            elif "I2" in eng_str and "I2CS" not in eng_str:
-                dev_obj.engine_version = EngineVersion.I2
-            elif "I2CS" in eng_str:
-                dev_obj.engine_version = EngineVersion.I2CS
-            else:
-                try:
-                    high_byte = int(clean_addr.split(".")[0], 16)
-                    dev_obj.engine_version = EngineVersion.I2 if high_byte < 0x20 else EngineVersion.I2CS
-                except Exception:
-                    dev_obj.engine_version = EngineVersion.I2CS
+            try:
+                await asyncio.wait_for(dev_obj.async_get_engine_version(), timeout=4.0)
+            except Exception:
+                self._drain_outbound_queue()
 
         # Check if we can seed from verified snapshot via matching db_delta
         snap_delta = (cached_dev or {}).get("db_delta")
@@ -891,21 +882,11 @@ class InsteonManager:
             use_peek_poke = dev_obj.engine_version in (EngineVersion.I1, EngineVersion.I2)
             await self._read_aldb_robust(dev_obj.aldb, prefer_bulk=True, use_peek_poke=use_peek_poke)
             if not dev_obj.aldb.is_loaded and len(dev_obj.aldb) == 0:
-                if len(snap_records) > 0:
-                    seeded = self._seed_aldb_from_snapshot_records(dev_obj.aldb, snap_records, is_modem=False)
-                    from pyinsteon.constants import ReadWriteMode, ALDBStatus
-                    write_mode = ReadWriteMode.PEEK_POKE if dev_obj.engine_version in (EngineVersion.I1, EngineVersion.I2) else ReadWriteMode.STANDARD
-                    dev_obj.aldb._read_write_mode = write_mode
-                    dev_obj.aldb._status = ALDBStatus.LOADED
-                    logger.warning(
-                        f"Live ALDB read refused/NAKed by {clean_addr}. Falling back to {seeded} verified snapshot records and {write_mode.name} write mode."
-                    )
-                else:
-                    return (
-                        False,
-                        None,
-                        f"Failed to read existing ALDB from {clean_addr} before write. Aborting to prevent overwriting slot 0x0FFF.",
-                    )
+                return (
+                    False,
+                    None,
+                    f"Live ALDB read refused or failed by {clean_addr}. Hardware write aborted to prevent memory corruption. (Check device communication or Set-button authorization).",
+                )
 
         return True, dev_obj, "Device ALDB ready"
 
@@ -1104,10 +1085,18 @@ class InsteonManager:
             with open(temp_file, "w", encoding="utf-8") as f:
                 json.dump(data, f, indent=2)
             os.replace(temp_file, path)
-            for sync_candidate in ("network_snapshot.json", os.path.join("backend", "network_snapshot.json")):
-                if os.path.isfile(sync_candidate) and os.path.abspath(sync_candidate) != os.path.abspath(path):
-                    with open(sync_candidate, "w", encoding="utf-8") as rf:
-                        json.dump(data, rf, indent=2)
+            # Keep timestamped snapshot history in snapshots/ to ensure zero data loss
+            snap_dir = os.path.join("backend", "snapshots") if os.path.isdir("backend") else "snapshots"
+            try:
+                os.makedirs(snap_dir, exist_ok=True)
+                from datetime import datetime, timezone
+                ts_str = datetime.now().strftime("%Y%m%d_%H%M%S")
+                backup_file = os.path.join(snap_dir, f"network_snapshot_{ts_str}.json")
+                if not os.path.isfile(backup_file):
+                    with open(backup_file, "w", encoding="utf-8") as bf:
+                        json.dump(data, bf, indent=2)
+            except Exception as b_ex:
+                logger.debug(f"Snapshot backup notice: {b_ex}")
         except Exception as exc:
             logger.error(f"Error saving snapshot to '{path}': {exc}")
 
