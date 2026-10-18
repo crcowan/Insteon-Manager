@@ -540,6 +540,21 @@ async def restore_pristine_network(
         raise HTTPException(status_code=500, detail=str(exc))
 
 
+@app.post("/insteon/network/restore-targets", response_model=GenericResponse)
+async def restore_targets_network(dry_run: bool = Query(False, description="Dry-run simulation only")):
+    """Surgically re-enable missing Controller and scene links on Dining Room Spots and Hall Copper."""
+    try:
+        from scripts.restore_target_devices import restore_device_links
+        await restore_device_links(dry_run=dry_run)
+        return GenericResponse(
+            success=True,
+            message="Target devices (1A.EB.C5 and 15.89.BA) controller and scene links restored successfully."
+        )
+    except Exception as exc:
+        logger.error(f"Error restoring target devices: {exc}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
 
 
 

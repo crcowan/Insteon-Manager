@@ -11,8 +11,8 @@ scp "$repoRoot\backend\app\config.py" "$repoRoot\backend\app\insteon.py" "$repoR
 scp "$repoRoot\backend\app\services\transaction_service.py" "${piUser}@${piHost}:${destDir}/app/services/"
 
 Write-Host "==> Uploading diagnostic & restoration scripts to ${piHost}:${destDir}/scripts/ and ${destDir}/ ..." -ForegroundColor Cyan
-scp "$repoRoot\backend\scripts\restore_pristine_links.py" "$repoRoot\backend\scripts\diagnose_devices.py" "${piUser}@${piHost}:${destDir}/scripts/"
-scp "$repoRoot\backend\scripts\restore_pristine_links.py" "$repoRoot\backend\scripts\diagnose_devices.py" "${piUser}@${piHost}:${destDir}/"
+scp "$repoRoot\backend\scripts\restore_pristine_links.py" "$repoRoot\backend\scripts\diagnose_devices.py" "$repoRoot\backend\scripts\restore_target_devices.py" "${piUser}@${piHost}:${destDir}/scripts/"
+scp "$repoRoot\backend\scripts\restore_pristine_links.py" "$repoRoot\backend\scripts\diagnose_devices.py" "$repoRoot\backend\scripts\restore_target_devices.py" "${piUser}@${piHost}:${destDir}/"
 
 Write-Host "==> Ensuring snapshots directory exists on ${piHost}..." -ForegroundColor Cyan
 ssh "${piUser}@${piHost}" "mkdir -p ${destDir}/snapshots ~/golden_snapshots"
