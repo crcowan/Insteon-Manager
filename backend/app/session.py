@@ -22,6 +22,7 @@ class SessionManager:
         self.locked_by: Optional[str] = None
         self.lease_expires_at: Optional[float] = None
         self.last_heartbeat_time: Optional[float] = None
+        self._is_transitioning: bool = False
         self._lock = asyncio.Lock()
         self._watchdog_task: Optional[asyncio.Task] = None
 
@@ -37,6 +38,9 @@ class SessionManager:
         while True:
             try:
                 await asyncio.sleep(2.5)
+                if self._is_transitioning:
+                    continue
+
                 now = time.time()
                 if self.is_active and self.lease_expires_at:
                     if now > self.lease_expires_at:
@@ -51,7 +55,7 @@ class SessionManager:
                         last_self_heal_check = now
                         try:
                             oh_stat = await openhab_client.get_thing_status()
-                            if oh_stat.reachable and not oh_stat.is_enabled:
+                            if oh_stat.reachable and not oh_stat.is_enabled and not self._is_transitioning and not self.is_active:
                                 logger.warning(
                                     "Watchdog detected openHAB Insteon Thing in DISABLED state while bridge is idle! "
                                     "Auto-restoring openHAB to ENABLED..."
@@ -68,61 +72,70 @@ class SessionManager:
     async def acquire_session(self, client_id: str, lease_seconds: Optional[int] = None) -> bool:
         """Acquire lock: Disables openHAB Insteon Thing, then connects pyinsteon."""
         async with self._lock:
-            duration = lease_seconds or settings.session_timeout_seconds
-            now = time.time()
+            self._is_transitioning = True
+            try:
+                duration = lease_seconds or settings.session_timeout_seconds
+                now = time.time()
 
-            # If already active, transfer/renew lease for the requesting GUI client
-            if self.is_active:
-                if self.locked_by != client_id:
-                    logger.info(
-                        f"Transferring active management session from '{self.locked_by}' to '{client_id}'."
-                    )
-                    self.locked_by = client_id
+                # If already active, transfer/renew lease for the requesting GUI client
+                if self.is_active:
+                    if self.locked_by != client_id:
+                        logger.info(
+                            f"Transferring active management session from '{self.locked_by}' to '{client_id}'."
+                        )
+                        self.locked_by = client_id
+                    self.lease_expires_at = now + duration
+                    self.last_heartbeat_time = now
+                    logger.info(f"Renewed session lease for '{client_id}'. Expires in {duration}s.")
+                    return True
+
+                logger.info(f"Acquiring management session for '{client_id}'...")
+
+                # Set active state early to block watchdog interference
+                self.is_active = True
+                self.locked_by = client_id
                 self.lease_expires_at = now + duration
                 self.last_heartbeat_time = now
-                logger.info(f"Renewed session lease for '{client_id}'. Expires in {duration}s.")
-                return True
 
-            logger.info(f"Acquiring management session for '{client_id}'...")
+                # Step 1: Disable openHAB Insteon Thing to release serial port
+                logger.info("Step 1/2: Disabling openHAB Insteon Thing...")
+                oh_disabled = await openhab_client.set_thing_enabled(False)
+                if not oh_disabled:
+                    # Check if openHAB is unreachable (e.g. running in local development without openHAB)
+                    status = await openhab_client.get_thing_status()
+                    if not status.reachable:
+                        logger.warning("openHAB is unreachable; proceeding with session in offline/mock test mode.")
+                    else:
+                        logger.error("Failed to disable openHAB Insteon Thing. Aborting session acquisition.")
+                        self.is_active = False
+                        self.locked_by = None
+                        await openhab_client.set_thing_enabled(True)
+                        return False
 
-            # Step 1: Disable openHAB Insteon Thing to release serial port
-            logger.info("Step 1/2: Disabling openHAB Insteon Thing...")
-            oh_disabled = await openhab_client.set_thing_enabled(False)
-            if not oh_disabled:
-                # Check if openHAB is unreachable (e.g. running in local development without openHAB)
-                status = await openhab_client.get_thing_status()
-                if not status.reachable:
-                    logger.warning("openHAB is unreachable; proceeding with session in offline/mock test mode.")
-                else:
-                    logger.error("Failed to disable openHAB Insteon Thing. Aborting session acquisition.")
+                # Allow OS serial driver 1.5 seconds to release handles on real hardware
+                if not settings.is_simulator:
+                    await asyncio.sleep(1.5)
+
+                # Step 2: Connect pyinsteon to hardware port
+                logger.info("Step 2/2: Connecting pyinsteon to serial port...")
+                try:
+                    connected = await insteon_manager.connect()
+                    if not connected:
+                        raise RuntimeError("pyinsteon failed to connect.")
+                except Exception as exc:
+                    logger.error(f"Failed to connect pyinsteon: {exc}. Rolling back openHAB...")
+                    self.is_active = False
+                    self.locked_by = None
                     await openhab_client.set_thing_enabled(True)
                     return False
 
-            # Allow OS serial driver 1 second to release handles on real hardware
-            if not settings.is_simulator:
-                await asyncio.sleep(1.0)
-
-            # Step 2: Connect pyinsteon to hardware port
-            logger.info("Step 2/2: Connecting pyinsteon to serial port...")
-            try:
-                connected = await insteon_manager.connect()
-                if not connected:
-                    raise RuntimeError("pyinsteon failed to connect.")
-            except Exception as exc:
-                logger.error(f"Failed to connect pyinsteon: {exc}. Rolling back openHAB...")
-                await openhab_client.set_thing_enabled(True)
-                return False
-
-            # Lock acquired successfully
-            self.is_active = True
-            self.locked_by = client_id
-            self.lease_expires_at = now + duration
-            self.last_heartbeat_time = now
-            logger.info(
-                f"Management session successfully established for '{client_id}'. "
-                f"Watchdog lease: {duration}s."
-            )
-            return True
+                logger.info(
+                    f"Management session successfully established for '{client_id}'. "
+                    f"Watchdog lease: {duration}s."
+                )
+                return True
+            finally:
+                self._is_transitioning = False
 
     async def heartbeat(self, client_id: str) -> bool:
         """Extend lease for active session."""

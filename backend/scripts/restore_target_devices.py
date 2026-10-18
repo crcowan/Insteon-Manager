@@ -102,6 +102,15 @@ async def restore_device_links(dry_run: bool = False):
                 d2 = s.get("data2", getattr(rec, "data2", 0) if rec else 28)
                 d3 = s.get("data3", getattr(rec, "data3", 1) if rec else 1)
 
+                if rec and rec.is_in_use and rec.group == s["group"] and str(rec.target).upper() == s["target"].upper() and rec.is_controller == s["is_ctrl"]:
+                    cur_d1 = getattr(rec, "data1", 0)
+                    cur_d2 = getattr(rec, "data2", 0)
+                    req_d1 = s.get("data1")
+                    req_d2 = s.get("data2")
+                    if (req_d1 is None or req_d1 == cur_d1) and (req_d2 is None or req_d2 == cur_d2):
+                        logger.info(f"Slot 0x{mem:04X} (Grp {s['group']} -> {s['target']}) is already active; skipping.")
+                        continue
+
                 if rec:
                     logger.info(f"Configuring 0x{mem:04X} (Grp {s['group']} -> {s['target']}) to in_use=True, d1={d1}, d2={d2}...")
                     dev_obj.aldb.modify(
