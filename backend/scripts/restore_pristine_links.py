@@ -97,10 +97,16 @@ def load_live_data(api_url: Optional[str] = None) -> Dict[str, Any]:
 AFFECTED_HARDWARE_DEVICES = {"15.89.BA", "15.88.E3", "18.9A.A2", "18.96.F5", "3C.6E.04", "3C.75.99", "1A.EB.C5"}
 
 
-def identify_links_to_restore(pristine_data: Dict[str, Any], live_snapshot: Dict[str, Any]) -> List[Dict[str, Any]]:
+def identify_links_to_restore(
+    pristine_data: Dict[str, Any],
+    live_snapshot: Dict[str, Any],
+    all_devices: bool = False,
+) -> List[Dict[str, Any]]:
     """Identify all legitimate links to restore on physical hardware and snapshot."""
     p_devs = {d["address"].upper(): d for d in pristine_data.get("devices", []) if "address" in d}
     l_devs = {d["address"].upper(): d for d in live_snapshot.get("devices", []) if "address" in d}
+
+    target_devices = (set(p_devs.keys()) - DEAD_GHOST_TARGETS - {"1C.2C.40"}) if all_devices else AFFECTED_HARDWARE_DEVICES
 
     to_restore = []
 
@@ -126,9 +132,8 @@ def identify_links_to_restore(pristine_data: Dict[str, Any], live_snapshot: Dict
             lr = l_recs.get(mem)
             now_in_use = lr.get("in_use", False) if lr else False
 
-            # Condition 1: Known affected hardware devices that underwent ghost purge testing
-            # Must unconditionally verify and write all legitimate active PLM and peer links to physical EEPROM
-            is_affected_link = (addr in AFFECTED_HARDWARE_DEVICES and (target == PLM_ADDRESS or target in p_devs) and was_in_use)
+            # Condition 1: Target devices to unconditionally verify and write to physical EEPROM
+            is_affected_link = (addr in target_devices and (target == PLM_ADDRESS or target in p_devs) and was_in_use)
 
             # Condition 2: Any slot that was in_use in pristine but disabled in live
             is_disabled_diff = (was_in_use and not now_in_use)
@@ -152,13 +157,18 @@ def identify_links_to_restore(pristine_data: Dict[str, Any], live_snapshot: Dict
     return to_restore
 
 
-async def execute_link_restoration(dry_run: bool = False, api_url: Optional[str] = None):
+async def execute_link_restoration(
+    dry_run: bool = False,
+    api_url: Optional[str] = None,
+    all_devices: bool = False,
+):
     """Safely restore all legitimate links on hardware and in the local snapshot."""
     pristine_data = load_pristine_snapshot()
     live_snapshot = load_live_data(api_url)
 
-    to_restore = identify_links_to_restore(pristine_data, live_snapshot)
-    logger.info(f"Identified {len(to_restore)} legitimate link(s) to restore across affected devices.")
+    to_restore = identify_links_to_restore(pristine_data, live_snapshot, all_devices=all_devices)
+    scope_str = "all network devices" if all_devices else "affected devices"
+    logger.info(f"Identified {len(to_restore)} legitimate link(s) to restore across {scope_str}.")
 
     for item in to_restore:
         logger.info(
@@ -175,7 +185,7 @@ async def execute_link_restoration(dry_run: bool = False, api_url: Optional[str]
     if api_url:
         import urllib.request
         try:
-            url = f"{api_url.rstrip('/')}/insteon/network/restore-pristine?dry_run=false"
+            url = f"{api_url.rstrip('/')}/insteon/network/restore-pristine?dry_run=false&all_devices={'true' if all_devices else 'false'}"
             logger.info(f"Triggering restoration via running bridge service API at {url}...")
             req = urllib.request.Request(url, data=b"", method="POST")
             with urllib.request.urlopen(req, timeout=300) as response:
@@ -317,9 +327,10 @@ async def execute_link_restoration(dry_run: bool = False, api_url: Optional[str]
 
 if __name__ == "__main__":
     is_dry = "--dry-run" in sys.argv
+    all_devs = "--all-devices" in sys.argv
     api_arg = None
     for arg in sys.argv:
         if arg.startswith("--api-url="):
             api_arg = arg.split("=", 1)[1]
-    asyncio.run(execute_link_restoration(dry_run=is_dry, api_url=api_arg))
+    asyncio.run(execute_link_restoration(dry_run=is_dry, api_url=api_arg, all_devices=all_devs))
 

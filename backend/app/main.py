@@ -523,11 +523,14 @@ async def analyze_network():
 
 
 @app.post("/insteon/network/restore-pristine", response_model=GenericResponse)
-async def restore_pristine_network(dry_run: bool = Query(False, description="Dry-run simulation only")):
+async def restore_pristine_network(
+    dry_run: bool = Query(False, description="Dry-run simulation only"),
+    all_devices: bool = Query(False, description="Restore across all powered devices"),
+):
     """Surgically restore legitimate links to active PLM (53.C1.42) and peers, while keeping ghosts purged."""
     try:
         from scripts.restore_pristine_links import execute_link_restoration
-        await execute_link_restoration(dry_run=dry_run)
+        await execute_link_restoration(dry_run=dry_run, all_devices=all_devices)
         return GenericResponse(
             success=True,
             message="Pristine link restoration executed successfully. Legitimate links restored."
