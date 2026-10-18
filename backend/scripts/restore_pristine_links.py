@@ -188,76 +188,60 @@ async def execute_link_restoration(dry_run: bool = False, api_url: Optional[str]
         return
 
     # 2. Hardware EEPROM link writes
-    logger.info("Pausing openHAB Insteon Thing before hardware link restore...")
-    await openhab_client.set_thing_enabled(False)
-    await asyncio.sleep(2.0)
+    from app.session import session_manager
+    from app.insteon import insteon_manager
+
+    logger.info("Acquiring hardware session and pausing openHAB...")
+    acquired = await session_manager.acquire_session(client_id="network_restore_utility", lease_seconds=180)
+    if not acquired:
+        logger.error("Could not acquire hardware session. Is openHAB or another client locking the port?")
+        return
 
     try:
-        logger.info(f"Connecting pyinsteon to {settings.insteon_port}...")
-        await pyinsteon.async_connect(device=settings.insteon_port)
-
         # Group items by device
         by_device: Dict[str, List[Dict[str, Any]]] = {}
         for item in to_restore:
             by_device.setdefault(item["device_address"], []).append(item)
 
         for addr_str, items in by_device.items():
-            addr_obj = Address(addr_str)
-            dev = pyinsteon.devices.get(addr_obj)
-            if not dev:
-                logger.info(f"Identifying device {addr_str}...")
-                await pyinsteon.devices.async_identify_device(addr_obj)
-                dev = pyinsteon.devices.get(addr_obj)
-
-            if not dev or not hasattr(dev, "aldb"):
-                logger.warning(f"Could not initialize device {addr_str}; skipping EEPROM write.")
+            # Battery-powered devices (like 1C.2C.40 Mini Keypad) sleep between presses.
+            # Their physical EEPROMs were never modified; only snapshot needs restoring.
+            is_batt = any(d.get("is_battery", False) for d in pristine_data.get("devices", []) if d.get("address", "").upper() == addr_str)
+            if is_batt or addr_str == "1C.2C.40":
+                logger.info(f"Skipping physical RF write to battery device {addr_str} (Mini Keypad is asleep; snapshot already restored).")
                 continue
 
-            logger.info(f"Restoring {len(items)} slot(s) on {addr_str} ({dev.description or 'Device'})...")
-            dev.aldb.status = ALDBStatus.LOADED
+            logger.info(f"Preparing {addr_str} for hardware ALDB restore ({len(items)} slots)...")
+            ok, dev_obj, err_msg = await insteon_manager.ensure_device_aldb_ready_for_write(addr_str, live_snapshot)
+            if not ok or not dev_obj:
+                logger.warning(f"Could not prepare {addr_str} for write: {err_msg}")
+                continue
 
-            # Seed ALDB with existing known records if empty
-            if len(dev.aldb) == 0 and addr_str in l_devs:
-                for r in l_devs[addr_str].get("records", []):
-                    try:
-                        mem_int = int(r["mem_addr"], 16) if isinstance(r["mem_addr"], str) else r["mem_addr"]
-                        rec = dev.aldb._create_record(
-                            memory=mem_int,
-                            controller=r.get("is_controller", False),
-                            group=r.get("group", 1),
-                            target=Address(r.get("target_address", "00.00.00")),
-                            data1=r.get("data1", 0),
-                            data2=r.get("data2", 0),
-                            data3=r.get("data3", 0),
-                            in_use=r.get("in_use", True),
-                            high_water_mark=r.get("high_water_mark", False),
-                            bit4=False,
-                            bit5=False,
-                        )
-                        dev.aldb._add_record(rec)
-                    except Exception:
-                        pass
-                dev.aldb.status = ALDBStatus.LOADED
-
-            written_slots = 0
+            # Use pyinsteon's modify() so records are properly registered in _dirty_records
+            modified_count = 0
             for item in items:
                 mem_int = int(item["mem_addr"], 16) if isinstance(item["mem_addr"], str) else item["mem_addr"]
-                rec = dev.aldb.get(mem_int)
+                tgt_addr = Address(item["target_address"])
+                rec = dev_obj.aldb.get(mem_int)
                 if rec:
-                    rec.in_use = True
-                    rec.is_controller = item["is_controller"]
-                    rec.is_responder = item["is_responder"]
-                    rec.target = Address(item["target_address"])
-                    rec.group = item["group"]
-                    rec.data1 = item["data1"]
-                    rec.data2 = item["data2"]
-                    rec.data3 = item["data3"]
+                    dev_obj.aldb.modify(
+                        mem_addr=mem_int,
+                        in_use=True,
+                        controller=item["is_controller"],
+                        group=item["group"],
+                        target=tgt_addr,
+                        data1=item["data1"],
+                        data2=item["data2"],
+                        data3=item["data3"],
+                    )
+                    modified_count += 1
                 else:
-                    dev.aldb._create_record(
+                    # Slot was not present in loaded dictionary; create and add
+                    new_rec = dev_obj.aldb._create_record(
                         memory=mem_int,
                         controller=item["is_controller"],
                         group=item["group"],
-                        target=Address(item["target_address"]),
+                        target=tgt_addr,
                         data1=item["data1"],
                         data2=item["data2"],
                         data3=item["data3"],
@@ -266,36 +250,31 @@ async def execute_link_restoration(dry_run: bool = False, api_url: Optional[str]
                         bit4=False,
                         bit5=False,
                     )
-                written_slots += 1
+                    dev_obj.aldb._add_record(new_rec)
+                    dev_obj.aldb._add_dirty_record(new_rec)
+                    modified_count += 1
 
-            try:
-                logger.info(f"Writing restored ALDB to {addr_str} EEPROM...")
-                dev.aldb.status = ALDBStatus.LOADED
-                dev.aldb.read_write_mode = ReadWriteMode.STANDARD
-                write_success = await asyncio.wait_for(dev.aldb.async_write(force=True), timeout=25.0)
-                if not write_success:
-                    logger.warning(f"Standard write failed on {addr_str}; trying PEEK_POKE mode...")
-                    dev.aldb.read_write_mode = ReadWriteMode.PEEK_POKE
-                    dev.aldb.status = ALDBStatus.LOADED
-                    write_success = await asyncio.wait_for(dev.aldb.async_write(force=True), timeout=30.0)
+            if modified_count > 0:
+                logger.info(f"Writing {modified_count} restored slot(s) to {addr_str} EEPROM...")
+                dev_obj.aldb._status = ALDBStatus.LOADED
+                _, failed = await dev_obj.aldb.async_write(force=True)
+                if failed > 0:
+                    logger.warning(f"Standard write had {failed} failures on {addr_str}; retrying with PEEK_POKE mode...")
+                    dev_obj.aldb._read_write_mode = ReadWriteMode.PEEK_POKE
+                    dev_obj.aldb._status = ALDBStatus.LOADED
+                    _, failed = await dev_obj.aldb.async_write(force=True)
 
-                if write_success:
-                    logger.info(f"SUCCESS: Restored {written_slots} slot(s) on {addr_str} EEPROM.")
+                if failed == 0:
+                    logger.info(f"SUCCESS: Restored {modified_count} slot(s) on {addr_str} EEPROM.")
+                    await insteon_manager.refresh_device_db_delta_after_write(addr_str, live_snapshot)
                 else:
-                    logger.error(f"FAILED writing restored slots to {addr_str} EEPROM.")
-            except Exception as w_ex:
-                logger.error(f"Exception writing to {addr_str}: {w_ex}")
+                    logger.error(f"FAILED: {failed} slot(s) could not be written to {addr_str} EEPROM.")
 
     finally:
-        logger.info("Closing pyinsteon connection...")
-        try:
-            await pyinsteon.async_close()
-        except Exception:
-            pass
-        await asyncio.sleep(1.0)
-        logger.info("Re-enabling openHAB Insteon Thing...")
-        await openhab_client.set_thing_enabled(True)
+        logger.info("Releasing hardware session and restoring openHAB...")
+        await session_manager.release_session(force=True)
         logger.info("Link restoration procedure complete.")
+
 
 
 if __name__ == "__main__":
