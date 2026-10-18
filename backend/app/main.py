@@ -160,6 +160,7 @@ async def lifespan(app: FastAPI):
     session_manager.start_watchdog()
     yield
     logger.info("Shutting down Insteon Bridge Service...")
+    session_manager.stop_watchdog()
     # Clean up hardware lock and guarantee openHAB is re-enabled on shutdown
     try:
         await session_manager.release_session(force=True)

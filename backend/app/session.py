@@ -32,6 +32,12 @@ class SessionManager:
             self._watchdog_task = asyncio.create_task(self._watchdog_loop())
             logger.info("Session watchdog task initialized.")
 
+    def stop_watchdog(self):
+        """Cancel the background lease watchdog task on shutdown."""
+        if self._watchdog_task and not self._watchdog_task.done():
+            self._watchdog_task.cancel()
+            logger.info("Session watchdog task cancelled.")
+
     async def _watchdog_loop(self):
         """Periodically check for expired sessions and restore openHAB."""
         last_self_heal_check = 0.0
