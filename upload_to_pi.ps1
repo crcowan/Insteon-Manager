@@ -8,10 +8,11 @@ $destDir = "/opt/insteon-bridge"
 
 Write-Host "==> Uploading Python modules to ${piHost}:${destDir}/app/ ..." -ForegroundColor Cyan
 scp "$repoRoot\backend\app\config.py" "$repoRoot\backend\app\insteon.py" "$repoRoot\backend\app\main.py" "$repoRoot\backend\app\session.py" "${piUser}@${piHost}:${destDir}/app/"
+scp "$repoRoot\backend\app\services\transaction_service.py" "${piUser}@${piHost}:${destDir}/app/services/"
 
-Write-Host "==> Uploading restoration script to ${piHost}:${destDir}/scripts/ and ${destDir}/ ..." -ForegroundColor Cyan
-scp "$repoRoot\backend\scripts\restore_pristine_links.py" "${piUser}@${piHost}:${destDir}/scripts/"
-scp "$repoRoot\backend\scripts\restore_pristine_links.py" "${piUser}@${piHost}:${destDir}/"
+Write-Host "==> Uploading diagnostic & restoration scripts to ${piHost}:${destDir}/scripts/ and ${destDir}/ ..." -ForegroundColor Cyan
+scp "$repoRoot\backend\scripts\restore_pristine_links.py" "$repoRoot\backend\scripts\diagnose_devices.py" "${piUser}@${piHost}:${destDir}/scripts/"
+scp "$repoRoot\backend\scripts\restore_pristine_links.py" "$repoRoot\backend\scripts\diagnose_devices.py" "${piUser}@${piHost}:${destDir}/"
 
 Write-Host "==> Ensuring snapshots directory exists on ${piHost}..." -ForegroundColor Cyan
 ssh "${piUser}@${piHost}" "mkdir -p ${destDir}/snapshots ~/golden_snapshots"
