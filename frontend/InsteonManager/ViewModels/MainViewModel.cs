@@ -131,7 +131,7 @@ public class MainViewModel : ViewModelBase
         StagedChanges.CollectionChanged += (s, e) => CommitStagedChangesCommand?.NotifyCanExecuteChanged();
 
         StageReciprocalLinkCommand = new RelayCommand(StageReciprocalLink, () => !string.IsNullOrEmpty(NewLinkControllerAddress) && !string.IsNullOrEmpty(NewLinkResponderAddress));
-        StageDeleteLinkCommand = new RelayCommand(StageDeleteLink, () => !string.IsNullOrEmpty(DeleteLinkControllerAddress) && !string.IsNullOrEmpty(DeleteLinkResponderAddress));
+        StageDeleteLinkCommand = new RelayCommand(StageDeleteLink, () => !string.IsNullOrEmpty(DeleteLinkControllerAddress) && !string.IsNullOrEmpty(DeleteLinkResponderAddress) && !IsProtectedPlmLink(DeleteLinkControllerAddress, DeleteLinkResponderAddress, DeleteLinkGroup));
         StageDeviceReplaceCommand = new RelayCommand(StageDeviceReplace, () => !string.IsNullOrEmpty(ReplaceOldDeviceAddress) && !string.IsNullOrEmpty(ReplaceNewDeviceAddress));
 
         AuditDefaultLinksCommand = new AsyncRelayCommand(() => AuditDefaultLinksAsync(false), () => !IsLoading);
@@ -157,8 +157,8 @@ public class MainViewModel : ViewModelBase
         PurgeSelectedGhostTargetCommand = new AsyncRelayCommand(PurgeSelectedGhostTargetAsync, () => !string.IsNullOrEmpty(SelectedGhostTarget) && !IsLoading);
         ExecuteDeviceReplaceCommand = new AsyncRelayCommand(ExecuteDeviceReplaceAsync, () => !string.IsNullOrEmpty(ReplaceOldDeviceAddress) && !string.IsNullOrEmpty(ReplaceNewDeviceAddress) && !IsLoading);
         CreateReciprocalLinkCommand = new AsyncRelayCommand(CreateReciprocalLinkAsync, () => !string.IsNullOrEmpty(NewLinkControllerAddress) && !string.IsNullOrEmpty(NewLinkResponderAddress) && !IsLoading);
-        DeleteReciprocalLinkCommand = new AsyncRelayCommand(DeleteReciprocalLinkAsync, () => !string.IsNullOrEmpty(DeleteLinkControllerAddress) && !string.IsNullOrEmpty(DeleteLinkResponderAddress) && !IsLoading);
-        DeleteLinkFromEntryCommand = new AsyncRelayCommand<OrganizedAldbEntry>(DeleteLinkFromEntryAsync, entry => entry != null && !IsLoading);
+        DeleteReciprocalLinkCommand = new AsyncRelayCommand(DeleteReciprocalLinkAsync, () => !string.IsNullOrEmpty(DeleteLinkControllerAddress) && !string.IsNullOrEmpty(DeleteLinkResponderAddress) && !IsLoading && !IsProtectedPlmLink(DeleteLinkControllerAddress, DeleteLinkResponderAddress, DeleteLinkGroup));
+        DeleteLinkFromEntryCommand = new AsyncRelayCommand<OrganizedAldbEntry>(DeleteLinkFromEntryAsync, entry => entry != null && !IsLoading && !entry.IsProtectedPlmLink);
 
         ControlDeviceCommand = new AsyncRelayCommand<string>(ControlDeviceFromStringAsync, _ => !IsLoading);
         ControlSelectedNodeCommand = new AsyncRelayCommand<string>(ControlSelectedNodeAsync, _ => SelectedGraphNode != null && !IsLoading);
@@ -675,6 +675,15 @@ public class MainViewModel : ViewModelBase
 
     public string PlmModemAddress => "53.C1.42";
 
+    public bool IsProtectedPlmLink(string? addr1, string? addr2, int group)
+    {
+        if (string.IsNullOrWhiteSpace(addr1) || string.IsNullOrWhiteSpace(addr2)) return false;
+        var clean1 = addr1.Trim().Replace(".", "").ToUpperInvariant();
+        var clean2 = addr2.Trim().Replace(".", "").ToUpperInvariant();
+        var cleanPlm = (PlmModemAddress ?? "53.C1.42").Trim().Replace(".", "").ToUpperInvariant();
+        return (clean1 == cleanPlm || clean2 == cleanPlm) && (group == 0 || group == 1);
+    }
+
     private string _newDeviceAddress = string.Empty;
     public string NewDeviceAddress
     {
@@ -1058,7 +1067,14 @@ public class MainViewModel : ViewModelBase
     public int DeleteLinkGroup
     {
         get => _deleteLinkGroup;
-        set => SetProperty(ref _deleteLinkGroup, value);
+        set
+        {
+            if (SetProperty(ref _deleteLinkGroup, value))
+            {
+                StageDeleteLinkCommand?.NotifyCanExecuteChanged();
+                DeleteReciprocalLinkCommand?.NotifyCanExecuteChanged();
+            }
+        }
     }
 
     public ObservableCollection<ActiveLinkPairModel> ActiveLinkPairs { get; }
@@ -1838,10 +1854,20 @@ public class MainViewModel : ViewModelBase
                 }
             }
 
-            // Flag duplicate links and non-PLM Group 0 anomalies for clear user visibility
+            // Flag duplicate links, non-PLM Group 0 anomalies, and protected core PLM links
+            string plmClean = (PlmModemAddress ?? "53.C1.42").Trim().Replace(".", "").ToUpperInvariant();
+            Action<OrganizedAldbEntry> tagProtectedPlmLink = entry =>
+            {
+                var targetClean = (entry.TargetAddress ?? "").Trim().Replace(".", "").ToUpperInvariant();
+                var ownerClean = (entry.OwnerAddress ?? "").Trim().Replace(".", "").ToUpperInvariant();
+                bool plmInvolved = ownerClean == plmClean || targetClean == plmClean;
+                entry.IsProtectedPlmLink = plmInvolved && (entry.Group == 0 || entry.Group == 1);
+            };
+
             var seenCtrl = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             foreach (var entry in org.ControllerRecords)
             {
+                tagProtectedPlmLink(entry);
                 // On the PLM, Group 0 Controller records are valid PLM Device Management & I2CS Auth records
                 entry.IsGroupZero = (entry.Group == 0 && !org.IsModem);
                 string key = $"{entry.TargetAddress}|{entry.Group}";
@@ -1854,6 +1880,7 @@ public class MainViewModel : ViewModelBase
             var seenResp = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             foreach (var entry in org.ResponderRecords)
             {
+                tagProtectedPlmLink(entry);
                 // On a peer device, a Group 0 Responder record targeting the PLM is its valid I2CS Authorization link
                 bool isValidPlmAuth = !org.IsModem && entry.Group == 0 &&
                     (entry.TargetAddress.Equals(PlmModemAddress, StringComparison.OrdinalIgnoreCase) ||
@@ -1866,6 +1893,11 @@ public class MainViewModel : ViewModelBase
                 {
                     entry.IsDuplicate = true;
                 }
+            }
+
+            foreach (var entry in org.OtherRecords)
+            {
+                tagProtectedPlmLink(entry);
             }
 
             OrganizedDevices.Add(org);
@@ -2305,6 +2337,18 @@ public class MainViewModel : ViewModelBase
         string ctrlAddr = DeleteLinkControllerAddress.Trim().ToUpperInvariant();
         string respAddr = DeleteLinkResponderAddress.Trim().ToUpperInvariant();
         int grp = DeleteLinkGroup;
+
+        if (IsProtectedPlmLink(ctrlAddr, respAddr, grp))
+        {
+            MessageBox.Show(
+                $"Action Blocked: Reciprocal links with the PLM Modem ({PlmModemAddress}) on Group {grp} are essential for openHAB communication and hardware operation and cannot be staged for deletion.",
+                "Protected Core PLM Link",
+                MessageBoxButton.OK,
+                MessageBoxImage.Stop
+            );
+            StatusMessage = $"Cannot delete protected Group {grp} PLM link.";
+            return;
+        }
 
         string ctrlName = SelectableDevices.FirstOrDefault(d => d.Address.Equals(ctrlAddr, StringComparison.OrdinalIgnoreCase))?.FriendlyName ?? ctrlAddr;
         string respName = SelectableDevices.FirstOrDefault(d => d.Address.Equals(respAddr, StringComparison.OrdinalIgnoreCase))?.FriendlyName ?? respAddr;
@@ -2873,6 +2917,18 @@ public class MainViewModel : ViewModelBase
             return;
         }
 
+        if (IsProtectedPlmLink(DeleteLinkControllerAddress, DeleteLinkResponderAddress, DeleteLinkGroup))
+        {
+            MessageBox.Show(
+                $"Action Blocked: Reciprocal links between devices and the PLM Modem ({PlmModemAddress}) on Group {DeleteLinkGroup} are essential for openHAB operation and hardware communication. They cannot be deleted.",
+                "Protected Core PLM Link",
+                MessageBoxButton.OK,
+                MessageBoxImage.Stop
+            );
+            StatusMessage = $"Cannot delete protected Group {DeleteLinkGroup} PLM link.";
+            return;
+        }
+
         var result = MessageBox.Show(
             $"Are you sure you want to delete the reciprocal link between Controller {DeleteLinkControllerAddress} and Responder {DeleteLinkResponderAddress} (Group {DeleteLinkGroup})?\n\nThis will remove the link from both devices.",
             "Confirm Delete Reciprocal Link",
@@ -2921,6 +2977,18 @@ public class MainViewModel : ViewModelBase
     public async Task DeleteLinkFromEntryAsync(OrganizedAldbEntry? entry)
     {
         if (entry == null) return;
+
+        if (entry.IsProtectedPlmLink)
+        {
+            MessageBox.Show(
+                $"Action Blocked: This record (Slot {entry.MemAddr}, Group {entry.Group} with PLM {PlmModemAddress}) is a protected core communication link required for openHAB control and hardware operation. It cannot be deleted.",
+                "Protected Core PLM Link",
+                MessageBoxButton.OK,
+                MessageBoxImage.Stop
+            );
+            StatusMessage = $"Cannot delete protected Group {entry.Group} PLM link.";
+            return;
+        }
 
         if (entry.IsDuplicate || entry.IsGroupZero)
         {

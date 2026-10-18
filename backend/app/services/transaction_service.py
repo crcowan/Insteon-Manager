@@ -277,6 +277,20 @@ class TransactionService:
         snapshot = self._load_snapshot()
         ctrl_clean = ctrl_addr.strip().upper()
         resp_clean = resp_addr.strip().upper()
+        plm_addr = snapshot.get("plm", {}).get("address", "53.C1.42").upper()
+
+        # IMMUTABLE GUARD: Core PLM links (Group 0 I2CS Auth and Group 1 Status/Control) must never be deleted
+        if (ctrl_clean == plm_addr or resp_clean == plm_addr) and group in (0, 1):
+            logger.warning(
+                f"BLOCKED: Attempt to delete protected core PLM link between {ctrl_clean} and {resp_clean} for Group {group}."
+            )
+            return GenericResponse(
+                success=False,
+                message=(
+                    f"Protected Link Violation: Reciprocal links between devices and the PLM Modem ({plm_addr}) "
+                    f"for Group {group} are essential for openHAB operation and I2CS communication, and cannot be deleted."
+                ),
+            )
 
         logger.info(f"Removing reciprocal link between {ctrl_clean} and {resp_clean} for Group {group}...")
 
@@ -344,8 +358,9 @@ class TransactionService:
         # Locate the target record metadata in snapshot first
         target_snap_rec = None
         records_list = None
+        plm_addr = snapshot.get("plm", {}).get("address", "53.C1.42").upper() if snapshot else "53.C1.42"
         if snapshot:
-            if clean_addr == snapshot.get("plm", {}).get("address", "").upper():
+            if clean_addr == plm_addr:
                 records_list = snapshot.get("plm", {}).get("records", [])
             else:
                 for d in snapshot.get("devices", []):
@@ -357,6 +372,22 @@ class TransactionService:
                     if r.get("mem_addr", "").upper() == clean_mem:
                         target_snap_rec = r
                         break
+
+        # IMMUTABLE GUARD: Core PLM links (Group 0 I2CS Auth and Group 1 Status/Control) must never be deleted
+        if target_snap_rec is not None:
+            t_addr = str(target_snap_rec.get("target_address", "")).upper()
+            t_grp = int(target_snap_rec.get("group", 0))
+            if (clean_addr == plm_addr or t_addr == plm_addr) and t_grp in (0, 1):
+                logger.warning(
+                    f"BLOCKED: Attempt to delete protected PLM link slot {clean_mem} on {clean_addr} (target {t_addr}, Group {t_grp})."
+                )
+                return GenericResponse(
+                    success=False,
+                    message=(
+                        f"Protected Record Violation: Slot {clean_mem} on {clean_addr} is a core Group {t_grp} "
+                        f"PLM communication link and cannot be deleted."
+                    ),
+                )
 
         from app.insteon import insteon_manager
         live_hw = insteon_manager.is_connected and not insteon_manager._mock_mode and PYINSTEON_AVAILABLE
@@ -382,6 +413,21 @@ class TransactionService:
                 return GenericResponse(
                     success=False,
                     message=f"Slot {clean_mem} was not found in live ALDB for {clean_addr}.",
+                )
+
+            # IMMUTABLE GUARD: Verify live record is not a protected PLM link
+            rec_target = str(rec.target).upper()
+            rec_group = int(getattr(rec, "group", 0))
+            if (clean_addr == plm_addr or rec_target == plm_addr) and rec_group in (0, 1):
+                logger.warning(
+                    f"BLOCKED: Attempt to delete live protected PLM link slot {clean_mem} on {clean_addr} (target {rec_target}, Group {rec_group})."
+                )
+                return GenericResponse(
+                    success=False,
+                    message=(
+                        f"Protected Record Violation: Live slot {clean_mem} on {clean_addr} is a core Group {rec_group} "
+                        f"PLM communication link and cannot be deleted."
+                    ),
                 )
 
             # Safety check: Verify the live slot actually contains the intended target/group before deleting
@@ -1239,6 +1285,11 @@ class TransactionService:
                     summary = f"Missing Controller Link: {owner_name} ← {target_name} (Grp {grp})"
                     explanation = f"{owner_name} is programmed to respond to Group {grp} from {target_name}, but {target_name} has no matching controller record to trigger it."
                     fix_label = f"⚡ Add Controller Link on {target_name}"
+
+                # Never offer to delete broken PLM links on Group 0 or 1; they must only be restored
+                if (owner == plm_addr or target == plm_addr) and grp in (0, 1):
+                    sec_action = None
+                    sec_label = None
 
                 issues.append(NetworkIssueItem(
                     id=f"half_{owner}_{target}_{grp}_{role}_{mem}",

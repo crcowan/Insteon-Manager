@@ -370,9 +370,10 @@ public class OrganizedAldbEntry
     public string DecodedSummary { get; set; } = string.Empty;
     public string StatusBadge { get; set; } = "Active";
 
+    public bool IsProtectedPlmLink { get; set; }
     public bool IsDuplicate { get; set; }
     public bool IsGroupZero { get; set; }
-    public bool HasIssue => IsDuplicate || IsGroupZero;
+    public bool HasIssue => !IsProtectedPlmLink && (IsDuplicate || IsGroupZero);
     public string IssueBadge => (IsDuplicate && IsGroupZero) 
         ? "⚠️ Duplicate Grp 0" 
         : (IsDuplicate ? "⚠️ Duplicate Link" : (IsGroupZero ? "⚠️ Orphan Grp 0" : string.Empty));
