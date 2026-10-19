@@ -1973,8 +1973,10 @@ public class MainViewModel : ViewModelBase
 
     private void BuildTopologyGraph(List<AldbRecordModel> records, List<DeviceSummaryModel>? devices = null, bool ignoreSavedPositions = false)
     {
-        var previousChecked = DeviceNodes.Count > 0
-            ? DeviceNodes.Where(n => n.IsFilterChecked).Select(n => n.Address).ToHashSet(StringComparer.OrdinalIgnoreCase)
+        // Remember which nodes were explicitly unchecked by the user previously.
+        // Newly discovered or newly loaded devices must always default to visible (checked).
+        var previousUnchecked = DeviceNodes.Count > 0
+            ? DeviceNodes.Where(n => !n.IsFilterChecked).Select(n => n.Address).ToHashSet(StringComparer.OrdinalIgnoreCase)
             : null;
 
         DeviceNodes.Clear();
@@ -2010,7 +2012,7 @@ public class MainViewModel : ViewModelBase
             IsBattery = false,
             DeviceType = "Hardware Hub / Modem",
             LinkCount = records.Count(r => r.InUse && (r.SourceAddress == plmAddress || r.SourceAddress == "PLM Modem" || (plmAddress == "53.C1.42" && r.SourceAddress == "1A.2B.3C"))),
-            IsFilterChecked = previousChecked == null || previousChecked.Contains(plmAddress),
+            IsFilterChecked = previousUnchecked == null || !previousUnchecked.Contains(plmAddress),
             IsVisible = true,
         };
         plmNode.PropertyChanged += (s, e) =>
@@ -2122,7 +2124,7 @@ public class MainViewModel : ViewModelBase
                 IsBattery = isBat,
                 DeviceType = devType,
                 LinkCount = linkCount,
-                IsFilterChecked = previousChecked == null || previousChecked.Contains(address),
+                IsFilterChecked = previousUnchecked == null || !previousUnchecked.Contains(address),
                 IsVisible = true,
             };
             peerNode.PropertyChanged += (s, e) =>
