@@ -17,7 +17,8 @@ Write-Host "==> Uploading diagnostic & restoration scripts to ${piHost}:${destDi
 scp "$repoRoot\backend\scripts\restore_pristine_links.py" "$repoRoot\backend\scripts\diagnose_devices.py" "$repoRoot\backend\scripts\restore_target_devices.py" "${piUser}@${piHost}:${destDir}/scripts/"
 scp "$repoRoot\backend\scripts\restore_pristine_links.py" "$repoRoot\backend\scripts\diagnose_devices.py" "$repoRoot\backend\scripts\restore_target_devices.py" "${piUser}@${piHost}:${destDir}/"
 
-Write-Host "==> Uploading golden 100% clean snapshots to ${piHost}:${destDir}/snapshots/ and ~/golden_snapshots/ ..." -ForegroundColor Cyan
+Write-Host "==> Uploading golden 100% clean snapshots to ${piHost}:${destDir}/snapshots/, ${destDir}/network_snapshot.json, and ~/golden_snapshots/ ..." -ForegroundColor Cyan
+scp "$repoRoot\backend\network_snapshot.clean_100_golden.json" "${piUser}@${piHost}:${destDir}/network_snapshot.json"
 scp "$repoRoot\backend\snapshots\network_snapshot.100_clean_a5f7e47.json" "${piUser}@${piHost}:${destDir}/snapshots/"
 scp "$repoRoot\backend\snapshots\network_snapshot.100_clean_8fca33b.json" "${piUser}@${piHost}:${destDir}/snapshots/"
 scp "$repoRoot\backend\network_snapshot.clean_100_golden.json" "${piUser}@${piHost}:${destDir}/snapshots/"

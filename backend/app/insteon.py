@@ -95,6 +95,22 @@ def _apply_pyinsteon_optimizations():
     aldb_read_manager.RETRIES_ONE_MAX = 3
     aldb_read_manager.TIMER_RECORD = 3.5
 
+    # Fix pyinsteon bug where reconnecting leaves ALL_LINK_RECORD_RESPONSE topic registered,
+    # causing ModemALDB to skip creating its ImReadManager.
+    modem = getattr(pyinsteon.devices, "modem", None)
+    if modem and hasattr(modem, "aldb"):
+        if not hasattr(modem.aldb, "_read_manager") or modem.aldb._read_manager is None:
+            try:
+                from pyinsteon import pub
+                from pyinsteon.topics import ALL_LINK_RECORD_RESPONSE
+                from pyinsteon.managers.aldb_im_read_manager import ImReadManager
+                mgr = pub.getDefaultTopicMgr()
+                if mgr.getTopic(ALL_LINK_RECORD_RESPONSE, okIfNone=True):
+                    mgr.delTopic(ALL_LINK_RECORD_RESPONSE)
+                modem.aldb._read_manager = ImReadManager(modem.aldb)
+            except Exception as e_rm:
+                logger.debug(f"Notice setting modem ImReadManager: {e_rm}")
+
     async def _optimized_read_all(self):
         retries = aldb_read_manager.RETRIES_ALL_MAX
         mem_addr = 0
@@ -203,6 +219,14 @@ class InsteonManager:
                 except Exception as exc:
                     logger.error(f"Error closing pyinsteon connection: {exc}")
                 finally:
+                    try:
+                        from pyinsteon import pub
+                        from pyinsteon.topics import ALL_LINK_RECORD_RESPONSE
+                        mgr = pub.getDefaultTopicMgr()
+                        if mgr.getTopic(ALL_LINK_RECORD_RESPONSE, okIfNone=True):
+                            mgr.delTopic(ALL_LINK_RECORD_RESPONSE)
+                    except Exception:
+                        pass
                     self.is_connected = False
             else:
                 self.is_connected = False
@@ -232,8 +256,16 @@ class InsteonManager:
         if force_refresh_aldb or not modem.aldb.is_loaded:
             logger.info("Loading PLM ALDB from hardware...")
             try:
+                if not hasattr(modem.aldb, "_read_manager") or modem.aldb._read_manager is None:
+                    from pyinsteon import pub
+                    from pyinsteon.topics import ALL_LINK_RECORD_RESPONSE
+                    from pyinsteon.managers.aldb_im_read_manager import ImReadManager
+                    mgr = pub.getDefaultTopicMgr()
+                    if mgr.getTopic(ALL_LINK_RECORD_RESPONSE, okIfNone=True):
+                        mgr.delTopic(ALL_LINK_RECORD_RESPONSE)
+                    modem.aldb._read_manager = ImReadManager(modem.aldb)
                 # Allow up to 60s for full PLM EEPROM read
-                await asyncio.wait_for(modem.aldb.async_load(), timeout=60.0)
+                await asyncio.wait_for(modem.aldb.async_load(refresh=True), timeout=60.0)
             except asyncio.TimeoutError:
                 logger.warning("Timeout loading PLM ALDB from hardware; returning captured records.")
 
@@ -1198,6 +1230,18 @@ class InsteonManager:
         if not modem:
             raise RuntimeError("No PLM modem device detected by pyinsteon.")
 
+        if hasattr(modem, "aldb") and (not hasattr(modem.aldb, "_read_manager") or modem.aldb._read_manager is None):
+            try:
+                from pyinsteon import pub
+                from pyinsteon.topics import ALL_LINK_RECORD_RESPONSE
+                from pyinsteon.managers.aldb_im_read_manager import ImReadManager
+                mgr = pub.getDefaultTopicMgr()
+                if mgr.getTopic(ALL_LINK_RECORD_RESPONSE, okIfNone=True):
+                    mgr.delTopic(ALL_LINK_RECORD_RESPONSE)
+                modem.aldb._read_manager = ImReadManager(modem.aldb)
+            except Exception as e_rm:
+                logger.debug(f"Notice setting modem ImReadManager: {e_rm}")
+
         if force_full and hasattr(modem, "aldb"):
             try:
                 modem.aldb.clear()
@@ -1223,6 +1267,11 @@ class InsteonManager:
             }
             for r in plm_info.records
         ]
+
+        # Safety Fallback: Never overwrite verified PLM snapshot records with empty list if wire read returned 0
+        if len(plm_rec_dicts) == 0 and prev_snapshot and prev_snapshot.get("plm", {}).get("records"):
+            logger.warning("PLM hardware read yielded 0 records. Preserving verified snapshot PLM records.")
+            plm_rec_dicts = prev_snapshot["plm"]["records"]
 
         snapshot_data: Dict[str, Any] = {
             "snapshot_metadata": {
@@ -1251,7 +1300,7 @@ class InsteonManager:
         }
         self._save_snapshot(snapshot_data)
 
-        # Discover unique target device addresses from PLM ALDB and pyinsteon.devices
+        # Discover unique target device addresses from PLM ALDB, pyinsteon.devices, and prev_snapshot
         discovered_addresses = set()
         plm_cat_hints: Dict[str, tuple[int, int, int]] = {}
         plm_addr_upper = plm_info.address.upper()
@@ -1271,9 +1320,16 @@ class InsteonManager:
             if a_str and a_str != plm_addr_upper:
                 discovered_addresses.add(a_str)
 
+        # Ensure all known active devices from previous snapshot are always crawled
+        for d in prev_snapshot.get("devices", []):
+            if self.is_active_snapshot_device(d):
+                d_addr = str(d.get("address", "")).upper().strip()
+                if d_addr and d_addr != plm_addr_upper:
+                    discovered_addresses.add(d_addr)
+
         sorted_addresses = sorted(discovered_addresses)
         snapshot_data["stats"]["devices_total"] = len(sorted_addresses)
-        logger.info(f"Discovered {len(sorted_addresses)} unique peer devices from PLM ALDB.")
+        logger.info(f"Discovered {len(sorted_addresses)} unique peer devices from PLM ALDB and previous snapshot.")
 
         async def _interrogate_peer(addr_str: str, is_recovery: bool = False) -> Dict[str, Any]:
             clean_compact = addr_str.replace(".", "").upper()
