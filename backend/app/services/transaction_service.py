@@ -203,8 +203,28 @@ class TransactionService:
             if ctrl_failed:
                 dev_ctrl.aldb.clear_pending()
                 logger.error(f"Hardware write failed while creating Controller record on {ctrl_addr} (target {resp_addr}, Grp {grp}).")
-                return GenericResponse(success=False, message=f"Failed writing Controller record to {ctrl_addr}")
-            logger.info(f"Hardware EEPROM write succeeded on controller {ctrl_addr}: Controller link to {resp_addr} (Grp {grp}) added.")
+                return GenericResponse(success=False, message=f"Failed writing Controller record to {ctrl_addr}. Snapshot was not modified.")
+
+            # Two-Phase Live Silicon Verification for Controller
+            ctrl_rec = next((r for r in dev_ctrl.aldb.find(target=addr_resp, group=grp, is_controller=True, in_use=True)), None)
+            ctrl_mem = ctrl_rec.mem_addr if ctrl_rec else None
+            if ctrl_mem is not None:
+                v_ok_c, v_msg_c, _ = await insteon_manager.verify_hardware_record(
+                    address=ctrl_addr,
+                    mem_addr=ctrl_mem,
+                    expected_target=resp_addr,
+                    expected_group=grp,
+                    expected_controller=True,
+                    expected_in_use=True,
+                )
+                if not v_ok_c:
+                    dev_ctrl.aldb.clear_pending()
+                    logger.error(f"Hardware live silicon verification failed on controller {ctrl_addr}: {v_msg_c}")
+                    return GenericResponse(
+                        success=False,
+                        message=f"Hardware EEPROM write verification failed on controller {ctrl_addr}: {v_msg_c}. Snapshot was NOT modified.",
+                    )
+            logger.info(f"Hardware EEPROM write verified on controller {ctrl_addr}: Controller link to {resp_addr} (Grp {grp}) confirmed on silicon.")
 
             # Step 3: Write Responder record
             dev_resp.aldb._status = ALDBStatus.LOADED
@@ -223,19 +243,49 @@ class TransactionService:
                     dev_resp.aldb._read_write_mode = ReadWriteMode.PEEK_POKE
                     dev_resp.aldb._status = ALDBStatus.LOADED
                     resp_done, resp_failed = await dev_resp.aldb.async_write(force=True)
-            if resp_failed:
-                logger.warning(f"Responder write failed on {resp_addr}; initiating ROLLBACK on controller {ctrl_addr}...")
+
+            # Two-Phase Live Silicon Verification for Responder
+            v_ok_r = False
+            v_msg_r = ""
+            resp_mem = None
+            if not resp_failed:
+                resp_rec = next((r for r in dev_resp.aldb.find(target=addr_ctrl, group=grp, is_controller=False, in_use=True)), None)
+                resp_mem = resp_rec.mem_addr if resp_rec else None
+                if resp_mem is not None:
+                    v_ok_r, v_msg_r, _ = await insteon_manager.verify_hardware_record(
+                        address=resp_addr,
+                        mem_addr=resp_mem,
+                        expected_target=ctrl_addr,
+                        expected_group=grp,
+                        expected_controller=False,
+                        expected_in_use=True,
+                    )
+                else:
+                    v_ok_r = True
+
+            if resp_failed or not v_ok_r:
+                err_detail = v_msg_r if not v_ok_r else "EEPROM write failed"
+                logger.warning(f"Responder write/verification failed on {resp_addr} ({err_detail}); initiating hardware ROLLBACK on controller {ctrl_addr}...")
                 dev_resp.aldb.clear_pending()
                 for rec in dev_ctrl.aldb.find(target=addr_resp, group=grp, is_controller=True, in_use=True):
                     dev_ctrl.aldb.modify(mem_addr=rec.mem_addr, in_use=False)
                 dev_ctrl.aldb._status = ALDBStatus.LOADED
                 await dev_ctrl.aldb.async_write(force=True)
-                logger.error(f"Hardware write failed on responder {resp_addr} (target {ctrl_addr}, Grp {grp}). Controller link on {ctrl_addr} rolled back.")
+                if ctrl_mem is not None:
+                    await insteon_manager.verify_hardware_record(
+                        address=ctrl_addr,
+                        mem_addr=ctrl_mem,
+                        expected_target=resp_addr,
+                        expected_group=grp,
+                        expected_controller=True,
+                        expected_in_use=False,
+                    )
+                logger.error(f"Hardware write failed on responder {resp_addr} ({err_detail}). Controller link on {ctrl_addr} rolled back cleanly.")
                 return GenericResponse(
                     success=False,
-                    message=f"Write to responder {resp_addr} failed. Controller link on {ctrl_addr} rolled back cleanly.",
+                    message=f"Write to responder {resp_addr} failed verification ({err_detail}). Controller link on {ctrl_addr} was rolled back cleanly. Database was NOT modified.",
                 )
-            logger.info(f"Hardware EEPROM write succeeded on responder {resp_addr}: Responder link to {ctrl_addr} (Grp {grp}) added.")
+            logger.info(f"Hardware EEPROM write verified on responder {resp_addr}: Responder link to {ctrl_addr} (Grp {grp}) confirmed on silicon.")
 
             await insteon_manager.refresh_device_db_delta_after_write(ctrl_addr, snapshot)
             await insteon_manager.refresh_device_db_delta_after_write(resp_addr, snapshot)
@@ -320,6 +370,19 @@ class TransactionService:
             if ctrl_failed:
                 return GenericResponse(success=False, message=f"Hardware write failed while deleting Controller record on {ctrl_clean}.")
 
+            # Live silicon verification for Controller deletion
+            for r in dev_ctrl.aldb.find(target=addr_resp, group=group, is_controller=True):
+                v_ok_c, v_msg_c, _ = await insteon_manager.verify_hardware_record(
+                    address=ctrl_clean,
+                    mem_addr=r.mem_addr,
+                    expected_target=resp_clean,
+                    expected_group=group,
+                    expected_controller=True,
+                    expected_in_use=False,
+                )
+                if not v_ok_c:
+                    logger.warning(f"Hardware silicon verification notice for controller deletion on {ctrl_clean}: {v_msg_c}")
+
             dev_resp.aldb._status = ALDBStatus.LOADED
             for rec in dev_resp.aldb.find(target=addr_ctrl, group=group, is_controller=False, in_use=True):
                 dev_resp.aldb.modify(mem_addr=rec.mem_addr, in_use=False)
@@ -330,6 +393,19 @@ class TransactionService:
                 _, resp_failed = await dev_resp.aldb.async_write(force=True)
             if resp_failed:
                 return GenericResponse(success=False, message=f"Hardware write failed while deleting Responder record on {resp_clean}.")
+
+            # Live silicon verification for Responder deletion
+            for r in dev_resp.aldb.find(target=addr_ctrl, group=group, is_controller=False):
+                v_ok_r, v_msg_r, _ = await insteon_manager.verify_hardware_record(
+                    address=resp_clean,
+                    mem_addr=r.mem_addr,
+                    expected_target=ctrl_clean,
+                    expected_group=group,
+                    expected_controller=False,
+                    expected_in_use=False,
+                )
+                if not v_ok_r:
+                    logger.warning(f"Hardware silicon verification notice for responder deletion on {resp_clean}: {v_msg_r}")
 
             await insteon_manager.refresh_device_db_delta_after_write(ctrl_clean, snapshot)
             await insteon_manager.refresh_device_db_delta_after_write(resp_clean, snapshot)
@@ -453,7 +529,23 @@ class TransactionService:
                     success=False,
                     message=f"Hardware EEPROM write failed while deleting slot {clean_mem} on {clean_addr}.",
                 )
-            logger.info(f"Hardware EEPROM write succeeded on {clean_addr}: Slot {clean_mem} marked deleted.")
+
+            # Two-Phase Live Silicon Verification for Deletion
+            v_ok, v_msg, _ = await insteon_manager.verify_hardware_record(
+                address=clean_addr,
+                mem_addr=mem_int,
+                expected_target=str(getattr(rec, "target", "")),
+                expected_group=int(getattr(rec, "group", 0)),
+                expected_controller=bool(getattr(rec, "is_controller", False)),
+                expected_in_use=False,
+            )
+            if not v_ok:
+                logger.error(f"Hardware live silicon verification failed for slot {clean_mem} on {clean_addr}: {v_msg}")
+                return GenericResponse(
+                    success=False,
+                    message=f"Hardware EEPROM deletion verification failed: {v_msg}. Snapshot database was NOT modified to maintain hardware truth.",
+                )
+            logger.info(f"Hardware EEPROM write verified on {clean_addr}: Slot {clean_mem} confirmed deleted on silicon.")
             await insteon_manager.refresh_device_db_delta_after_write(clean_addr, snapshot)
 
         found = False
@@ -1219,6 +1311,40 @@ class TransactionService:
 
                 active_links.append(link_entry)
 
+        def is_device_incomplete(addr: str) -> bool:
+            d = all_dev_map.get(addr.upper(), {})
+            st = str(d.get("status", "OK")).upper()
+            return st.startswith("PARTIAL") or st.startswith("FAILED")
+
+        # Flag incomplete device reads so users know which switches need a refresh
+        for dev in active_devices:
+            dev_addr = dev.get("address", "").upper()
+            if is_device_incomplete(dev_addr):
+                dev_name = get_device_name(dev_addr)
+                rec_cnt = len(dev.get("records", []))
+                issues.append(NetworkIssueItem(
+                    id=f"partial_{dev_addr}",
+                    issue_type="incomplete_read",
+                    severity="warning",
+                    owner_address=dev_addr,
+                    owner_name=dev_name,
+                    mem_addr=None,
+                    target_address=dev_addr,
+                    target_name=dev_name,
+                    group=0,
+                    role="None",
+                    summary=f"Incomplete ALDB Table Read on {dev_name} ({dev_addr})",
+                    explanation=(
+                        f"Device {dev_name} ({dev_addr}) currently has {rec_cnt} records loaded "
+                        f"with status '{dev.get('status')}'. Link cross-validation for this device is suspended until a full table read completes to avoid false half-link warnings."
+                    ),
+                    recommended_action="refresh_device",
+                    fix_label="🔄 Refresh Device Table",
+                    secondary_action=None,
+                    secondary_label=None,
+                    can_auto_fix=False,
+                ))
+
         # 5. Check Half-Links (Missing reciprocal on target for Scene/Group >= 1)
         for link in active_links:
             owner = link["owner"]
@@ -1232,6 +1358,10 @@ class TransactionService:
 
             target_dev = all_dev_map.get(target)
             if not target_dev:
+                continue
+
+            # Incomplete-Read Guard: Do not flag false half-links if either device's table was only partially read
+            if is_device_incomplete(owner) or is_device_incomplete(target):
                 continue
 
             target_recs = [tr for tr in target_dev.get("records", []) if tr.get("in_use") and not tr.get("high_water_mark")]
@@ -1320,6 +1450,8 @@ class TransactionService:
             dev_addr = dev.get("address", "").upper()
             if dev_addr == plm_addr or not dev_addr:
                 continue
+            if is_device_incomplete(dev_addr):
+                continue
             dev_name = get_device_name(dev_addr)
             dev_records = [r for r in dev.get("records", []) if r.get("in_use") and not r.get("high_water_mark")]
 
@@ -1355,9 +1487,10 @@ class TransactionService:
         dup_count = sum(1 for i in issues if i.issue_type == "duplicate")
         grp0_count = sum(1 for i in issues if i.issue_type == "group_zero")
         missing_def_count = sum(1 for i in issues if i.issue_type == "missing_default")
+        incomplete_count = sum(1 for i in issues if i.issue_type == "incomplete_read")
 
-        # Health score calculation
-        deductions = (ghost_count * 10) + (missing_def_count * 5) + (loopback_count * 5) + (half_count * 3) + (dup_count * 2) + (grp0_count * 2)
+        # Health score calculation: Partial reads incur only a small deduction (-2 each) rather than false half-link cascades (-30+)
+        deductions = (ghost_count * 10) + (missing_def_count * 5) + (loopback_count * 5) + (half_count * 3) + (dup_count * 2) + (grp0_count * 2) + (incomplete_count * 2)
         score = max(0, min(100, 100 - deductions))
 
         return NetworkAnalysisResponse(

@@ -4013,6 +4013,11 @@ public class MainViewModel : ViewModelBase
                 {
                     return await _apiClient.PurgeGhostLinksAsync(issue.TargetAddress);
                 }
+                else if (issue.RecommendedAction == "refresh_device")
+                {
+                    await RefreshSingleDeviceAldbAsync(issue.OwnerAddress);
+                    return (true, $"Refreshed ALDB table for {issue.OwnerAddress}.");
+                }
                 return (false, "Unknown action");
             }
         };

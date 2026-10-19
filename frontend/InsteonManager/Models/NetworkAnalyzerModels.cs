@@ -115,6 +115,7 @@ public class NetworkIssueModel : INotifyPropertyChanged
         "ghost" => "Dead Device Ghost",
         "duplicate" => "Redundant Duplicate",
         "group_zero" => "Corrupted Group 0",
+        "incomplete_read" => "Incomplete Hardware Read",
         _ => "Network Anomaly"
     };
 

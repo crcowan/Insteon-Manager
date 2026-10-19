@@ -4,7 +4,7 @@ import os
 import json
 import logging
 import asyncio
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, Tuple
 
 # Tune pyinsteon serial write pacing before importing pyinsteon
 os.environ.setdefault("PYINSTEON_WRITE_WAIT", "0.30")
@@ -80,6 +80,7 @@ except ImportError as _imp_err:
         def __str__(self):
             return self._addr
 
+KNOWN_RETIRED_ADDRESSES = {"2C.E7.EF", "39.F1.75", "39.BA.04", "34.28.58", "16.41.31", "06.52.D1"}
 
 
 def _apply_pyinsteon_optimizations():
@@ -436,11 +437,11 @@ class InsteonManager:
     async def _walk_missing_records_one_by_one(
         self,
         aldb,
-        max_records_to_walk: int = 40,
-        per_record_timeout: float = 5.5,
+        max_records_to_walk: int = 50,
+        per_record_timeout: float = 6.0,
         use_peek_poke: bool = False,
     ) -> bool:
-        """Surgically read missing ALDB slots one record at a time (num_recs=1 or fast PEEK_POKE)."""
+        """Surgically read missing ALDB slots one record at a time with adaptive retries and PEEK fallback."""
         addr_obj = aldb.address
         get_health(addr_obj).record_success()
 
@@ -450,7 +451,7 @@ class InsteonManager:
             next_addr = aldb._calc_next_record()
 
         consecutive_erased = 0
-        consecutive_timeouts = 0
+        consecutive_failed_slots = 0
         walked = 0
 
         while next_addr and walked < max_records_to_walk:
@@ -459,53 +460,97 @@ class InsteonManager:
 
             get_health(addr_obj).record_success()
             got_rec = False
-            try:
-                if use_peek_poke:
-                    async with async_timeout.timeout(14.0):
-                        rec = await self._fast_peek_record(aldb, next_addr)
-                        if rec is not None:
-                            aldb._add_record(rec)
-                            got_rec = True
-                            if rec.is_high_water_mark:
-                                aldb.set_load_status()
-                                return aldb.is_loaded
-                else:
-                    async with async_timeout.timeout(per_record_timeout):
-                        async for rec in aldb._read_manager.async_read(
-                            mem_addr=next_addr, num_recs=1
-                        ):
-                            aldb._add_record(rec)
-                            got_rec = True
-                            if rec.is_high_water_mark:
-                                aldb.set_load_status()
-                                return aldb.is_loaded
-            except asyncio.TimeoutError:
-                self._drain_outbound_queue()
-            finally:
-                await aldb._read_manager.async_stop()
+            rec = None
 
-            if got_rec:
+            # Attempt to read next_addr with up to 2 retries per slot
+            for slot_attempt in range(1, 3):
+                try:
+                    if use_peek_poke:
+                        async with async_timeout.timeout(12.0):
+                            rec = await self._fast_peek_record(aldb, next_addr)
+                            if rec is not None:
+                                aldb._add_record(rec)
+                                got_rec = True
+                                break
+                    else:
+                        # Attempt standard extended read first
+                        async with async_timeout.timeout(per_record_timeout):
+                            async for r in aldb._read_manager.async_read(
+                                mem_addr=next_addr, num_recs=1
+                            ):
+                                rec = r
+                                aldb._add_record(rec)
+                                got_rec = True
+                                break
+                        if got_rec:
+                            break
+
+                        # If standard read returned no record, attempt fast PEEK fallback for this slot
+                        logger.debug(f"Extended read yielded no record for {addr_obj} at 0x{next_addr:04X}; attempting fast PEEK fallback...")
+                        async with async_timeout.timeout(10.0):
+                            rec = await self._fast_peek_record(aldb, next_addr)
+                            if rec is not None:
+                                aldb._add_record(rec)
+                                got_rec = True
+                                break
+                except asyncio.TimeoutError:
+                    self._drain_outbound_queue()
+                    # On timeout in standard mode, try fast PEEK fallback before advancing
+                    if not use_peek_poke and slot_attempt == 1:
+                        try:
+                            logger.debug(f"Timeout on extended read for {addr_obj} at 0x{next_addr:04X}; trying fast PEEK fallback...")
+                            async with async_timeout.timeout(10.0):
+                                rec = await self._fast_peek_record(aldb, next_addr)
+                                if rec is not None:
+                                    aldb._add_record(rec)
+                                    got_rec = True
+                                    break
+                        except Exception:
+                            self._drain_outbound_queue()
+                except Exception as ex:
+                    logger.debug(f"Error reading {addr_obj} slot 0x{next_addr:04X}: {ex}")
+                    self._drain_outbound_queue()
+                finally:
+                    try:
+                        await aldb._read_manager.async_stop()
+                    except Exception:
+                        pass
+
+                if got_rec:
+                    break
+                await asyncio.sleep(0.4 * slot_attempt)
+
+            if got_rec and rec is not None:
                 consecutive_erased = 0
-                consecutive_timeouts = 0
+                consecutive_failed_slots = 0
                 walked += 1
-            elif aldb._read_manager.hit_erased:
+                if rec.is_high_water_mark:
+                    logger.debug(f"Reached High-Water Mark at 0x{next_addr:04X} on {addr_obj}.")
+                    aldb.set_load_status()
+                    return aldb.is_loaded
+            elif getattr(aldb._read_manager, "hit_erased", False):
                 consecutive_erased += 1
+                consecutive_failed_slots = 0
                 aldb._add_record(aldb._deleted_record(next_addr))
                 if consecutive_erased >= 8:
                     aldb._close_erased_aldb()
                     break
             else:
-                consecutive_timeouts += 1
-                if consecutive_timeouts >= 2:
+                consecutive_failed_slots += 1
+                logger.debug(f"Could not read slot 0x{next_addr:04X} on {addr_obj} ({consecutive_failed_slots} consecutive failures).")
+                if consecutive_failed_slots >= 4:
+                    logger.info(f"Stopping ALDB walk on {addr_obj} after {consecutive_failed_slots} consecutive unresponsive slots.")
                     break
-                await asyncio.sleep(0.8)
+                # Advance 8 bytes past the unresponsive slot to continue inspecting the table
+                next_addr = max(0x0000, next_addr - 8)
+                await asyncio.sleep(0.6)
                 continue
 
             aldb.set_load_status()
             if aldb.is_loaded:
                 return True
 
-            await asyncio.sleep(0.12 if use_peek_poke else 0.18)
+            await asyncio.sleep(0.12 if use_peek_poke else 0.15)
             next_addr = aldb._calc_next_record()
 
         aldb.set_load_status()
@@ -516,33 +561,116 @@ class InsteonManager:
         get_health(aldb.address).record_success()
         if prefer_bulk and not use_peek_poke and len(aldb) == 0:
             try:
-                await asyncio.wait_for(aldb.async_load(refresh=False), timeout=22.0)
+                await asyncio.wait_for(aldb.async_load(refresh=False), timeout=25.0)
             except asyncio.TimeoutError:
                 self._drain_outbound_queue()
             except Exception:
                 self._drain_outbound_queue()
             aldb.set_load_status()
-            if aldb.is_loaded or len(aldb) > 0:
+            if aldb.is_loaded:
                 return aldb.status
-            logger.info(f"Bulk ALDB stream did not return records for {aldb.address} (status={aldb.status}); falling back to step-by-step walk...")
+            logger.info(
+                f"Bulk ALDB stream did not fully load {aldb.address} ({len(aldb)} records in memory, status={aldb.status}); "
+                f"falling back to step-by-step gap filling..."
+            )
 
+        # Gap filling pass 1: Standard read with automatic per-slot PEEK fallback
         await self._walk_missing_records_one_by_one(
             aldb,
-            max_records_to_walk=35,
+            max_records_to_walk=45,
             per_record_timeout=6.0,
             use_peek_poke=use_peek_poke,
         )
         aldb.set_load_status()
-        if not aldb.is_loaded and len(aldb) == 0 and not use_peek_poke:
-            logger.info(f"Standard ALDB walk yielded 0 records on {aldb.address}; trying PEEK/POKE read...")
+
+        # Gap filling pass 2: Full PEEK/POKE recovery walk if still not fully loaded
+        if not aldb.is_loaded and not use_peek_poke:
+            logger.info(f"ALDB not fully loaded on {aldb.address} ({len(aldb)} records, status={aldb.status}); running PEEK/POKE recovery walk...")
             await self._walk_missing_records_one_by_one(
                 aldb,
-                max_records_to_walk=35,
+                max_records_to_walk=45,
                 per_record_timeout=8.0,
                 use_peek_poke=True,
             )
             aldb.set_load_status()
         return aldb.status
+
+    async def verify_hardware_record(
+        self,
+        address: str,
+        mem_addr: Any,
+        expected_target: str,
+        expected_group: int,
+        expected_controller: bool,
+        expected_in_use: bool,
+        timeout: float = 6.0,
+    ) -> Tuple[bool, str, Optional[Dict[str, Any]]]:
+        """Perform a live read-back from physical device EEPROM to verify that a write or deletion actually took effect."""
+        if not self.is_connected or self._mock_mode or not PYINSTEON_AVAILABLE:
+            return True, "Mock/offline verification skipped", None
+
+        clean_addr = str(Address(address)).upper()
+        clean_target = str(Address(expected_target)).upper() if expected_target not in ("00.00.00", "000000", "") else "00.00.00"
+        modem = pyinsteon.devices.modem
+        modem_addr = str(modem.address).upper() if modem else ""
+
+        # Case 1: PLM Modem verification
+        if clean_addr == modem_addr:
+            if not modem or not hasattr(modem, "aldb"):
+                return False, "PLM modem object not found", None
+            for r in modem.aldb.values():
+                if expected_in_use:
+                    if r.is_in_use and str(r.target).upper() == clean_target and r.group == expected_group and bool(r.is_controller) == expected_controller:
+                        return True, "PLM record verified in memory/modem", {"mem_addr": f"0x{r.mem_addr:04X}"}
+                else:
+                    if str(r.target).upper() == clean_target and r.group == expected_group and bool(r.is_controller) == expected_controller:
+                        if not r.is_in_use:
+                            return True, "PLM record verified deleted", {"mem_addr": f"0x{r.mem_addr:04X}"}
+            if not expected_in_use:
+                return True, "PLM record not found in active table (deleted)", None
+            return False, f"PLM record ({clean_target}, Grp {expected_group}) not found in live modem ALDB", None
+
+        # Case 2: Peer Line Device verification via live EEPROM peek
+        mem_int = int(str(mem_addr), 16) if str(mem_addr).upper().startswith("0X") else int(mem_addr)
+        dev = pyinsteon.devices.get(Address(clean_addr))
+        if not dev or not hasattr(dev, "aldb"):
+            return False, f"Device {clean_addr} not registered in pyinsteon", None
+
+        for attempt in range(1, 4):
+            try:
+                async with async_timeout.timeout(timeout):
+                    rec = await self._fast_peek_record(dev.aldb, mem_int)
+                    if rec is not None:
+                        if not expected_in_use:
+                            if not rec.is_in_use or rec.is_high_water_mark:
+                                return True, f"Slot 0x{mem_int:04X} verified deleted on silicon (in_use=False)", None
+                            return False, f"Slot 0x{mem_int:04X} on {clean_addr} still has in_use=True on hardware silicon", None
+                        else:
+                            if not rec.is_in_use:
+                                return False, f"Slot 0x{mem_int:04X} on {clean_addr} has in_use=False on hardware silicon", None
+                            if str(rec.target).upper() != clean_target:
+                                return False, f"Slot 0x{mem_int:04X} on {clean_addr} targets {rec.target}, expected {clean_target}", None
+                            if rec.group != expected_group:
+                                return False, f"Slot 0x{mem_int:04X} on {clean_addr} has group {rec.group}, expected {expected_group}", None
+                            if bool(rec.is_controller) != expected_controller:
+                                return False, f"Slot 0x{mem_int:04X} on {clean_addr} has controller={rec.is_controller}, expected {expected_controller}", None
+                            return True, f"Slot 0x{mem_int:04X} verified on physical hardware silicon", {
+                                "mem_addr": f"0x{mem_int:04X}",
+                                "target": clean_target,
+                                "group": expected_group,
+                                "is_controller": expected_controller,
+                            }
+            except asyncio.TimeoutError:
+                self._drain_outbound_queue()
+                if attempt < 3:
+                    await asyncio.sleep(0.5 * attempt)
+            except Exception as ex:
+                logger.debug(f"Live verification error for {clean_addr} slot 0x{mem_int:04X}: {ex}")
+                self._drain_outbound_queue()
+                if attempt < 3:
+                    await asyncio.sleep(0.5 * attempt)
+
+        return False, f"Physical hardware read-back timeout verifying slot 0x{mem_int:04X} on {clean_addr}", None
 
 
     async def get_device_aldb(self, address: str, force_refresh: bool = False) -> List[ALDBRecordResponse]:
@@ -1319,7 +1447,7 @@ class InsteonManager:
         plm_addr_upper = plm_info.address.upper()
         for r in plm_rec_dicts:
             t_addr = str(r.get("target_address", "")).upper().strip()
-            if r.get("in_use", True) and t_addr and t_addr not in ("00.00.00", plm_addr_upper):
+            if r.get("in_use", True) and t_addr and t_addr not in ("00.00.00", plm_addr_upper) and t_addr not in KNOWN_RETIRED_ADDRESSES:
                 discovered_addresses.add(t_addr)
                 if r.get("group") == 0 and int(r.get("data1", 0)) > 0:
                     plm_cat_hints[t_addr] = (
@@ -1330,14 +1458,14 @@ class InsteonManager:
 
         for addr in pyinsteon.devices:
             a_str = str(addr).upper().strip()
-            if a_str and a_str != plm_addr_upper:
+            if a_str and a_str != plm_addr_upper and a_str not in KNOWN_RETIRED_ADDRESSES:
                 discovered_addresses.add(a_str)
 
         # Ensure all known active devices from previous snapshot are always crawled
         for d in prev_snapshot.get("devices", []):
             if self.is_active_snapshot_device(d):
                 d_addr = str(d.get("address", "")).upper().strip()
-                if d_addr and d_addr != plm_addr_upper:
+                if d_addr and d_addr != plm_addr_upper and d_addr not in KNOWN_RETIRED_ADDRESSES:
                     discovered_addresses.add(d_addr)
 
         sorted_addresses = sorted(discovered_addresses)
@@ -1458,7 +1586,7 @@ class InsteonManager:
                     self._drain_outbound_queue()
 
             dev_engine = getattr(device, "engine_version", EngineVersion.UNKNOWN)
-            use_peek_poke = dev_engine == EngineVersion.I1
+            use_peek_poke = (dev_engine == EngineVersion.I1) or is_recovery
             max_attempts = 4
             for attempt in range(1, max_attempts + 1):
                 get_health(addr_obj).record_success()
@@ -1476,9 +1604,9 @@ class InsteonManager:
                     self._drain_outbound_queue()
                 if device.aldb.is_loaded:
                     break
-                if len(device.aldb) == 0 and not use_peek_poke and dev_engine in (EngineVersion.I1, EngineVersion.I2):
+                if not use_peek_poke and (attempt >= 2 or len(device.aldb) == 0):
                     use_peek_poke = True
-                    logger.info(f"  -> {addr_str} ({friendly_label}): Switching to 10-byte Standard PEEK_POKE ({dev_engine.name} fallback)...")
+                    logger.info(f"  -> {addr_str} ({friendly_label}): Switching to 10-byte Standard PEEK_POKE fallback...")
                 elif attempt >= 3 and len(device.aldb) <= prev_rec_count:
                     break
                 await asyncio.sleep(1.2 * attempt)
@@ -1551,7 +1679,10 @@ class InsteonManager:
                 if recovered["records_count"] >= snapshot_data["devices"][dev_idx]["records_count"]:
                     snapshot_data["devices"][dev_idx] = recovered
                 self._save_snapshot(snapshot_data)
-                await asyncio.sleep(0.4)
+        snapshot_data["devices"] = [
+            d for d in snapshot_data["devices"]
+            if self.is_active_snapshot_device(d)
+        ]
 
         for d_entry in snapshot_data["devices"]:
             st = d_entry.get("status", "")
