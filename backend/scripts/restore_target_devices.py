@@ -78,11 +78,16 @@ async def restore_device_links(dry_run: bool = False):
         logger.info("\n[Dry-Run] No hardware modifications applied.")
         return
 
-    logger.info("\nAcquiring hardware session (pausing openHAB)...")
-    acquired = await session_manager.acquire_session(client_id="target_restoration_tool", lease_seconds=180)
-    if not acquired:
-        logger.error("Could not acquire hardware session! Hardware port locked.")
-        return
+    was_already_active = session_manager.is_active
+    prev_locked_by = session_manager.locked_by
+    if not was_already_active:
+        logger.info("\nAcquiring hardware session (pausing openHAB)...")
+        acquired = await session_manager.acquire_session(client_id="target_restoration_tool", lease_seconds=180)
+        if not acquired:
+            logger.error("Could not acquire hardware session! Hardware port locked.")
+            return
+    else:
+        logger.info(f"\nUsing active management session (held by '{prev_locked_by}'). openHAB remains paused.")
 
     try:
         snapshot = insteon_manager._load_snapshot() or {"devices": []}
@@ -164,9 +169,12 @@ async def restore_device_links(dry_run: bool = False):
                     logger.error(f"FAILED: {failed} slot(s) could not be written to {addr_str}.")
 
     finally:
-        logger.info("\nReleasing hardware session and restoring openHAB...")
-        await session_manager.release_session(force=True)
-        logger.info("Session released; openHAB restored to online.")
+        if not was_already_active:
+            logger.info("\nReleasing hardware session and restoring openHAB...")
+            await session_manager.release_session(force=True)
+            logger.info("Session released; openHAB restored to online.")
+        else:
+            logger.info(f"\nPreserving active management session for '{prev_locked_by}'.")
 
 
 if __name__ == "__main__":

@@ -16,8 +16,8 @@ class Settings(BaseSettings):
     mock_mode: bool = False
 
     # Safety Watchdog Settings
-    # Auto-release lease after N seconds of silence to ensure openHAB is never left locked out
-    session_timeout_seconds: int = 45
+    # Auto-release lease after 120 seconds of silence to ensure openHAB is never left locked out if GUI crashes
+    session_timeout_seconds: int = 120
 
 
     # Cache directory for pyinsteon device/ALDB state

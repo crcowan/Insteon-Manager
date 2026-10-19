@@ -154,6 +154,19 @@ class InsteonManager:
         self.is_connected = False
         self._lock = asyncio.Lock()
         self._mock_mode = False
+        self._busy_count = 0
+
+    @property
+    def is_busy(self) -> bool:
+        """Return True if an Insteon hardware operation is actively executing."""
+        return self._busy_count > 0 or self._lock.locked()
+
+    def set_busy(self, busy: bool = True):
+        """Track active hardware operations to prevent lease timeouts during long calls."""
+        if busy:
+            self._busy_count += 1
+        else:
+            self._busy_count = max(0, self._busy_count - 1)
 
     async def connect(self, retries: int = 3, retry_delay: float = 2.0) -> bool:
         """Connect to the Insteon PLM over the configured serial port."""

@@ -1205,7 +1205,12 @@ public class MainViewModel : ViewModelBase
         var status = await _apiClient.GetSessionStatusAsync();
         if (status != null)
         {
-            IsSessionActive = status.IsActive && status.LockedBy == _clientId;
+            if (_isSessionActive && status.IsActive && status.LockedBy != _clientId)
+            {
+                // Active session held by backend tool; renew lease for this GUI client
+                _ = _apiClient.SendHeartbeatAsync(_clientId);
+            }
+            IsSessionActive = status.IsActive && (_isSessionActive || status.LockedBy == _clientId);
             RemainingLeaseSeconds = status.LeaseExpiresInSeconds ?? 0;
 
             if (status.IsActive)
@@ -1332,7 +1337,7 @@ public class MainViewModel : ViewModelBase
             var renewed = await _apiClient.SendHeartbeatAsync(_clientId);
             if (renewed)
             {
-                AddLog(LogLevel.Info, "Watchdog", "Heartbeat acknowledged. 300s lease extended.");
+                AddLog(LogLevel.Info, "Watchdog", "Heartbeat acknowledged. Hardware lease extended.");
             }
             else
             {

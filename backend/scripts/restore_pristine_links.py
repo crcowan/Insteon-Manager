@@ -239,11 +239,16 @@ async def execute_link_restoration(
     from app.session import session_manager
     from app.insteon import insteon_manager
 
-    logger.info("Acquiring hardware session and pausing openHAB...")
-    acquired = await session_manager.acquire_session(client_id="network_restore_utility", lease_seconds=180)
-    if not acquired:
-        logger.error("Could not acquire hardware session. Is openHAB or another client locking the port?")
-        return
+    was_already_active = session_manager.is_active
+    prev_locked_by = session_manager.locked_by
+    if not was_already_active:
+        logger.info("Acquiring hardware session and pausing openHAB...")
+        acquired = await session_manager.acquire_session(client_id="network_restore_utility", lease_seconds=180)
+        if not acquired:
+            logger.error("Could not acquire hardware session. Is openHAB or another client locking the port?")
+            return
+    else:
+        logger.info(f"Using active management session (held by '{prev_locked_by}'). openHAB remains paused.")
 
     try:
         # Group items by device
@@ -319,9 +324,12 @@ async def execute_link_restoration(
                     logger.error(f"FAILED: {failed} slot(s) could not be written to {addr_str} EEPROM.")
 
     finally:
-        logger.info("Releasing hardware session and restoring openHAB...")
-        await session_manager.release_session(force=True)
-        logger.info("Link restoration procedure complete.")
+        if not was_already_active:
+            logger.info("Releasing hardware session and restoring openHAB...")
+            await session_manager.release_session(force=True)
+            logger.info("Link restoration procedure complete.")
+        else:
+            logger.info(f"Operation complete. Preserving active management session for '{prev_locked_by}'.")
 
 
 

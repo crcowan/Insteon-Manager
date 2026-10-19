@@ -182,12 +182,16 @@ async def run_diagnostics(device_addresses: List[str]):
     logger.info("   READ-ONLY INSTEON HARDWARE DIAGNOSTIC TOOL     ")
     logger.info("==================================================")
     logger.info(f"Target Devices: {', '.join(device_addresses)}")
-    logger.info("Acquiring hardware session (pausing openHAB)...")
-
-    acquired = await session_manager.acquire_session(client_id="diagnostic_reader", lease_seconds=120)
-    if not acquired:
-        logger.error("Could not acquire hardware session! Port may be locked.")
-        return
+    was_already_active = session_manager.is_active
+    prev_locked_by = session_manager.locked_by
+    if not was_already_active:
+        logger.info("Acquiring hardware session (pausing openHAB)...")
+        acquired = await session_manager.acquire_session(client_id="diagnostic_reader", lease_seconds=120)
+        if not acquired:
+            logger.error("Could not acquire hardware session! Port may be locked.")
+            return
+    else:
+        logger.info(f"Using active management session (held by '{prev_locked_by}'). openHAB remains paused.")
 
     reports = []
     try:
@@ -196,9 +200,12 @@ async def run_diagnostics(device_addresses: List[str]):
             reports.append(rep)
             await asyncio.sleep(0.5)
     finally:
-        logger.info("Releasing hardware session and restoring openHAB...")
-        await session_manager.release_session(force=True)
-        logger.info("Hardware released; openHAB restored.")
+        if not was_already_active:
+            logger.info("Releasing hardware session and restoring openHAB...")
+            await session_manager.release_session(force=True)
+            logger.info("Hardware released; openHAB restored.")
+        else:
+            logger.info(f"Diagnostics complete. Preserving active management session for '{prev_locked_by}'.")
 
     # Print Summary Report
     print("\n" + "=" * 60)

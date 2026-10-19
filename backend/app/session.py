@@ -49,6 +49,11 @@ class SessionManager:
 
                 now = time.time()
                 if self.is_active and self.lease_expires_at:
+                    # While a hardware operation is actively executing, never terminate the lease
+                    if getattr(insteon_manager, "is_busy", False):
+                        self.lease_expires_at = now + settings.session_timeout_seconds
+                        continue
+
                     if now > self.lease_expires_at:
                         logger.warning(
                             f"Session lease for '{self.locked_by}' expired! "
@@ -168,29 +173,33 @@ class SessionManager:
 
     async def _do_release_hardware(self):
         """Internal helper to disconnect pyinsteon and re-enable openHAB."""
-        # Step 1: Disconnect pyinsteon
-        logger.info("Step 1/2: Disconnecting pyinsteon...")
+        self._is_transitioning = True
         try:
-            await insteon_manager.disconnect()
-        except Exception as exc:
-            logger.error(f"Error disconnecting pyinsteon during release: {exc}")
+            # Step 1: Disconnect pyinsteon
+            logger.info("Step 1/2: Disconnecting pyinsteon...")
+            try:
+                await insteon_manager.disconnect()
+            except Exception as exc:
+                logger.error(f"Error disconnecting pyinsteon during release: {exc}")
 
-        # Allow OS serial driver 0.5s to close port on real hardware
-        if not settings.is_simulator:
-            await asyncio.sleep(0.5)
+            # Allow OS serial driver 0.5s to close port on real hardware
+            if not settings.is_simulator:
+                await asyncio.sleep(0.5)
 
-        # Step 2: Re-enable openHAB Insteon Thing
-        logger.info("Step 2/2: Re-enabling openHAB Insteon Thing...")
-        try:
-            await openhab_client.set_thing_enabled(True)
-        except Exception as exc:
-            logger.error(f"Error re-enabling openHAB Insteon Thing: {exc}")
+            # Step 2: Re-enable openHAB Insteon Thing
+            logger.info("Step 2/2: Re-enabling openHAB Insteon Thing...")
+            try:
+                await openhab_client.set_thing_enabled(True)
+            except Exception as exc:
+                logger.error(f"Error re-enabling openHAB Insteon Thing: {exc}")
 
-        self.is_active = False
-        self.locked_by = None
-        self.lease_expires_at = None
-        self.last_heartbeat_time = None
-        logger.info("Hardware released and openHAB restored.")
+            self.is_active = False
+            self.locked_by = None
+            self.lease_expires_at = None
+            self.last_heartbeat_time = None
+            logger.info("Hardware released and openHAB restored.")
+        finally:
+            self._is_transitioning = False
 
     async def get_status(self) -> SessionStatusResponse:
         """Return combined status of session, pyinsteon, and openHAB."""
