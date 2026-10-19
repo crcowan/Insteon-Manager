@@ -618,7 +618,8 @@ class InsteonManager:
         if clean_addr == modem_addr:
             if not modem or not hasattr(modem, "aldb"):
                 return False, "PLM modem object not found", None
-            for r in modem.aldb.values():
+            plm_records = [rec for _, rec in modem.aldb.items()] if hasattr(modem.aldb, "items") else []
+            for r in plm_records:
                 if expected_in_use:
                     if r.is_in_use and str(r.target).upper() == clean_target and r.group == expected_group and bool(r.is_controller) == expected_controller:
                         return True, "PLM record verified in memory/modem", {"mem_addr": f"0x{r.mem_addr:04X}"}
