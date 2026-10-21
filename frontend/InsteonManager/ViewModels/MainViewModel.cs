@@ -109,6 +109,7 @@ public class MainViewModel : ViewModelBase
         StartSessionCommand = new AsyncRelayCommand(StartSessionAsync, () => !IsSessionActive && !IsLoading);
         EndSessionCommand = new AsyncRelayCommand(EndSessionAsync, () => IsSessionActive && !IsLoading);
         QueryAldbCommand = new AsyncRelayCommand(() => QueryAldbAsync(false), () => !IsLoading);
+        PullFullNetworkFromHardwareCommand = new AsyncRelayCommand(PullFullNetworkFromHardwareAsync, () => !IsLoading);
         RefreshDeviceAldbCommand = new AsyncRelayCommand<object>(RefreshSingleDeviceAldbAsync, _ => !IsLoading);
         ForceRestoreOpenhabCommand = new AsyncRelayCommand(ForceRestoreOpenhabAsync, () => !IsLoading);
         CheckConnectionCommand = new AsyncRelayCommand(CheckStatusAsync, () => !IsLoading);
@@ -154,11 +155,19 @@ public class MainViewModel : ViewModelBase
         TriggerSceneOffCommand = new AsyncRelayCommand(() => TriggerSelectedSceneAsync("off"), () => SelectedScene != null && !IsLoading);
         TriggerSceneFastOnCommand = new AsyncRelayCommand(() => TriggerSelectedSceneAsync("fast_on"), () => SelectedScene != null && !IsLoading);
         TriggerSceneFastOffCommand = new AsyncRelayCommand(() => TriggerSelectedSceneAsync("fast_off"), () => SelectedScene != null && !IsLoading);
+        OpenAddDeviceToSceneDialogCommand = new RelayCommand(OpenAddDeviceToSceneDialog, () => SelectedScene != null && !IsLoading);
+        CancelAddDeviceToSceneCommand = new RelayCommand(CancelAddDeviceToScene);
+        AddDeviceToSceneNowCommand = new AsyncRelayCommand(AddDeviceToSceneNowAsync, () => SelectedScene != null && SelectedDeviceToAddToScene != null && !IsLoading);
+        RemoveMemberFromSceneCommand = new AsyncRelayCommand<SceneMemberModel>(RemoveMemberFromSceneAsync, member => member != null && SelectedScene != null && !IsLoading);
+        OpenCreateSceneDialogCommand = new RelayCommand(OpenCreateSceneDialog, () => !IsLoading);
+        CancelCreateSceneCommand = new RelayCommand(CancelCreateScene);
+        CreateSceneNowCommand = new AsyncRelayCommand(CreateSceneNowAsync, () => !IsLoading);
+        DeleteSceneCommand = new AsyncRelayCommand(DeleteSceneAsync, () => SelectedScene != null && !IsLoading && SelectedScene.Group > 1);
         PurgeSelectedGhostTargetCommand = new AsyncRelayCommand(PurgeSelectedGhostTargetAsync, () => !string.IsNullOrEmpty(SelectedGhostTarget) && !IsLoading);
         ExecuteDeviceReplaceCommand = new AsyncRelayCommand(ExecuteDeviceReplaceAsync, () => !string.IsNullOrEmpty(ReplaceOldDeviceAddress) && !string.IsNullOrEmpty(ReplaceNewDeviceAddress) && !IsLoading);
         CreateReciprocalLinkCommand = new AsyncRelayCommand(CreateReciprocalLinkAsync, () => !string.IsNullOrEmpty(NewLinkControllerAddress) && !string.IsNullOrEmpty(NewLinkResponderAddress) && !IsLoading);
         DeleteReciprocalLinkCommand = new AsyncRelayCommand(DeleteReciprocalLinkAsync, () => !string.IsNullOrEmpty(DeleteLinkControllerAddress) && !string.IsNullOrEmpty(DeleteLinkResponderAddress) && !IsLoading && !IsProtectedPlmLink(DeleteLinkControllerAddress, DeleteLinkResponderAddress, DeleteLinkGroup));
-        DeleteLinkFromEntryCommand = new AsyncRelayCommand<OrganizedAldbEntry>(DeleteLinkFromEntryAsync, entry => entry != null && !IsLoading && !entry.IsProtectedPlmLink);
+        DeleteLinkFromEntryCommand = new AsyncRelayCommand<OrganizedAldbEntry>(DeleteLinkFromEntryAsync, entry => entry != null && !IsLoading && (!entry.IsProtectedPlmLink || entry.IsDuplicate));
 
         ControlDeviceCommand = new AsyncRelayCommand<string>(ControlDeviceFromStringAsync, _ => !IsLoading);
         ControlSelectedNodeCommand = new AsyncRelayCommand<string>(ControlSelectedNodeAsync, _ => SelectedGraphNode != null && !IsLoading);
@@ -497,6 +506,7 @@ public class MainViewModel : ViewModelBase
         ? "Stop session: Disconnects pyinsteon and restores openHAB Insteon Thing back to ONLINE." 
         : "Start session: Pauses openHAB Insteon Thing and connects pyinsteon to USB PLM for management.";
     public AsyncRelayCommand QueryAldbCommand { get; }
+    public AsyncRelayCommand PullFullNetworkFromHardwareCommand { get; }
     public AsyncRelayCommand<object> RefreshDeviceAldbCommand { get; }
     public AsyncRelayCommand ForceRestoreOpenhabCommand { get; }
     public AsyncRelayCommand CheckConnectionCommand { get; }
@@ -527,6 +537,14 @@ public class MainViewModel : ViewModelBase
     public AsyncRelayCommand TriggerSceneOffCommand { get; }
     public AsyncRelayCommand TriggerSceneFastOnCommand { get; }
     public AsyncRelayCommand TriggerSceneFastOffCommand { get; }
+    public RelayCommand OpenAddDeviceToSceneDialogCommand { get; }
+    public RelayCommand CancelAddDeviceToSceneCommand { get; }
+    public AsyncRelayCommand AddDeviceToSceneNowCommand { get; }
+    public AsyncRelayCommand<SceneMemberModel> RemoveMemberFromSceneCommand { get; }
+    public RelayCommand OpenCreateSceneDialogCommand { get; }
+    public RelayCommand CancelCreateSceneCommand { get; }
+    public AsyncRelayCommand CreateSceneNowCommand { get; }
+    public AsyncRelayCommand DeleteSceneCommand { get; }
     public AsyncRelayCommand PurgeSelectedGhostTargetCommand { get; }
     public AsyncRelayCommand ExecuteDeviceReplaceCommand { get; }
     public AsyncRelayCommand CreateReciprocalLinkCommand { get; }
@@ -770,8 +788,94 @@ public class MainViewModel : ViewModelBase
     public SceneModel? SelectedScene
     {
         get => _selectedScene;
-        set => SetProperty(ref _selectedScene, value);
+        set
+        {
+            if (SetProperty(ref _selectedScene, value))
+            {
+                OnPropertyChanged(nameof(HasSelectedScene));
+                TriggerSceneOnCommand?.NotifyCanExecuteChanged();
+                TriggerSceneOffCommand?.NotifyCanExecuteChanged();
+                TriggerSceneFastOnCommand?.NotifyCanExecuteChanged();
+                TriggerSceneFastOffCommand?.NotifyCanExecuteChanged();
+                OpenAddDeviceToSceneDialogCommand?.NotifyCanExecuteChanged();
+                AddDeviceToSceneNowCommand?.NotifyCanExecuteChanged();
+                DeleteSceneCommand?.NotifyCanExecuteChanged();
+                IsAddingMemberToScene = false;
+            }
+        }
     }
+
+    public bool HasSelectedScene => SelectedScene != null;
+
+    private bool _isCreatingScene;
+    public bool IsCreatingScene
+    {
+        get => _isCreatingScene;
+        set => SetProperty(ref _isCreatingScene, value);
+    }
+
+    private string _newSceneName = "";
+    public string NewSceneName
+    {
+        get => _newSceneName;
+        set => SetProperty(ref _newSceneName, value);
+    }
+
+    private string _newSceneGroupText = "";
+    public string NewSceneGroupText
+    {
+        get => _newSceneGroupText;
+        set => SetProperty(ref _newSceneGroupText, value);
+    }
+
+    private bool _isAddingMemberToScene;
+    public bool IsAddingMemberToScene
+    {
+        get => _isAddingMemberToScene;
+        set => SetProperty(ref _isAddingMemberToScene, value);
+    }
+
+    private DeviceLookupItem? _selectedDeviceToAddToScene;
+    public DeviceLookupItem? SelectedDeviceToAddToScene
+    {
+        get => _selectedDeviceToAddToScene;
+        set
+        {
+            if (SetProperty(ref _selectedDeviceToAddToScene, value))
+            {
+                AddDeviceToSceneNowCommand?.NotifyCanExecuteChanged();
+            }
+        }
+    }
+
+    private int _newSceneMemberOnLevel = 255;
+    public int NewSceneMemberOnLevel
+    {
+        get => _newSceneMemberOnLevel;
+        set
+        {
+            if (SetProperty(ref _newSceneMemberOnLevel, Math.Clamp(value, 0, 255)))
+            {
+                OnPropertyChanged(nameof(NewSceneMemberBrightnessPercentText));
+            }
+        }
+    }
+
+    private int _newSceneMemberRampRate = 28;
+    public int NewSceneMemberRampRate
+    {
+        get => _newSceneMemberRampRate;
+        set
+        {
+            if (SetProperty(ref _newSceneMemberRampRate, Math.Clamp(value, 0, 255)))
+            {
+                OnPropertyChanged(nameof(NewSceneMemberRampRateSecondsText));
+            }
+        }
+    }
+
+    public string NewSceneMemberBrightnessPercentText => $"{Math.Round((_newSceneMemberOnLevel / 255.0) * 100.0, 0):F0}% ({_newSceneMemberOnLevel}/255)";
+    public string NewSceneMemberRampRateSecondsText => DecodeRampRate(_newSceneMemberRampRate);
 
     private string _sceneFilterText = string.Empty;
     public string SceneFilterText
@@ -1266,6 +1370,37 @@ public class MainViewModel : ViewModelBase
         }
     }
 
+    public async Task<bool> EnsureSessionActiveAsync(string actionDescription)
+    {
+        if (IsSessionActive) return true;
+
+        var result = MessageBox.Show(
+            $"An exclusive Management Session is required to {actionDescription}.\n\n" +
+            "Starting a session will temporarily pause openHAB's Insteon Thing to grant exclusive communication access to the Insteon USB modem.\n\n" +
+            "Would you like to start a management session now?",
+            "Management Session Required",
+            MessageBoxButton.YesNo,
+            MessageBoxImage.Question
+        );
+
+        if (result != MessageBoxResult.Yes)
+        {
+            StatusMessage = $"Operation canceled: Management session required to {actionDescription}.";
+            AddLog(LogLevel.Warning, "SessionManager", $"Hardware write aborted: Management session required to {actionDescription}.");
+            return false;
+        }
+
+        await StartSessionAsync();
+        if (!IsSessionActive)
+        {
+            StatusMessage = "Failed to start management session. Operation aborted.";
+            AddLog(LogLevel.Error, "SessionManager", $"Could not acquire management session to {actionDescription}.");
+            return false;
+        }
+
+        return true;
+    }
+
     private async Task StartSessionAsync()
     {
         IsLoading = true;
@@ -1344,6 +1479,58 @@ public class MainViewModel : ViewModelBase
                 StatusMessage = "Warning: Failed to renew session lease with backend.";
                 AddLog(LogLevel.Warning, "Watchdog", "Heartbeat rejected or backend unreachable.");
             }
+        }
+    }
+
+    public async Task PullFullNetworkFromHardwareAsync()
+    {
+        if (!await EnsureSessionActiveAsync("pull full network state directly from physical silicon")) return;
+
+        var confirm = MessageBox.Show(
+            "This will crawl the PLM modem and all line-powered devices in your house over the powerline to read their actual physical EEPROM memory.\n\n" +
+            "This takes approximately 15-30 seconds and will update the database to match 100% of physical hardware reality.\n\n" +
+            "Proceed with full hardware pull?",
+            "Confirm Full Hardware Sweep",
+            MessageBoxButton.YesNo,
+            MessageBoxImage.Question
+        );
+        if (confirm != MessageBoxResult.Yes) return;
+
+        IsLoading = true;
+        StatusMessage = "Performing full hardware network crawl across powerline silicon...";
+        AddLog(LogLevel.Info, "HardwareSweep", "Initiating full network crawl: querying PLM and all line-powered devices directly over powerline...");
+
+        try
+        {
+            var (success, message) = await _apiClient.PullNetworkFromHardwareAsync(forceFull: true);
+            if (success)
+            {
+                AddLog(LogLevel.Success, "HardwareSweep", message);
+                await QueryAldbAsync(silent: false);
+                await RunNetworkAnalysisAsync(silent: false);
+                StatusMessage = "Full hardware pull complete: Database is in 100% parity with physical silicon.";
+                MessageBox.Show(
+                    message + "\n\nDatabase snapshot and topology map have been updated to match physical silicon.",
+                    "Hardware Pull Complete",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Information
+                );
+            }
+            else
+            {
+                AddLog(LogLevel.Error, "HardwareSweep", message);
+                StatusMessage = $"Hardware pull failed: {message}";
+                MessageBox.Show(message, "Hardware Pull Notice", MessageBoxButton.OK, MessageBoxImage.Warning);
+            }
+        }
+        catch (Exception ex)
+        {
+            AddLog(LogLevel.Error, "HardwareSweep", $"Error during hardware pull: {ex.Message}");
+            StatusMessage = $"Hardware pull failed: {ex.Message}";
+        }
+        finally
+        {
+            IsLoading = false;
         }
     }
 
@@ -1879,6 +2066,8 @@ public class MainViewModel : ViewModelBase
                 if (!seenCtrl.Add(key))
                 {
                     entry.IsDuplicate = true;
+                    // Redundant duplicate copies of PLM links are not protected; they can and should be cleaned up
+                    entry.IsProtectedPlmLink = false;
                 }
             }
 
@@ -1897,6 +2086,8 @@ public class MainViewModel : ViewModelBase
                 if (!seenResp.Add(key))
                 {
                     entry.IsDuplicate = true;
+                    // Redundant duplicate copies of PLM links are not protected; they can and should be cleaned up
+                    entry.IsProtectedPlmLink = false;
                 }
             }
 
@@ -2437,10 +2628,8 @@ public class MainViewModel : ViewModelBase
             return;
         }
 
-        if (ForceRefreshHardware && !IsSessionActive)
+        if (!await EnsureSessionActiveAsync($"commit {itemsToCommit.Count} staged network changes to hardware"))
         {
-            StatusMessage = "Hardware writes require an active management session. Please click 'Start Management Session' first.";
-            AddLog(LogLevel.Warning, "Commit", "Commit blocked: Active hardware session required when Force Refresh Hardware is enabled.");
             return;
         }
 
@@ -2572,6 +2761,7 @@ public class MainViewModel : ViewModelBase
     {
         try
         {
+            int? currentGroup = SelectedScene?.Group;
             var scenesList = await _apiClient.GetScenesAsync();
             Scenes.Clear();
             foreach (var sc in scenesList)
@@ -2580,7 +2770,11 @@ public class MainViewModel : ViewModelBase
             }
             ApplySceneFilter();
 
-            if (SelectedScene == null && FilteredScenes.Count > 0)
+            if (currentGroup.HasValue)
+            {
+                SelectedScene = FilteredScenes.FirstOrDefault(s => s.Group == currentGroup.Value) ?? FilteredScenes.FirstOrDefault();
+            }
+            else if (SelectedScene == null && FilteredScenes.Count > 0)
             {
                 SelectedScene = FilteredScenes[0];
             }
@@ -2617,6 +2811,8 @@ public class MainViewModel : ViewModelBase
     public async Task TriggerSelectedSceneAsync(string action)
     {
         if (SelectedScene == null) return;
+        if (!await EnsureSessionActiveAsync($"trigger Scene {SelectedScene.Group} ({action.ToUpper()})")) return;
+
         IsLoading = true;
         StatusMessage = $"Triggering Scene {SelectedScene.Group} ({action.ToUpper()})...";
         AddLog(LogLevel.Info, "Scenes", $"Transmitting All-Link broadcast for Scene {SelectedScene.Group} ({action})...");
@@ -2648,6 +2844,8 @@ public class MainViewModel : ViewModelBase
     public async Task UpdateMemberPresetAsync(SceneMemberModel member)
     {
         if (SelectedScene == null || member == null) return;
+        if (!await EnsureSessionActiveAsync($"update Scene {SelectedScene.Group} preset on {member.Label} ({member.Address})")) return;
+
         IsLoading = true;
         StatusMessage = $"Updating preset for {member.Label} in Scene {SelectedScene.Group}...";
         AddLog(LogLevel.Info, "Scenes", $"Surgically updating preset for {member.Address} in Scene {SelectedScene.Group}: Level={member.OnLevel}, Ramp={member.RampRate}...");
@@ -2702,6 +2900,283 @@ public class MainViewModel : ViewModelBase
         {
             StatusMessage = $"Preset update failed: {ex.Message}";
             AddLog(LogLevel.Error, "Scenes", $"Preset update failed: {ex.Message}");
+        }
+        finally
+        {
+            IsLoading = false;
+        }
+    }
+
+    public void OpenAddDeviceToSceneDialog()
+    {
+        if (SelectedScene == null) return;
+        IsAddingMemberToScene = true;
+        NewSceneMemberOnLevel = 255;
+        NewSceneMemberRampRate = 28;
+
+        if (DeviceLookupChoices.Count > 0)
+        {
+            var existingAddrs = new HashSet<string>(
+                SelectedScene.Members.Select(m => m.Address.ToUpperInvariant()),
+                StringComparer.OrdinalIgnoreCase
+            );
+            var plmAddr = (PlmModemAddress ?? "53.C1.42").ToUpperInvariant();
+            var candidate = DeviceLookupChoices.FirstOrDefault(d =>
+                !existingAddrs.Contains(d.Address.ToUpperInvariant()) &&
+                !d.Address.ToUpperInvariant().Equals(plmAddr)
+            );
+            SelectedDeviceToAddToScene = candidate ?? DeviceLookupChoices.FirstOrDefault();
+        }
+    }
+
+    public void CancelAddDeviceToScene()
+    {
+        IsAddingMemberToScene = false;
+    }
+
+    public async Task AddDeviceToSceneNowAsync()
+    {
+        if (SelectedScene == null || SelectedDeviceToAddToScene == null) return;
+
+        var dev = SelectedDeviceToAddToScene;
+        if (SelectedScene.Members.Any(m => m.Address.Equals(dev.Address, StringComparison.OrdinalIgnoreCase)))
+        {
+            MessageBox.Show(
+                $"{dev.FriendlyName} ({dev.Address}) is already a member of Scene {SelectedScene.Group}.\n\nYou can adjust its brightness and ramp rate directly using the sliders below.",
+                "Device Already in Scene",
+                MessageBoxButton.OK,
+                MessageBoxImage.Information
+            );
+            return;
+        }
+
+        if (!await EnsureSessionActiveAsync($"add {dev.FriendlyName} ({dev.Address}) to Scene {SelectedScene.Group}"))
+        {
+            return;
+        }
+
+        IsLoading = true;
+        StatusMessage = $"Adding {dev.FriendlyName} to Scene {SelectedScene.Group}...";
+        AddLog(LogLevel.Info, "Scenes", $"Adding {dev.FriendlyName} ({dev.Address}) to Scene {SelectedScene.Group} with Level={NewSceneMemberOnLevel}, Ramp={NewSceneMemberRampRate}...");
+
+        try
+        {
+            var req = new SceneMemberAddRequestModel
+            {
+                Address = dev.Address,
+                OnLevel = NewSceneMemberOnLevel,
+                RampRate = NewSceneMemberRampRate,
+                ButtonGroup = 1
+            };
+
+            var (success, msg) = await _apiClient.AddSceneMemberAsync(SelectedScene.Group, req);
+            if (success)
+            {
+                StatusMessage = msg;
+                AddLog(LogLevel.Success, "Scenes", msg);
+                IsAddingMemberToScene = false;
+                await LoadScenesAsync(silent: true);
+                await QueryAldbAsync(silent: true);
+            }
+            else
+            {
+                StatusMessage = $"Failed to add device to scene: {msg}";
+                AddLog(LogLevel.Error, "Scenes", msg);
+            }
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = $"Error adding device to scene: {ex.Message}";
+            AddLog(LogLevel.Error, "Scenes", ex.Message);
+        }
+        finally
+        {
+            IsLoading = false;
+        }
+    }
+
+    public async Task RemoveMemberFromSceneAsync(SceneMemberModel? member)
+    {
+        if (SelectedScene == null || member == null) return;
+
+        var result = MessageBox.Show(
+            $"Are you sure you want to remove {member.Label} ({member.Address}) from Scene {SelectedScene.Group}?\n\n" +
+            "This will remove the responder link from the device's EEPROM and remove the corresponding controller link(s) on the scene controller(s).",
+            "Confirm Remove Scene Member",
+            MessageBoxButton.YesNo,
+            MessageBoxImage.Warning
+        );
+
+        if (result != MessageBoxResult.Yes) return;
+
+        if (!await EnsureSessionActiveAsync($"remove {member.Label} ({member.Address}) from Scene {SelectedScene.Group}"))
+        {
+            return;
+        }
+
+        IsLoading = true;
+        StatusMessage = $"Removing {member.Label} from Scene {SelectedScene.Group}...";
+        AddLog(LogLevel.Info, "Scenes", $"Removing responder {member.Address} from Scene {SelectedScene.Group}...");
+
+        try
+        {
+            var (success, msg) = await _apiClient.RemoveSceneMemberAsync(SelectedScene.Group, member.Address);
+            if (success)
+            {
+                StatusMessage = msg;
+                AddLog(LogLevel.Success, "Scenes", msg);
+                await LoadScenesAsync(silent: true);
+                await QueryAldbAsync(silent: true);
+            }
+            else
+            {
+                StatusMessage = $"Failed to remove device from scene: {msg}";
+                AddLog(LogLevel.Error, "Scenes", msg);
+            }
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = $"Error removing device from scene: {ex.Message}";
+            AddLog(LogLevel.Error, "Scenes", ex.Message);
+        }
+        finally
+        {
+            IsLoading = false;
+        }
+    }
+
+    public void OpenCreateSceneDialog()
+    {
+        IsCreatingScene = true;
+        NewSceneName = "";
+        NewSceneGroupText = "";
+    }
+
+    public void CancelCreateScene()
+    {
+        IsCreatingScene = false;
+        NewSceneName = "";
+        NewSceneGroupText = "";
+    }
+
+    public async Task CreateSceneNowAsync()
+    {
+        if (string.IsNullOrWhiteSpace(NewSceneName))
+        {
+            MessageBox.Show("Please enter a name for the new scene.", "Scene Name Required", MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+
+        int? groupNum = null;
+        if (!string.IsNullOrWhiteSpace(NewSceneGroupText))
+        {
+            if (!int.TryParse(NewSceneGroupText.Trim(), out int parsed) || parsed < 2 || parsed > 254)
+            {
+                MessageBox.Show("Group number must be between 2 and 254 (0 and 1 are reserved). Leave empty to automatically assign the next available group.", "Invalid Group Number", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+            groupNum = parsed;
+        }
+
+        if (!await EnsureSessionActiveAsync($"create scene '{NewSceneName}'"))
+        {
+            return;
+        }
+
+        IsLoading = true;
+        StatusMessage = $"Creating scene '{NewSceneName}'...";
+        AddLog(LogLevel.Info, "Scenes", $"Creating scene '{NewSceneName}'" + (groupNum.HasValue ? $" with Group {groupNum.Value}" : " (auto-assign group)") + "...");
+
+        try
+        {
+            var req = new SceneCreateRequestModel
+            {
+                Name = NewSceneName.Trim(),
+                Group = groupNum
+            };
+
+            var (success, msg) = await _apiClient.CreateSceneAsync(req);
+            if (success)
+            {
+                StatusMessage = msg;
+                AddLog(LogLevel.Success, "Scenes", msg);
+                IsCreatingScene = false;
+                NewSceneName = "";
+                NewSceneGroupText = "";
+                await LoadScenesAsync(silent: true);
+                await QueryAldbAsync(silent: true);
+            }
+            else
+            {
+                StatusMessage = $"Failed to create scene: {msg}";
+                AddLog(LogLevel.Error, "Scenes", msg);
+                MessageBox.Show($"Failed to create scene:\n\n{msg}", "Create Scene Failed", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = $"Error creating scene: {ex.Message}";
+            AddLog(LogLevel.Error, "Scenes", ex.Message);
+            MessageBox.Show($"Error creating scene:\n\n{ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
+        finally
+        {
+            IsLoading = false;
+        }
+    }
+
+    public async Task DeleteSceneAsync()
+    {
+        if (SelectedScene == null) return;
+
+        if (SelectedScene.Group <= 1)
+        {
+            MessageBox.Show("Scene 0 and Scene 1 are protected core Insteon system groups and cannot be deleted.", "Protected Scene", MessageBoxButton.OK, MessageBoxImage.Warning);
+            return;
+        }
+
+        var result = MessageBox.Show(
+            $"Are you sure you want to permanently delete Scene {SelectedScene.Group} (\"{SelectedScene.Name}\")?\n\n" +
+            $"This will delete all responder links on all {SelectedScene.Members.Count} member device(s), remove controller links on the PLM/keypads, and remove the scene definition.",
+            $"Confirm Delete Scene {SelectedScene.Group}",
+            MessageBoxButton.YesNo,
+            MessageBoxImage.Warning
+        );
+
+        if (result != MessageBoxResult.Yes) return;
+
+        if (!await EnsureSessionActiveAsync($"delete Scene {SelectedScene.Group} (\"{SelectedScene.Name}\")"))
+        {
+            return;
+        }
+
+        IsLoading = true;
+        StatusMessage = $"Deleting Scene {SelectedScene.Group}...";
+        AddLog(LogLevel.Warning, "Scenes", $"Deleting Scene {SelectedScene.Group} (\"{SelectedScene.Name}\") across all hardware records...");
+
+        try
+        {
+            var (success, msg) = await _apiClient.DeleteSceneAsync(SelectedScene.Group);
+            if (success)
+            {
+                StatusMessage = msg;
+                AddLog(LogLevel.Success, "Scenes", msg);
+                SelectedScene = null;
+                await LoadScenesAsync(silent: true);
+                await QueryAldbAsync(silent: true);
+            }
+            else
+            {
+                StatusMessage = $"Failed to delete scene: {msg}";
+                AddLog(LogLevel.Error, "Scenes", msg);
+                MessageBox.Show($"Failed to delete scene:\n\n{msg}", "Delete Scene Failed", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = $"Error deleting scene: {ex.Message}";
+            AddLog(LogLevel.Error, "Scenes", ex.Message);
+            MessageBox.Show($"Error deleting scene:\n\n{ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
         }
         finally
         {
@@ -2795,6 +3270,8 @@ public class MainViewModel : ViewModelBase
             return;
         }
 
+        if (!await EnsureSessionActiveAsync($"purge all ghost references to {targetAddr} across network hardware")) return;
+
         IsLoading = true;
         StatusMessage = $"Purging all ghost references to {targetAddr} across the network...";
         AddLog(LogLevel.Warning, "NetworkTools", $"Initiating network-wide purge of orphan references to {targetAddr}...");
@@ -2831,6 +3308,8 @@ public class MainViewModel : ViewModelBase
             StatusMessage = "Both old and new device addresses are required for replacement.";
             return;
         }
+
+        if (!await EnsureSessionActiveAsync($"replace device {ReplaceOldDeviceAddress} with {ReplaceNewDeviceAddress} on hardware")) return;
 
         IsLoading = true;
         StatusMessage = $"Executing 'Clone & Swap' replacement: {ReplaceOldDeviceAddress} -> {ReplaceNewDeviceAddress}...";
@@ -2876,6 +3355,8 @@ public class MainViewModel : ViewModelBase
             StatusMessage = "Both controller and responder addresses are required.";
             return;
         }
+
+        if (!await EnsureSessionActiveAsync($"create reciprocal link between {NewLinkControllerAddress} and {NewLinkResponderAddress}")) return;
 
         IsLoading = true;
         StatusMessage = $"Creating verified reciprocal link: {NewLinkControllerAddress} <-> {NewLinkResponderAddress} for Group {NewLinkGroup}...";
@@ -2945,6 +3426,8 @@ public class MainViewModel : ViewModelBase
 
         if (result != MessageBoxResult.Yes) return;
 
+        if (!await EnsureSessionActiveAsync($"delete reciprocal link between {DeleteLinkControllerAddress} and {DeleteLinkResponderAddress}")) return;
+
         IsLoading = true;
         StatusMessage = $"Deleting reciprocal link: {DeleteLinkControllerAddress} <-> {DeleteLinkResponderAddress} (Group {DeleteLinkGroup})...";
         AddLog(LogLevel.Warning, "LinkDeleter", $"Initiating atomic deletion of link between {DeleteLinkControllerAddress} and {DeleteLinkResponderAddress} (Group {DeleteLinkGroup})...");
@@ -2985,7 +3468,7 @@ public class MainViewModel : ViewModelBase
     {
         if (entry == null) return;
 
-        if (entry.IsProtectedPlmLink)
+        if (entry.IsProtectedPlmLink && !entry.IsDuplicate)
         {
             MessageBox.Show(
                 $"Action Blocked: This record (Slot {entry.MemAddr}, Group {entry.Group} with PLM {PlmModemAddress}) is a protected core communication link required for openHAB control and hardware operation. It cannot be deleted.",
@@ -2996,6 +3479,8 @@ public class MainViewModel : ViewModelBase
             StatusMessage = $"Cannot delete protected Group {entry.Group} PLM link.";
             return;
         }
+
+        if (!await EnsureSessionActiveAsync($"delete link record {entry.MemAddr} on {entry.OwnerFriendlyName} ({entry.OwnerAddress})")) return;
 
         if (entry.IsDuplicate || entry.IsGroupZero)
         {
@@ -3197,6 +3682,7 @@ public class MainViewModel : ViewModelBase
     public async Task ExecuteDeviceControlAsync(string address, string action, int level = 255)
     {
         if (string.IsNullOrWhiteSpace(address)) return;
+        if (!await EnsureSessionActiveAsync($"send '{action}' command to device {address}")) return;
 
         StatusMessage = $"Sending '{action}' command to {address}...";
         AddLog(LogLevel.Info, "DeviceControl", $"Dispatching '{action}' (level={level}) to {address}...");
@@ -3226,6 +3712,8 @@ public class MainViewModel : ViewModelBase
     {
         if (SelectedQuickScene == null) return;
         var act = string.IsNullOrWhiteSpace(action) ? "on" : action.Trim().ToLower();
+
+        if (!await EnsureSessionActiveAsync($"trigger Scene {SelectedQuickScene.Group} ({act.ToUpper()})")) return;
 
         StatusMessage = $"Triggering Scene {SelectedQuickScene.Group} ({SelectedQuickScene.Name}) with '{act}'...";
         AddLog(LogLevel.Info, "SceneTrigger", $"Broadcasting All-Link '{act}' to Scene {SelectedQuickScene.Group}...");
@@ -3522,6 +4010,7 @@ public class MainViewModel : ViewModelBase
 
         string cleanAddr = InsteonAddressHelper.Normalize(NewDeviceAddress);
         string name = string.IsNullOrWhiteSpace(NewDeviceName) ? $"Device {cleanAddr}" : NewDeviceName.Trim();
+
         var catOption = SelectedDeviceCategory ?? DeviceCategoryOptions.FirstOrDefault();
         int cat = catOption?.Cat ?? 1;
         int subcat = catOption?.Subcat ?? 0;
@@ -3569,6 +4058,9 @@ public class MainViewModel : ViewModelBase
 
         string cleanAddr = InsteonAddressHelper.Normalize(NewDeviceAddress);
         string name = string.IsNullOrWhiteSpace(NewDeviceName) ? $"Device {cleanAddr}" : NewDeviceName.Trim();
+
+        if (!await EnsureSessionActiveAsync($"add device {cleanAddr} ({name}) to network")) return;
+
         var catOption = SelectedDeviceCategory ?? DeviceCategoryOptions.FirstOrDefault();
         int cat = catOption?.Cat ?? 1;
         int subcat = catOption?.Subcat ?? 0;
@@ -3705,6 +4197,8 @@ public class MainViewModel : ViewModelBase
     public async Task FixNetworkIssueAsync(NetworkIssueItemModel? issue)
     {
         if (issue == null) return;
+        if (!await EnsureSessionActiveAsync($"resolve network issue '{issue.Summary}'")) return;
+
         IsLoading = true;
         StatusMessage = $"Executing fix for {issue.Summary}...";
         AddLog(LogLevel.Info, "Analyzer", $"Executing fix for issue: {issue.Summary} ({issue.RecommendedAction}).");
@@ -3780,6 +4274,16 @@ public class MainViewModel : ViewModelBase
                 var res = await _apiClient.PurgeGhostLinksAsync(issue.TargetAddress);
                 success = res.Success;
                 message = res.Message;
+            }
+            else if (issue.RecommendedAction == "delete_scene")
+            {
+                var res = await _apiClient.DeleteSceneAsync(issue.Group);
+                success = res.Success;
+                message = res.Message;
+                if (success)
+                {
+                    await LoadScenesAsync(silent: true);
+                }
             }
 
             if (success)
@@ -4069,6 +4573,7 @@ public class MainViewModel : ViewModelBase
                 var (success, _) = await _apiClient.CreateReciprocalLinkAsync(req);
                 if (success) repaired++;
                 else failed++;
+                await Task.Delay(1000);
             }
 
             StatusMessage = $"Batch auto-fix complete: {repaired} repaired, {failed} failed.";

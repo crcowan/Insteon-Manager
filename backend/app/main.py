@@ -20,8 +20,10 @@ from app.models import (
     GenericResponse,
     OpenhabStatusResponse,
     SceneResponse,
+    SceneCreateRequest,
     SceneMemberModel,
     SceneMemberUpdateRequest,
+    SceneMemberAddRequest,
     SceneTriggerRequest,
     ReciprocalLinkRequest,
     DeviceReplaceRequest,
@@ -349,6 +351,11 @@ async def get_device_aldb(
 @app.post("/insteon/devices/{address}/control", response_model=GenericResponse)
 async def control_device(address: str, req: DeviceControlRequest):
     """Trigger device action: on, off, fast_on, fast_off, dim / set_level."""
+    if not session_manager.is_active and not settings.is_simulator:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Active session required before controlling Insteon hardware directly. Call POST /session/acquire first.",
+        )
     try:
         ok = await insteon_manager.control_device(
             address=address,
@@ -397,6 +404,36 @@ async def get_all_scenes():
         raise HTTPException(status_code=500, detail=str(exc))
 
 
+@app.post("/insteon/scenes", response_model=GenericResponse)
+async def create_scene(req: SceneCreateRequest):
+    """Create a new Insteon scene with friendly name, group allocation, and optional initial members."""
+    if not session_manager.is_active and not settings.is_simulator:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Active session lock required before creating scenes on hardware. Call POST /session/acquire first.",
+        )
+    try:
+        return await scene_service.create_scene(req=req)
+    except Exception as exc:
+        logger.error(f"Error creating scene: {exc}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@app.delete("/insteon/scenes/{group}", response_model=GenericResponse)
+async def delete_scene(group: int):
+    """Completely delete an Insteon scene across all devices and the PLM."""
+    if not session_manager.is_active and not settings.is_simulator:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Active session lock required before deleting scenes from hardware. Call POST /session/acquire first.",
+        )
+    try:
+        return await scene_service.delete_scene(group=group)
+    except Exception as exc:
+        logger.error(f"Error deleting scene {group}: {exc}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
 @app.get("/insteon/scenes/{group}", response_model=SceneResponse)
 async def get_scene(group: int):
     """Get full details of a single scene."""
@@ -409,18 +446,60 @@ async def get_scene(group: int):
 @app.patch("/insteon/scenes/{group}/members/{address}", response_model=SceneMemberModel)
 async def update_scene_member_preset(group: int, address: str, update: SceneMemberUpdateRequest):
     """Surgically adjust On-Level (brightness) or Ramp Rate for a single device in a scene."""
+    if not session_manager.is_active and not settings.is_simulator:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Active session lock required before writing scene presets to hardware. Call POST /session/acquire first.",
+        )
     try:
         return await scene_service.update_scene_member_preset(group=group, address=address, update=update)
     except ValueError as val_err:
         raise HTTPException(status_code=404, detail=str(val_err))
+    except RuntimeError as run_err:
+        raise HTTPException(status_code=502, detail=str(run_err))
     except Exception as exc:
         logger.error(f"Error updating scene {group} member {address}: {exc}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@app.post("/insteon/scenes/{group}/members", response_model=GenericResponse)
+async def add_scene_member(group: int, req: SceneMemberAddRequest):
+    """Add a responder device to an Insteon scene with verified reciprocal link creation."""
+    if not session_manager.is_active and not settings.is_simulator:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Active session lock required before adding scene members to hardware. Call POST /session/acquire first.",
+        )
+    try:
+        return await scene_service.add_scene_member(group=group, req=req)
+    except Exception as exc:
+        logger.error(f"Error adding member {req.address} to scene {group}: {exc}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@app.delete("/insteon/scenes/{group}/members/{address}", response_model=GenericResponse)
+async def delete_scene_member(group: int, address: str):
+    """Remove a responder device from an Insteon scene with verified reciprocal link deletion."""
+    if not session_manager.is_active and not settings.is_simulator:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Active session lock required before removing scene members from hardware. Call POST /session/acquire first.",
+        )
+    try:
+        return await scene_service.remove_scene_member(group=group, address=address)
+    except Exception as exc:
+        logger.error(f"Error removing member {address} from scene {group}: {exc}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(exc))
 
 
 @app.post("/insteon/scenes/{group}/trigger", response_model=GenericResponse)
 async def trigger_scene(group: int, req: SceneTriggerRequest):
     """Broadcast an All-Link command (on/off) to trigger a scene live."""
+    if not session_manager.is_active and not settings.is_simulator:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Active session lock required before triggering scenes on hardware. Call POST /session/acquire first.",
+        )
     try:
         ok = await scene_service.trigger_scene(group=group, action=req.action)
         return GenericResponse(
@@ -438,6 +517,11 @@ async def trigger_scene(group: int, req: SceneTriggerRequest):
 @app.post("/insteon/links", response_model=GenericResponse)
 async def create_reciprocal_link(req: ReciprocalLinkRequest):
     """Atomically create a reciprocal link pair (Controller <-> Responder) with rollback."""
+    if not session_manager.is_active and not settings.is_simulator:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Active session lock required before creating links on hardware. Call POST /session/acquire first.",
+        )
     try:
         return await transaction_service.create_reciprocal_link(req)
     except Exception as exc:
@@ -452,6 +536,11 @@ async def delete_reciprocal_link(
     group: int = Query(..., ge=0, le=255, description="Scene/All-Link group"),
 ):
     """Atomically remove a reciprocal link pair from both devices."""
+    if not session_manager.is_active and not settings.is_simulator:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Active session lock required before deleting links from hardware. Call POST /session/acquire first.",
+        )
     try:
         return await transaction_service.delete_reciprocal_link(
             ctrl_addr=controller_address,
@@ -466,6 +555,11 @@ async def delete_reciprocal_link(
 @app.delete("/insteon/devices/{address}/aldb/{mem_addr}", response_model=GenericResponse)
 async def delete_device_aldb_record(address: str, mem_addr: str):
     """Mark an individual ALDB slot deleted (in_use=False) on a device."""
+    if not session_manager.is_active and not settings.is_simulator:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Active session lock required before deleting ALDB slots on hardware. Call POST /session/acquire first.",
+        )
     try:
         return await transaction_service.delete_device_aldb_record(address=address, mem_addr=mem_addr)
     except Exception as exc:
@@ -476,6 +570,11 @@ async def delete_device_aldb_record(address: str, mem_addr: str):
 @app.post("/insteon/devices/replace", response_model=GenericResponse)
 async def replace_device(req: DeviceReplaceRequest):
     """Execute 'Clone & Swap' replacement: clone links to new device and retarget all peers and PLM."""
+    if not session_manager.is_active and not settings.is_simulator:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Active session lock required before replacing devices on hardware. Call POST /session/acquire first.",
+        )
     try:
         return await transaction_service.replace_device(req)
     except Exception as exc:
@@ -486,6 +585,11 @@ async def replace_device(req: DeviceReplaceRequest):
 @app.post("/insteon/purge-ghosts/{target_address}", response_model=GenericResponse)
 async def purge_ghost_links(target_address: str):
     """Eradicate all references across the network pointing to a retired/dead device (e.g. 2C.E7.EF)."""
+    if not session_manager.is_active and not settings.is_simulator:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Active session lock required before purging ghost links on hardware. Call POST /session/acquire first.",
+        )
     try:
         return await transaction_service.purge_ghost_links(target_address=target_address)
     except Exception as exc:
@@ -506,6 +610,11 @@ async def audit_default_links():
 @app.post("/insteon/devices/add", response_model=GenericResponse)
 async def add_device(req: DeviceAddRequest):
     """Add a new device to the Insteon network and automatically create default reciprocal links with the PLM."""
+    if not session_manager.is_active and not settings.is_simulator:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Active session lock required before adding a device to hardware. Call POST /session/acquire first.",
+        )
     try:
         return await transaction_service.add_device(req)
     except Exception as exc:
@@ -529,6 +638,11 @@ async def restore_pristine_network(
     all_devices: bool = Query(False, description="Restore across all powered devices"),
 ):
     """Surgically restore legitimate links to active PLM (53.C1.42) and peers, while keeping ghosts purged."""
+    if not dry_run and not session_manager.is_active and not settings.is_simulator:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Active session lock required before executing hardware link restorations. Call POST /session/acquire first.",
+        )
     try:
         from scripts.restore_pristine_links import execute_link_restoration
         await execute_link_restoration(dry_run=dry_run, all_devices=all_devices)
@@ -544,6 +658,11 @@ async def restore_pristine_network(
 @app.post("/insteon/network/restore-targets", response_model=GenericResponse)
 async def restore_targets_network(dry_run: bool = Query(False, description="Dry-run simulation only")):
     """Surgically re-enable missing Controller and scene links on Dining Room Spots and Hall Copper."""
+    if not dry_run and not session_manager.is_active and not settings.is_simulator:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Active session lock required before executing hardware link restorations. Call POST /session/acquire first.",
+        )
     try:
         from scripts.restore_target_devices import restore_device_links
         await restore_device_links(dry_run=dry_run)
@@ -553,6 +672,30 @@ async def restore_targets_network(dry_run: bool = Query(False, description="Dry-
         )
     except Exception as exc:
         logger.error(f"Error restoring target devices: {exc}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@app.post("/insteon/network/pull-hardware", response_model=GenericResponse)
+async def pull_hardware_network(force_full: bool = Query(True, description="Force full read of all devices")):
+    """Crawl PLM and all discovered line-powered devices directly from physical silicon."""
+    if not session_manager.is_active and not settings.is_simulator:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Active session required before querying physical hardware. Call POST /session/acquire first.",
+        )
+    try:
+        res = await insteon_manager.pull_network_from_hardware(force_full=force_full)
+        stats = res.get("stats", {})
+        return GenericResponse(
+            success=True,
+            message=(
+                f"Hardware pull complete: {stats.get('devices_success', 0)} devices OK, "
+                f"{stats.get('total_aldb_records', 0)} total ALDB records captured directly from silicon."
+            ),
+            data=stats,
+        )
+    except Exception as exc:
+        logger.error(f"Error pulling network from hardware: {exc}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(exc))
 
 

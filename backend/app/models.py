@@ -105,6 +105,14 @@ class SceneMemberUpdateRequest(BaseModel):
     ramp_rate: Optional[int] = Field(default=None, ge=0, le=255, description="New ramp rate 0-255")
 
 
+class SceneMemberAddRequest(BaseModel):
+    address: str = Field(description="Responder device address to add to the scene")
+    on_level: int = Field(default=255, ge=0, le=255, description="Initial brightness on-level (0-255)")
+    ramp_rate: int = Field(default=28, ge=0, le=255, description="Initial ramp rate (0-31 for dimmers, 255 for relays)")
+    button_group: int = Field(default=1, description="Sub-button or channel 1-8")
+    controller_address: Optional[str] = Field(default=None, description="Specific controller address (defaults to all scene controllers, or PLM)")
+
+
 
 class SceneTriggerRequest(BaseModel):
     action: str = Field(default="on", description="'on', 'off', 'fast_on', 'fast_off'")

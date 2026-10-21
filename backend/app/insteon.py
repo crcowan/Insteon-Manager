@@ -331,8 +331,22 @@ class InsteonManager:
         except Exception:
             pass
 
-    async def _fast_ping_and_db_delta(self, addr_obj, timeout: float = 4.5):
-        """Send a 10-byte Standard StatusRequest (0x19) to verify reachability and capture db_delta."""
+    async def _fast_ping_and_db_delta(self, addr_obj, timeout: float = 4.5, is_battery: bool = False):
+        """Send a standard ping to verify reachability. For battery/remote devices, uses 0x0F Ping; for mains loads, uses 0x19 StatusRequest."""
+        if is_battery:
+            from pyinsteon.handlers.to_device.ping import PingCommand
+            cmd = PingCommand(addr_obj)
+            try:
+                res = await asyncio.wait_for(cmd.async_send(), timeout=timeout)
+                if res == ResponseStatus.SUCCESS:
+                    get_health(addr_obj).record_success()
+                    return True, None, None
+            except asyncio.TimeoutError:
+                self._drain_outbound_queue()
+            except Exception:
+                pass
+            return False, None, None
+
         db_delta_holder: List[Optional[int]] = [None]
         on_level_holder: List[Optional[int]] = [None]
 
@@ -365,7 +379,7 @@ class InsteonManager:
 
         async def _clean_peek(target_mem: int):
             # Allow any multi-hop powerline/RF echo from the previous peek to arrive and drain it
-            await asyncio.sleep(0.18)
+            await asyncio.sleep(0.25)
             try:
                 pm = getattr(rm, "_peek_manager", None)
                 if pm and hasattr(pm, "_peek_value_queue"):
@@ -603,6 +617,8 @@ class InsteonManager:
         expected_group: int,
         expected_controller: bool,
         expected_in_use: bool,
+        expected_data1: Optional[int] = None,
+        expected_data2: Optional[int] = None,
         timeout: float = 6.0,
     ) -> Tuple[bool, str, Optional[Dict[str, Any]]]:
         """Perform a live read-back from physical device EEPROM to verify that a write or deletion actually took effect."""
@@ -618,11 +634,43 @@ class InsteonManager:
         if clean_addr == modem_addr:
             if not modem or not hasattr(modem, "aldb"):
                 return False, "PLM modem object not found", None
+            
+            mem_int = None
+            if mem_addr is not None:
+                try:
+                    mem_int = int(str(mem_addr), 16) if str(mem_addr).upper().startswith("0X") else int(mem_addr)
+                except Exception:
+                    mem_int = None
+
+            # If specific slot mem_addr is provided on PLM, check that slot directly
+            if mem_int is not None and hasattr(modem.aldb, "get"):
+                target_rec = modem.aldb.get(mem_int)
+                if target_rec is not None:
+                    if expected_in_use:
+                        if target_rec.is_in_use and str(target_rec.target).upper() == clean_target and target_rec.group == expected_group:
+                            return True, "PLM record verified in memory/modem", {
+                                "mem_addr": f"0x{target_rec.mem_addr:04X}",
+                                "data1": int(getattr(target_rec, "data1", 0) or 0),
+                                "data2": int(getattr(target_rec, "data2", 0) or 0),
+                            }
+                    else:
+                        if not target_rec.is_in_use:
+                            return True, "PLM record verified deleted", {"mem_addr": f"0x{target_rec.mem_addr:04X}"}
+                        return False, f"PLM record at {mem_int:#06x} is still marked in_use on modem", None
+
             plm_records = [rec for _, rec in modem.aldb.items()] if hasattr(modem.aldb, "items") else []
             for r in plm_records:
                 if expected_in_use:
                     if r.is_in_use and str(r.target).upper() == clean_target and r.group == expected_group and bool(r.is_controller) == expected_controller:
-                        return True, "PLM record verified in memory/modem", {"mem_addr": f"0x{r.mem_addr:04X}"}
+                        if expected_data1 is not None and int(getattr(r, "data1", 0) or 0) != int(expected_data1):
+                            continue
+                        if expected_data2 is not None and int(getattr(r, "data2", 0) or 0) != int(expected_data2):
+                            continue
+                        return True, "PLM record verified in memory/modem", {
+                            "mem_addr": f"0x{r.mem_addr:04X}",
+                            "data1": int(getattr(r, "data1", 0) or 0),
+                            "data2": int(getattr(r, "data2", 0) or 0),
+                        }
                 else:
                     if str(r.target).upper() == clean_target and r.group == expected_group and bool(r.is_controller) == expected_controller:
                         if not r.is_in_use:
@@ -645,21 +693,56 @@ class InsteonManager:
                         if not expected_in_use:
                             if not rec.is_in_use or rec.is_high_water_mark:
                                 return True, f"Slot 0x{mem_int:04X} verified deleted on silicon (in_use=False)", None
+                            if attempt < 3:
+                                self._drain_outbound_queue()
+                                await asyncio.sleep(0.5 * attempt)
+                                continue
                             return False, f"Slot 0x{mem_int:04X} on {clean_addr} still has in_use=True on hardware silicon", None
                         else:
                             if not rec.is_in_use:
+                                if attempt < 3:
+                                    self._drain_outbound_queue()
+                                    await asyncio.sleep(0.5 * attempt)
+                                    continue
                                 return False, f"Slot 0x{mem_int:04X} on {clean_addr} has in_use=False on hardware silicon", None
                             if str(rec.target).upper() != clean_target:
+                                if attempt < 3:
+                                    logger.warning(
+                                        f"Verification attempt {attempt}/3 on {clean_addr} slot 0x{mem_int:04X} "
+                                        f"read target {rec.target} (expected {clean_target}); draining and retrying peek..."
+                                    )
+                                    self._drain_outbound_queue()
+                                    await asyncio.sleep(0.6 * attempt)
+                                    continue
                                 return False, f"Slot 0x{mem_int:04X} on {clean_addr} targets {rec.target}, expected {clean_target}", None
                             if rec.group != expected_group:
+                                if attempt < 3:
+                                    logger.warning(
+                                        f"Verification attempt {attempt}/3 on {clean_addr} slot 0x{mem_int:04X} "
+                                        f"read group {rec.group} (expected {expected_group}); draining and retrying peek..."
+                                    )
+                                    self._drain_outbound_queue()
+                                    await asyncio.sleep(0.6 * attempt)
+                                    continue
                                 return False, f"Slot 0x{mem_int:04X} on {clean_addr} has group {rec.group}, expected {expected_group}", None
                             if bool(rec.is_controller) != expected_controller:
+                                if attempt < 3:
+                                    self._drain_outbound_queue()
+                                    await asyncio.sleep(0.5 * attempt)
+                                    continue
                                 return False, f"Slot 0x{mem_int:04X} on {clean_addr} has controller={rec.is_controller}, expected {expected_controller}", None
+                            if expected_data1 is not None and int(getattr(rec, "data1", 0) or 0) != int(expected_data1):
+                                return False, f"Slot 0x{mem_int:04X} on {clean_addr} has data1={rec.data1} (Level) on silicon, expected {expected_data1}", None
+                            if expected_data2 is not None and int(getattr(rec, "data2", 0) or 0) != int(expected_data2):
+                                return False, f"Slot 0x{mem_int:04X} on {clean_addr} has data2={rec.data2} (Ramp) on silicon, expected {expected_data2}", None
                             return True, f"Slot 0x{mem_int:04X} verified on physical hardware silicon", {
                                 "mem_addr": f"0x{mem_int:04X}",
                                 "target": clean_target,
                                 "group": expected_group,
                                 "is_controller": expected_controller,
+                                "data1": int(getattr(rec, "data1", 0) or 0),
+                                "data2": int(getattr(rec, "data2", 0) or 0),
+                                "data3": int(getattr(rec, "data3", 0) or 0),
                             }
             except asyncio.TimeoutError:
                 self._drain_outbound_queue()
@@ -1005,15 +1088,18 @@ class InsteonManager:
         addr_obj = Address(clean_addr)
         get_health(addr_obj).record_success()
 
-        ping_ok, live_delta, _ = await self._fast_ping_and_db_delta(addr_obj, timeout=5.5)
+        is_batt = bool((cached_dev or {}).get("is_battery", False)) or int((cached_dev or {}).get("cat", 1) or 1) in (0x00, 0x10)
+        desc = (cached_dev or {}).get("label") or (cached_dev or {}).get("description") or clean_addr
+        if "keypad" in desc.lower() or "remote" in desc.lower():
+            is_batt = True
+
+        ping_ok, live_delta, _ = await self._fast_ping_and_db_delta(addr_obj, timeout=5.5, is_battery=is_batt)
         if not ping_ok:
-            is_batt = bool((cached_dev or {}).get("is_battery", False)) or int((cached_dev or {}).get("cat", 1) or 1) in (0x00, 0x10)
-            desc = (cached_dev or {}).get("label") or (cached_dev or {}).get("description") or clean_addr
-            if is_batt or "keypad" in desc.lower() or "remote" in desc.lower():
+            if is_batt:
                 return (
                     False,
                     None,
-                    f"Device {clean_addr} ({desc}) did not respond to ping. If it is a battery-powered Mini Keypad/Remote, hold its Set button to wake it before writing to hardware.",
+                    f"Device {clean_addr} ({desc}) did not respond to ping. If it is a battery-powered Mini Keypad/Remote, hold its Set button for 3 seconds to wake it before writing to hardware.",
                 )
             return (
                 False,

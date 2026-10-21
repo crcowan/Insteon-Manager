@@ -304,3 +304,36 @@ public class DeviceReplaceRequestModel
     [JsonPropertyName("sanitize_old")]
     public bool SanitizeOld { get; set; } = false;
 }
+
+public class SceneMemberAddRequestModel
+{
+    [JsonPropertyName("address")]
+    public string Address { get; set; } = string.Empty;
+
+    [JsonPropertyName("on_level")]
+    public int OnLevel { get; set; } = 255;
+
+    [JsonPropertyName("ramp_rate")]
+    public int RampRate { get; set; } = 28;
+
+    [JsonPropertyName("button_group")]
+    public int ButtonGroup { get; set; } = 1;
+
+    [JsonPropertyName("controller_address")]
+    public string? ControllerAddress { get; set; }
+}
+
+public class SceneCreateRequestModel
+{
+    [JsonPropertyName("group")]
+    public int? Group { get; set; }
+
+    [JsonPropertyName("name")]
+    public string Name { get; set; } = string.Empty;
+
+    [JsonPropertyName("controller_addresses")]
+    public List<string> ControllerAddresses { get; set; } = new();
+
+    [JsonPropertyName("members")]
+    public List<SceneMemberAddRequestModel> Members { get; set; } = new();
+}

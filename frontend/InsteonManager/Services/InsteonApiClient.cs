@@ -123,6 +123,25 @@ public class InsteonApiClient
         }
     }
 
+    public async Task<(bool Success, string Message)> PullNetworkFromHardwareAsync(bool forceFull = true)
+    {
+        try
+        {
+            var response = await _httpClient.PostAsync($"{_baseUrl}/insteon/network/pull-hardware?force_full={forceFull.ToString().ToLower()}", null);
+            var content = await response.Content.ReadAsStringAsync();
+            if (response.IsSuccessStatusCode)
+            {
+                var res = JsonSerializer.Deserialize<GenericApiResponse>(content);
+                return (res?.Success ?? true, res?.Message ?? "Network pulled from hardware successfully");
+            }
+            return (false, $"HTTP {(int)response.StatusCode}: {content}");
+        }
+        catch (Exception ex)
+        {
+            return (false, $"Network pull failed: {ex.Message}");
+        }
+    }
+
     public async Task<List<AldbRecordModel>> GetDeviceAldbAsync(string address, bool forceRefresh = true)
     {
         try
@@ -192,6 +211,82 @@ public class InsteonApiClient
         catch (Exception ex)
         {
             throw new InvalidOperationException($"Failed to update preset for {address} in Scene {group}: {ex.Message}", ex);
+        }
+    }
+
+    public async Task<(bool Success, string Message)> AddSceneMemberAsync(int group, SceneMemberAddRequestModel req)
+    {
+        try
+        {
+            var response = await _httpClient.PostAsJsonAsync($"{_baseUrl}/insteon/scenes/{group}/members", req);
+            var content = await response.Content.ReadAsStringAsync();
+            if (response.IsSuccessStatusCode)
+            {
+                var res = JsonSerializer.Deserialize<GenericApiResponse>(content);
+                return (res?.Success ?? true, res?.Message ?? $"Device {req.Address} added to Scene {group}");
+            }
+            return (false, $"HTTP {(int)response.StatusCode}: {content}");
+        }
+        catch (Exception ex)
+        {
+            return (false, $"Add scene member error: {ex.Message}");
+        }
+    }
+
+    public async Task<(bool Success, string Message)> RemoveSceneMemberAsync(int group, string address)
+    {
+        try
+        {
+            var response = await _httpClient.DeleteAsync($"{_baseUrl}/insteon/scenes/{group}/members/{Uri.EscapeDataString(address)}");
+            var content = await response.Content.ReadAsStringAsync();
+            if (response.IsSuccessStatusCode)
+            {
+                var res = JsonSerializer.Deserialize<GenericApiResponse>(content);
+                return (res?.Success ?? true, res?.Message ?? $"Device {address} removed from Scene {group}");
+            }
+            return (false, $"HTTP {(int)response.StatusCode}: {content}");
+        }
+        catch (Exception ex)
+        {
+            return (false, $"Remove scene member error: {ex.Message}");
+        }
+    }
+
+    public async Task<(bool Success, string Message)> CreateSceneAsync(SceneCreateRequestModel req)
+    {
+        try
+        {
+            var response = await _httpClient.PostAsJsonAsync($"{_baseUrl}/insteon/scenes", req);
+            var content = await response.Content.ReadAsStringAsync();
+            if (response.IsSuccessStatusCode)
+            {
+                var res = JsonSerializer.Deserialize<GenericApiResponse>(content);
+                return (res?.Success ?? true, res?.Message ?? $"Scene '{req.Name}' created successfully");
+            }
+            return (false, $"HTTP {(int)response.StatusCode}: {content}");
+        }
+        catch (Exception ex)
+        {
+            return (false, $"Create scene error: {ex.Message}");
+        }
+    }
+
+    public async Task<(bool Success, string Message)> DeleteSceneAsync(int group)
+    {
+        try
+        {
+            var response = await _httpClient.DeleteAsync($"{_baseUrl}/insteon/scenes/{group}");
+            var content = await response.Content.ReadAsStringAsync();
+            if (response.IsSuccessStatusCode)
+            {
+                var res = JsonSerializer.Deserialize<GenericApiResponse>(content);
+                return (res?.Success ?? true, res?.Message ?? $"Scene {group} deleted successfully");
+            }
+            return (false, $"HTTP {(int)response.StatusCode}: {content}");
+        }
+        catch (Exception ex)
+        {
+            return (false, $"Delete scene error: {ex.Message}");
         }
     }
 

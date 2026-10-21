@@ -10,8 +10,8 @@ Write-Host "==> Ensuring directories exist on ${piHost}..." -ForegroundColor Cya
 ssh "${piUser}@${piHost}" "mkdir -p ${destDir}/app/services ${destDir}/scripts ${destDir}/snapshots ~/golden_snapshots"
 
 Write-Host "==> Uploading Python modules to ${piHost}:${destDir}/app/ ..." -ForegroundColor Cyan
-scp "$repoRoot\backend\app\config.py" "$repoRoot\backend\app\insteon.py" "$repoRoot\backend\app\main.py" "$repoRoot\backend\app\session.py" "${piUser}@${piHost}:${destDir}/app/"
-scp "$repoRoot\backend\app\services\transaction_service.py" "${piUser}@${piHost}:${destDir}/app/services/"
+scp "$repoRoot\backend\app\config.py" "$repoRoot\backend\app\insteon.py" "$repoRoot\backend\app\main.py" "$repoRoot\backend\app\models.py" "$repoRoot\backend\app\session.py" "${piUser}@${piHost}:${destDir}/app/"
+scp "$repoRoot\backend\app\services\transaction_service.py" "$repoRoot\backend\app\services\scene_service.py" "${piUser}@${piHost}:${destDir}/app/services/"
 
 Write-Host "==> Uploading diagnostic & restoration scripts to ${piHost}:${destDir}/scripts/ and ${destDir}/ ..." -ForegroundColor Cyan
 scp "$repoRoot\backend\scripts\restore_pristine_links.py" "$repoRoot\backend\scripts\diagnose_devices.py" "$repoRoot\backend\scripts\restore_target_devices.py" "${piUser}@${piHost}:${destDir}/scripts/"

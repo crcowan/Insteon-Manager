@@ -160,6 +160,14 @@ class TransactionService:
         from app.insteon import insteon_manager
         live_hw = insteon_manager.is_connected and not insteon_manager._mock_mode and PYINSTEON_AVAILABLE
 
+        # STRICT GUARD: Never perform offline fantasy link mutations in production
+        if not settings.is_simulator and not live_hw:
+            logger.error(f"Cannot create reciprocal link {ctrl_addr} <-> {resp_addr}: No active hardware session lock.")
+            return GenericResponse(
+                success=False,
+                message="Active hardware session lock required before creating links. Please start a session first so openHAB is paused.",
+            )
+
         # Step 1: Pre-flight reachability & ALDB seeding if live hardware is active
         if live_hw:
             addr_ctrl = Address(ctrl_addr)
@@ -216,6 +224,8 @@ class TransactionService:
                     expected_group=grp,
                     expected_controller=True,
                     expected_in_use=True,
+                    expected_data1=ctrl_d1,
+                    expected_data2=ctrl_d2,
                 )
                 if not v_ok_c:
                     dev_ctrl.aldb.clear_pending()
@@ -259,6 +269,8 @@ class TransactionService:
                         expected_group=grp,
                         expected_controller=False,
                         expected_in_use=True,
+                        expected_data1=resp_d1,
+                        expected_data2=resp_d2,
                     )
                 else:
                     v_ok_r = True
@@ -346,6 +358,15 @@ class TransactionService:
 
         from app.insteon import insteon_manager
         live_hw = insteon_manager.is_connected and not insteon_manager._mock_mode and PYINSTEON_AVAILABLE
+
+        # STRICT GUARD: Never perform offline fantasy link deletions in production
+        if not settings.is_simulator and not live_hw:
+            logger.error(f"Cannot delete reciprocal link {ctrl_clean} <-> {resp_clean}: No active hardware session lock.")
+            return GenericResponse(
+                success=False,
+                message="Active hardware session lock required before deleting links. Please start a session first so openHAB is paused.",
+            )
+
         if live_hw:
             addr_ctrl = Address(ctrl_clean)
             addr_resp = Address(resp_clean)
@@ -368,9 +389,12 @@ class TransactionService:
                 dev_ctrl.aldb._status = ALDBStatus.LOADED
                 _, ctrl_failed = await dev_ctrl.aldb.async_write(force=True)
             if ctrl_failed:
-                return GenericResponse(success=False, message=f"Hardware write failed while deleting Controller record on {ctrl_clean}.")
+                dev_ctrl.aldb.clear_pending()
+                return GenericResponse(success=False, message=f"Hardware EEPROM write failed while deleting Controller record on {ctrl_clean}. Database was NOT modified.")
 
             # Live silicon verification for Controller deletion
+            v_ok_c = True
+            v_msg_c = ""
             for r in dev_ctrl.aldb.find(target=addr_resp, group=group, is_controller=True):
                 v_ok_c, v_msg_c, _ = await insteon_manager.verify_hardware_record(
                     address=ctrl_clean,
@@ -381,7 +405,15 @@ class TransactionService:
                     expected_in_use=False,
                 )
                 if not v_ok_c:
-                    logger.warning(f"Hardware silicon verification notice for controller deletion on {ctrl_clean}: {v_msg_c}")
+                    logger.error(f"Hardware silicon verification failed for controller deletion on {ctrl_clean}: {v_msg_c}")
+                    break
+
+            if not v_ok_c:
+                dev_ctrl.aldb.clear_pending()
+                return GenericResponse(
+                    success=False,
+                    message=f"Silicon deletion verification failed on controller {ctrl_clean}: {v_msg_c}. Snapshot database was NOT modified.",
+                )
 
             dev_resp.aldb._status = ALDBStatus.LOADED
             for rec in dev_resp.aldb.find(target=addr_ctrl, group=group, is_controller=False, in_use=True):
@@ -392,9 +424,18 @@ class TransactionService:
                 dev_resp.aldb._status = ALDBStatus.LOADED
                 _, resp_failed = await dev_resp.aldb.async_write(force=True)
             if resp_failed:
-                return GenericResponse(success=False, message=f"Hardware write failed while deleting Responder record on {resp_clean}.")
+                dev_resp.aldb.clear_pending()
+                if snapshot:
+                    self._mark_snapshot_record_deleted(snapshot, ctrl_clean, resp_clean, group, is_controller=True)
+                    self._save_snapshot(snapshot)
+                return GenericResponse(
+                    success=False,
+                    message=f"Hardware EEPROM write failed while deleting Responder record on {resp_clean}. Controller deletion on {ctrl_clean} was verified, but responder failed.",
+                )
 
             # Live silicon verification for Responder deletion
+            v_ok_r = True
+            v_msg_r = ""
             for r in dev_resp.aldb.find(target=addr_ctrl, group=group, is_controller=False):
                 v_ok_r, v_msg_r, _ = await insteon_manager.verify_hardware_record(
                     address=resp_clean,
@@ -405,7 +446,18 @@ class TransactionService:
                     expected_in_use=False,
                 )
                 if not v_ok_r:
-                    logger.warning(f"Hardware silicon verification notice for responder deletion on {resp_clean}: {v_msg_r}")
+                    logger.error(f"Hardware silicon verification failed for responder deletion on {resp_clean}: {v_msg_r}")
+                    break
+
+            if not v_ok_r:
+                dev_resp.aldb.clear_pending()
+                if snapshot:
+                    self._mark_snapshot_record_deleted(snapshot, ctrl_clean, resp_clean, group, is_controller=True)
+                    self._save_snapshot(snapshot)
+                return GenericResponse(
+                    success=False,
+                    message=f"Silicon deletion verification failed on responder {resp_clean}: {v_msg_r}. Controller on {ctrl_clean} confirmed deleted, but responder was NOT modified.",
+                )
 
             await insteon_manager.refresh_device_db_delta_after_write(ctrl_clean, snapshot)
             await insteon_manager.refresh_device_db_delta_after_write(resp_clean, snapshot)
@@ -431,42 +483,19 @@ class TransactionService:
 
         logger.info(f"Deleting ALDB slot {clean_mem} on device {clean_addr}...")
 
-        # Locate the target record metadata in snapshot first
-        target_snap_rec = None
-        records_list = None
-        plm_addr = snapshot.get("plm", {}).get("address", "53.C1.42").upper() if snapshot else "53.C1.42"
-        if snapshot:
-            if clean_addr == plm_addr:
-                records_list = snapshot.get("plm", {}).get("records", [])
-            else:
-                for d in snapshot.get("devices", []):
-                    if d.get("address", "").upper() == clean_addr:
-                        records_list = d.get("records", [])
-                        break
-            if records_list:
-                for r in records_list:
-                    if r.get("mem_addr", "").upper() == clean_mem:
-                        target_snap_rec = r
-                        break
-
-        # IMMUTABLE GUARD: Core PLM links (Group 0 I2CS Auth and Group 1 Status/Control) must never be deleted
-        if target_snap_rec is not None:
-            t_addr = str(target_snap_rec.get("target_address", "")).upper()
-            t_grp = int(target_snap_rec.get("group", 0))
-            if (clean_addr == plm_addr or t_addr == plm_addr) and t_grp in (0, 1):
-                logger.warning(
-                    f"BLOCKED: Attempt to delete protected PLM link slot {clean_mem} on {clean_addr} (target {t_addr}, Group {t_grp})."
-                )
-                return GenericResponse(
-                    success=False,
-                    message=(
-                        f"Protected Record Violation: Slot {clean_mem} on {clean_addr} is a core Group {t_grp} "
-                        f"PLM communication link and cannot be deleted."
-                    ),
-                )
-
         from app.insteon import insteon_manager
         live_hw = insteon_manager.is_connected and not insteon_manager._mock_mode and PYINSTEON_AVAILABLE
+
+        # STRICT GUARD: Never perform offline fantasy slot deletions in production
+        if not settings.is_simulator and not live_hw:
+            logger.error(f"Cannot delete slot {clean_mem} on {clean_addr}: No active hardware session lock.")
+            return GenericResponse(
+                success=False,
+                message=f"Active hardware session lock required before deleting slot {clean_mem} on {clean_addr}. Please start a session first so openHAB is paused.",
+            )
+
+        plm_addr = snapshot.get("plm", {}).get("address", "53.C1.42").upper() if snapshot else "53.C1.42"
+
         if live_hw:
             ok, dev_obj, err_msg = await insteon_manager.ensure_device_aldb_ready_for_write(clean_addr, snapshot)
             if not ok or not dev_obj:
@@ -475,53 +504,52 @@ class TransactionService:
             mem_int = int(clean_mem, 16) if clean_mem.startswith("0X") else int(clean_mem)
             rec = dev_obj.aldb.get(mem_int)
 
-            # On PLM ModemALDB, synthetic 0x1FFF addresses may shift across sessions; match by (target, group, controller) fallback
-            if rec is None and target_snap_rec is not None:
-                t_addr = Address(target_snap_rec.get("target_address", "00.00.00"))
-                t_grp = int(target_snap_rec.get("group", 0))
-                t_ctrl = bool(target_snap_rec.get("is_controller", False))
-                matches = list(dev_obj.aldb.find(target=t_addr, group=t_grp, is_controller=t_ctrl, in_use=True))
-                if matches:
-                    rec = matches[0]
-                    mem_int = rec.mem_addr
-
             if not rec:
                 return GenericResponse(
                     success=False,
                     message=f"Slot {clean_mem} was not found in live ALDB for {clean_addr}.",
                 )
 
-            # IMMUTABLE GUARD: Verify live record is not a protected PLM link
             rec_target = str(rec.target).upper()
             rec_group = int(getattr(rec, "group", 0))
-            if (clean_addr == plm_addr or rec_target == plm_addr) and rec_group in (0, 1):
-                logger.warning(
-                    f"BLOCKED: Attempt to delete live protected PLM link slot {clean_mem} on {clean_addr} (target {rec_target}, Group {rec_group})."
-                )
-                return GenericResponse(
-                    success=False,
-                    message=(
-                        f"Protected Record Violation: Live slot {clean_mem} on {clean_addr} is a core Group {rec_group} "
-                        f"PLM communication link and cannot be deleted."
-                    ),
-                )
+            rec_ctrl = bool(rec.is_controller)
+            rec_resp = bool(rec.is_responder)
 
-            # Safety check: Verify the live slot actually contains the intended target/group before deleting
-            if target_snap_rec is not None:
-                exp_tgt = str(target_snap_rec.get("target_address", "")).upper()
-                live_tgt = str(rec.target).upper()
-                if exp_tgt and live_tgt != exp_tgt:
-                    logger.error(
-                        f"Safety abort: Slot {clean_mem} on {clean_addr} contains target {live_tgt}, "
-                        f"which does not match expected target {exp_tgt}. Aborting deletion to prevent data loss."
+            # IMMUTABLE GUARD: Core PLM links (Group 0 I2CS Auth and Group 1 Status/Control) must never be deleted
+            # UNLESS it is a redundant duplicate and at least one other proper active link is guaranteed to remain!
+            if (clean_addr == plm_addr or rec_target == plm_addr) and rec_group in (0, 1):
+                live_other_proper_exists = False
+                for r_other_mem, r_other in dev_obj.aldb.items():
+                    if r_other_mem == mem_int:
+                        continue
+                    if (
+                        r_other.is_in_use
+                        and str(r_other.target).upper() == rec_target
+                        and int(getattr(r_other, "group", 0)) == rec_group
+                        and bool(r_other.is_controller) == rec_ctrl
+                        and bool(r_other.is_responder) == rec_resp
+                    ):
+                        live_other_proper_exists = True
+                        break
+
+                if not live_other_proper_exists:
+                    logger.warning(
+                        f"BLOCKED: Attempt to delete live sole remaining protected PLM link slot {clean_mem} on {clean_addr} (target {rec_target}, Group {rec_group})."
                     )
                     return GenericResponse(
                         success=False,
-                        message=f"Safety abort: Slot {clean_mem} holds target {live_tgt}, expected {exp_tgt}.",
+                        message=(
+                            f"Protected Record Violation: Slot {clean_mem} on {clean_addr} is the sole remaining core Group {rec_group} "
+                            f"PLM communication link. At least one proper link must always be preserved."
+                        ),
+                    )
+                else:
+                    logger.info(
+                        f"PERMITTED: Deleting live redundant duplicate PLM link slot {clean_mem} on {clean_addr} (target {rec_target}, Group {rec_group}). Another proper link is verified active on silicon."
                     )
 
             dev_obj.aldb.modify(mem_addr=mem_int, in_use=False)
-            logger.info(f"Hardware EEPROM: Marked slot {clean_mem} (Group {getattr(rec, 'group', '?')}, target {getattr(rec, 'target', '?')}) deleted on {clean_addr}.")
+            logger.info(f"Hardware EEPROM: Marked slot {clean_mem} (Group {rec_group}, target {rec_target}) deleted on {clean_addr}.")
             _, failed = await dev_obj.aldb.async_write(force=True)
             if failed:
                 dev_obj.aldb.clear_pending()
@@ -534,9 +562,9 @@ class TransactionService:
             v_ok, v_msg, _ = await insteon_manager.verify_hardware_record(
                 address=clean_addr,
                 mem_addr=mem_int,
-                expected_target=str(getattr(rec, "target", "")),
-                expected_group=int(getattr(rec, "group", 0)),
-                expected_controller=bool(getattr(rec, "is_controller", False)),
+                expected_target=rec_target,
+                expected_group=rec_group,
+                expected_controller=rec_ctrl,
                 expected_in_use=False,
             )
             if not v_ok:
@@ -548,18 +576,95 @@ class TransactionService:
             logger.info(f"Hardware EEPROM write verified on {clean_addr}: Slot {clean_mem} confirmed deleted on silicon.")
             await insteon_manager.refresh_device_db_delta_after_write(clean_addr, snapshot)
 
-        found = False
-        if target_snap_rec is not None:
-            target_snap_rec["in_use"] = False
-            raw = target_snap_rec.get("raw_mode", "Record")
-            target_snap_rec["raw_mode"] = raw.replace(" (Deleted)", "") + " (Deleted)"
-            found = True
-            logger.info(f"Deleted slot {clean_mem} on {clean_addr} (Group {target_snap_rec.get('group', '?')}, target {target_snap_rec.get('target_address', '?')}) in snapshot.")
-            self._save_snapshot(snapshot)
+            # Snapshot database synchronization
+            if clean_addr == plm_addr and hasattr(dev_obj, "aldb"):
+                parsed_plm = insteon_manager._parse_aldb_records(dev_obj.aldb, source_address=clean_addr)
+                if "plm" not in snapshot:
+                    snapshot["plm"] = {}
+                snapshot["plm"]["records"] = [r.model_dump() for r in parsed_plm]
+                snapshot["plm"]["records_count"] = len(parsed_plm)
+                self._save_snapshot(snapshot)
+            else:
+                for d in snapshot.get("devices", []):
+                    if d.get("address", "").upper() == clean_addr:
+                        for r in d.get("records", []):
+                            if r.get("mem_addr", "").upper() == clean_mem:
+                                r["in_use"] = False
+                                raw = r.get("raw_mode", "Record")
+                                r["raw_mode"] = raw.replace(" (Deleted)", "") + " (Deleted)"
+                                break
+                        break
+                self._save_snapshot(snapshot)
+
+            return GenericResponse(
+                success=True,
+                message=f"Slot {clean_mem} on device {clean_addr} marked deleted successfully.",
+            )
+
+        # Simulator Mode fallback (offline)
+        target_snap_rec = None
+        records_list = None
+        if clean_addr == plm_addr:
+            records_list = snapshot.get("plm", {}).get("records", [])
+        else:
+            for d in snapshot.get("devices", []):
+                if d.get("address", "").upper() == clean_addr:
+                    records_list = d.get("records", [])
+                    break
+        if records_list:
+            for r in records_list:
+                if r.get("mem_addr", "").upper() == clean_mem:
+                    target_snap_rec = r
+                    break
+
+        if target_snap_rec is None:
+            return GenericResponse(
+                success=False,
+                message=f"Slot {clean_mem} not found on {clean_addr}.",
+            )
+
+        t_addr = str(target_snap_rec.get("target_address", "")).upper()
+        t_grp = int(target_snap_rec.get("group", 0))
+        is_ctrl = bool(target_snap_rec.get("is_controller", False))
+        is_resp = bool(target_snap_rec.get("is_responder", False))
+
+        if (clean_addr == plm_addr or t_addr == plm_addr) and t_grp in (0, 1):
+            other_proper_exists = False
+            if records_list:
+                for r in records_list:
+                    r_mem = str(r.get("mem_addr", "")).upper()
+                    if r_mem == clean_mem:
+                        continue
+                    r_in_use = bool(r.get("in_use", True))
+                    r_target = str(r.get("target_address", "")).upper()
+                    r_grp = int(r.get("group", 0))
+                    r_ctrl = bool(r.get("is_controller", False))
+                    r_resp = bool(r.get("is_responder", False))
+
+                    if r_in_use and r_target == t_addr and r_grp == t_grp and r_ctrl == is_ctrl and r_resp == is_resp:
+                        other_proper_exists = True
+                        break
+
+            if not other_proper_exists:
+                logger.warning(
+                    f"BLOCKED: Attempt to delete sole remaining protected PLM link slot {clean_mem} on {clean_addr} (target {t_addr}, Group {t_grp})."
+                )
+                return GenericResponse(
+                    success=False,
+                    message=(
+                        f"Protected Record Violation: Slot {clean_mem} on {clean_addr} is the sole remaining core Group {t_grp} "
+                        f"PLM communication link. At least one proper link must always be preserved."
+                    ),
+                )
+
+        target_snap_rec["in_use"] = False
+        raw = target_snap_rec.get("raw_mode", "Record")
+        target_snap_rec["raw_mode"] = raw.replace(" (Deleted)", "") + " (Deleted)"
+        self._save_snapshot(snapshot)
 
         return GenericResponse(
-            success=found or live_hw,
-            message=f"Slot {clean_mem} on device {clean_addr} marked deleted successfully." if (found or live_hw) else f"Slot {clean_mem} not found on {clean_addr}.",
+            success=True,
+            message=f"Slot {clean_mem} on device {clean_addr} marked deleted successfully (Simulator).",
         )
 
     async def purge_ghost_links(self, target_address: str) -> GenericResponse:
@@ -585,6 +690,14 @@ class TransactionService:
         from app.insteon import insteon_manager
         live_hw = insteon_manager.is_connected and not insteon_manager._mock_mode and PYINSTEON_AVAILABLE
 
+        # STRICT GUARD: Never perform offline fantasy link mutations in production
+        if not settings.is_simulator and not live_hw:
+            logger.error(f"Cannot purge ghost links for {clean_target}: No active hardware session lock.")
+            return GenericResponse(
+                success=False,
+                message=f"Hardware connection inactive. Acquire an exclusive hardware session before purging ghost links on {clean_target}.",
+            )
+
         # Identify which devices have active links to clean_target
         owners_to_purge: List[str] = []
 
@@ -607,13 +720,13 @@ class TransactionService:
                     logger.warning(f"Skipping ghost purge on {owner_addr}: {err_msg}")
                     hardware_failed_devices.append(f"{owner_addr} ({err_msg})")
                     continue
-                modified_slots = 0
+                modified_slots: List[int] = []
                 for mem_k, rec in list(dev_obj.aldb.items()):
                     if rec.is_in_use and str(rec.target).upper() == str(ghost_addr_obj).upper():
                         dev_obj.aldb.modify(mem_addr=mem_k, in_use=False)
-                        modified_slots += 1
+                        modified_slots.append(mem_k)
                         logger.info(f"Hardware EEPROM: Marked slot 0x{mem_k:04X} (Group {rec.group}, target {clean_target}) deleted on {owner_addr}.")
-                if modified_slots > 0:
+                if modified_slots:
                     from pyinsteon.constants import ALDBStatus, ReadWriteMode
                     dev_obj.aldb._status = ALDBStatus.LOADED
                     _, failed = await dev_obj.aldb.async_write(force=True)
@@ -628,13 +741,33 @@ class TransactionService:
                         logger.error(f"Hardware write failed on {owner_addr} while purging ghost {clean_target}.")
                         hardware_failed_devices.append(f"{owner_addr} (Write failed)")
                         continue
-                    logger.info(f"Hardware EEPROM write succeeded on {owner_addr}: {modified_slots} slot(s) deleted.")
+
+                    # Live silicon verification for each purged slot
+                    verified_all = True
+                    for slot_mem in modified_slots:
+                        v_ok, v_msg, _ = await insteon_manager.verify_hardware_record(
+                            address=owner_addr,
+                            mem_addr=slot_mem,
+                            expected_target=clean_target,
+                            expected_in_use=False,
+                        )
+                        if not v_ok:
+                            logger.error(f"Hardware live silicon verification failed for purged slot 0x{slot_mem:04X} on {owner_addr}: {v_msg}")
+                            verified_all = False
+                            break
+
+                    if not verified_all:
+                        dev_obj.aldb.clear_pending()
+                        hardware_failed_devices.append(f"{owner_addr} (EEPROM verification failed)")
+                        continue
+
+                    logger.info(f"Hardware EEPROM write verified on {owner_addr}: {len(modified_slots)} slot(s) confirmed deleted on silicon.")
                     await insteon_manager.refresh_device_db_delta_after_write(owner_addr, snapshot)
                     hardware_success_devices.append(owner_addr)
                 else:
                     hardware_success_devices.append(owner_addr)
 
-        # 1. Purge from PLM snapshot
+        # 1. Purge from PLM snapshot (only if hardware succeeded or simulator)
         if not live_hw or plm_addr in hardware_success_devices:
             for rec in plm.get("records", []):
                 if rec.get("in_use") and rec.get("target_address", "").upper() == clean_target:
@@ -645,18 +778,19 @@ class TransactionService:
                     if plm_addr not in modified_devices:
                         modified_devices.append(plm_addr)
 
-        # 2. Purge from peer devices in snapshot
+        # 2. Purge from peer devices in snapshot (only if hardware verified!)
         failed_addrs = [f.split()[0].upper() for f in hardware_failed_devices]
         for dev in snapshot.get("devices", []):
             dev_addr = dev.get("address", "").upper()
-            is_hw_failed = live_hw and dev_addr in failed_addrs
+            if live_hw and dev_addr in failed_addrs:
+                logger.warning(f"Skipping snapshot purge for {dev_addr}: Physical hardware write/verification failed.")
+                continue
             for rec in dev.get("records", []):
                 if rec.get("in_use") and rec.get("target_address", "").upper() == clean_target:
                     rec["in_use"] = False
                     rec["raw_mode"] = rec.get("raw_mode", "").replace(" (Deleted)", "") + " (Deleted)"
                     purged_count += 1
-                    note = " (snapshot purged; hardware EEPROM write timed out)" if is_hw_failed else ""
-                    logger.info(f"Purged slot {rec.get('mem_addr')} on {dev_addr} (Group {rec.get('group')}) targeting ghost {clean_target}{note}")
+                    logger.info(f"Purged slot {rec.get('mem_addr')} on {dev_addr} (Group {rec.get('group')}) targeting ghost {clean_target}")
                     if dev_addr not in modified_devices:
                         modified_devices.append(dev_addr)
 
@@ -703,6 +837,14 @@ class TransactionService:
         from app.insteon import insteon_manager
         live_hw = insteon_manager.is_connected and not insteon_manager._mock_mode and PYINSTEON_AVAILABLE
 
+        # STRICT GUARD: Never perform offline fantasy device replacements in production
+        if not settings.is_simulator and not live_hw:
+            logger.error(f"Cannot replace device {old_addr} -> {new_addr}: No active hardware session lock.")
+            return GenericResponse(
+                success=False,
+                message=f"Hardware connection inactive. Acquire an exclusive hardware session before replacing device {old_addr}."
+            )
+
         if live_hw:
             old_addr_obj = Address(old_addr)
             new_addr_obj = Address(new_addr)
@@ -725,9 +867,14 @@ class TransactionService:
                             data2=int(rec.get("data2", 0)),
                             data3=int(rec.get("data3", 0)),
                         )
-                from pyinsteon.constants import ALDBStatus
+                from pyinsteon.constants import ALDBStatus, ReadWriteMode
                 dev_new_obj.aldb._status = ALDBStatus.LOADED
                 _, failed_clone = await dev_new_obj.aldb.async_write(force=True)
+                if failed_clone and getattr(dev_new_obj.aldb, "_read_write_mode", None) != ReadWriteMode.PEEK_POKE:
+                    logger.info(f"Standard write failed on replacement device {new_addr}; retrying with PEEK_POKE mode...")
+                    dev_new_obj.aldb._read_write_mode = ReadWriteMode.PEEK_POKE
+                    dev_new_obj.aldb._status = ALDBStatus.LOADED
+                    _, failed_clone = await dev_new_obj.aldb.async_write(force=True)
                 if failed_clone:
                     dev_new_obj.aldb.clear_pending()
                     return GenericResponse(success=False, message=f"Failed writing cloned links to new device {new_addr}.")
@@ -747,14 +894,34 @@ class TransactionService:
                 ok_p, dev_p, err_p = await insteon_manager.ensure_device_aldb_ready_for_write(owner_addr, snapshot)
                 if not ok_p or not dev_p:
                     return GenericResponse(success=False, message=f"Failed reaching peer {owner_addr} during replacement: {err_p}")
+                modified_peer_slots = []
                 for mem_k, rec in list(dev_p.aldb.items()):
                     if rec.is_in_use and str(rec.target).upper() == str(old_addr_obj).upper():
                         dev_p.aldb.modify(mem_addr=mem_k, target=new_addr_obj)
+                        modified_peer_slots.append(mem_k)
+                from pyinsteon.constants import ALDBStatus, ReadWriteMode
                 dev_p.aldb._status = ALDBStatus.LOADED
                 _, failed_p = await dev_p.aldb.async_write(force=True)
+                if failed_p and getattr(dev_p.aldb, "_read_write_mode", None) != ReadWriteMode.PEEK_POKE:
+                    logger.info(f"Standard write failed on peer {owner_addr}; retrying with PEEK_POKE mode...")
+                    dev_p.aldb._read_write_mode = ReadWriteMode.PEEK_POKE
+                    dev_p.aldb._status = ALDBStatus.LOADED
+                    _, failed_p = await dev_p.aldb.async_write(force=True)
                 if failed_p:
                     dev_p.aldb.clear_pending()
                     return GenericResponse(success=False, message=f"Failed retargeting links on peer {owner_addr}.")
+
+                # Live silicon verification for retargeted slots
+                for slot_mem in modified_peer_slots:
+                    v_ok, v_msg, _ = await insteon_manager.verify_hardware_record(
+                        address=owner_addr,
+                        mem_addr=slot_mem,
+                        expected_target=new_addr,
+                        expected_in_use=True,
+                    )
+                    if not v_ok:
+                        logger.warning(f"Hardware silicon verification notice for retargeted slot 0x{slot_mem:04X} on {owner_addr}: {v_msg}")
+
                 await insteon_manager.refresh_device_db_delta_after_write(owner_addr, snapshot)
 
         cloned_records = 0
@@ -1229,6 +1396,9 @@ class TransactionService:
                         or (tgt == plm_addr and is_resp and owner_addr in all_dev_map and owner_addr != plm_addr)
                     )
                     if not is_valid_plm_grp0:
+                        # CORE PROTECTION: Never recommend deleting any Group 0 record involving the PLM
+                        if owner_addr == plm_addr or tgt == plm_addr:
+                            continue
                         issues.append(NetworkIssueItem(
                             id=f"grp0_{owner_addr}_{mem}",
                             issue_type="group_zero",
@@ -1252,44 +1422,60 @@ class TransactionService:
                         continue
 
                 # 4. Check Redundant Duplicate
-                # Note: On a Keypad Responder, different buttons on the same Keypad can respond to the same Group with different Data3 button numbers.
-                dup_btn_discriminator = d3 if (is_resp and is_keypad(owner_addr)) else 0
-                dup_key = (tgt, grp, role, dup_btn_discriminator)
-                if dup_key in seen_owner_keys:
-                    prev_entry = seen_owner_keys[dup_key]
-                    # If the earlier Controller record had malformed data1=255 and this one has valid data1=3, flag the earlier malformed slot for deletion
-                    if is_ctrl and owner_addr != plm_addr and prev_entry["data1"] == 255 and d1 != 255:
-                        dup_mem = prev_entry["mem"]
-                        dup_d1, dup_d2, dup_d3 = prev_entry["data1"], prev_entry["data2"], prev_entry["data3"]
-                        prev_entry["mem"] = mem
-                        prev_entry["data1"] = d1
-                        prev_entry["data2"] = d2
-                        prev_entry["data3"] = d3
-                    else:
-                        dup_mem = mem
-                        dup_d1, dup_d2, dup_d3 = d1, d2, d3
+                # USER DIRECTIVE: Duplicate slot warnings should not show up in the health analyzer for protected (0, 1) devices
+                if not (grp in (0, 1) and (owner_addr == plm_addr or tgt == plm_addr)):
+                    # Note: On a Keypad Responder, different buttons on the same Keypad can respond to the same Group with different Data3 button numbers.
+                    dup_btn_discriminator = d3 if (is_resp and is_keypad(owner_addr)) else 0
+                    dup_key = (tgt, grp, role, dup_btn_discriminator)
+                    if dup_key in seen_owner_keys:
+                        prev_entry = seen_owner_keys[dup_key]
+                        # If the earlier Controller record had malformed data1=255 and this one has valid data1=3, flag the earlier malformed slot for deletion
+                        if is_ctrl and owner_addr != plm_addr and prev_entry["data1"] == 255 and d1 != 255:
+                            dup_mem = prev_entry["mem"]
+                            dup_d1, dup_d2, dup_d3 = prev_entry["data1"], prev_entry["data2"], prev_entry["data3"]
+                            prev_entry["mem"] = mem
+                            prev_entry["data1"] = d1
+                            prev_entry["data2"] = d2
+                            prev_entry["data3"] = d3
+                        elif is_resp and owner_addr == plm_addr and prev_entry["data1"] == 0 and d1 != 0:
+                            # For PLM responder slots, keep the one with valid device category (d1 != 0) rather than empty (0,0,0)
+                            dup_mem = prev_entry["mem"]
+                            dup_d1, dup_d2, dup_d3 = prev_entry["data1"], prev_entry["data2"], prev_entry["data3"]
+                            prev_entry["mem"] = mem
+                            prev_entry["data1"] = d1
+                            prev_entry["data2"] = d2
+                            prev_entry["data3"] = d3
+                        else:
+                            dup_mem = mem
+                            dup_d1, dup_d2, dup_d3 = d1, d2, d3
 
-                    issues.append(NetworkIssueItem(
-                        id=f"dup_{owner_addr}_{dup_mem}",
-                        issue_type="duplicate",
-                        severity="warning",
-                        owner_address=owner_addr,
-                        owner_name=owner_name,
-                        mem_addr=dup_mem,
-                        target_address=tgt,
-                        target_name=tgt_name,
-                        group=grp,
-                        role=role,
-                        summary=f"Redundant duplicate {role} link on Group {grp}",
-                        explanation=f"{owner_name} has multiple identical active {role} records for {tgt_name} on Group {grp}. Duplicate records cause redundant powerline cleanup traffic and waste EEPROM slots.",
-                        recommended_action="delete_record",
-                        fix_label="🗑️ Delete Duplicate Slot",
-                        secondary_action=None,
-                        secondary_label=None,
-                        can_auto_fix=True,
-                        data1=dup_d1, data2=dup_d2, data3=dup_d3
-                    ))
-                    continue
+                        issues.append(NetworkIssueItem(
+                            id=f"dup_{owner_addr}_{dup_mem}",
+                            issue_type="duplicate",
+                            severity="warning",
+                            owner_address=owner_addr,
+                            owner_name=owner_name,
+                            mem_addr=dup_mem,
+                            target_address=tgt,
+                            target_name=tgt_name,
+                            group=grp,
+                            role=role,
+                            summary=f"Redundant duplicate {role} link on Group {grp}",
+                            explanation=f"{owner_name} has multiple identical active {role} records for {tgt_name} on Group {grp}. Duplicate records cause redundant powerline cleanup traffic and waste EEPROM slots.",
+                            recommended_action="delete_record",
+                            fix_label="🗑️ Delete Duplicate Slot",
+                            secondary_action=None,
+                            secondary_label=None,
+                            can_auto_fix=True,
+                            data1=dup_d1, data2=dup_d2, data3=dup_d3
+                        ))
+                        continue
+                    seen_owner_keys[dup_key] = {
+                        "mem": mem,
+                        "data1": d1,
+                        "data2": d2,
+                        "data3": d3,
+                    }
 
                 link_entry = {
                     "owner": owner_addr,
@@ -1303,7 +1489,6 @@ class TransactionService:
                     "data2": d2,
                     "data3": d3,
                 }
-                seen_owner_keys[dup_key] = link_entry
 
                 # Valid Group 0 PLM links are audited for completeness in Step 6 (Missing Default PLM Links)
                 if grp == 0:
@@ -1313,8 +1498,15 @@ class TransactionService:
 
         def is_device_incomplete(addr: str) -> bool:
             d = all_dev_map.get(addr.upper(), {})
+            if not d:
+                return True
             st = str(d.get("status", "OK")).upper()
-            return st.startswith("PARTIAL") or st.startswith("FAILED")
+            if st.startswith("PARTIAL") or st.startswith("FAILED"):
+                return True
+            # If a non-PLM device has 0 records, it has not yet had an ALDB query
+            if addr.upper() != plm_addr and len(d.get("records", [])) == 0:
+                return True
+            return False
 
         # Flag incomplete device reads so users know which switches need a refresh
         for dev in active_devices:
@@ -1380,6 +1572,12 @@ class TransactionService:
                 if grp == 251:
                     continue
 
+                # CORE PROTECTION: Group 0 and Group 1 links with the PLM are core openHAB links.
+                # They must NEVER be handled as generic half-links, and must NEVER offer deletion.
+                # They are safely audited and restored by Step 6 (Missing Default PLM Links).
+                if grp in (0, 1) and (owner == plm_addr or target == plm_addr):
+                    continue
+
                 is_kp = is_keypad(owner)
                 ctrl_addr = owner if role == "Controller" else target
                 resp_addr = target if role == "Controller" else owner
@@ -1398,12 +1596,12 @@ class TransactionService:
                 if is_kp and role == "Controller":
                     severity = "warning"
                     button_label = f"Button {chr(64 + grp)} (Key {grp})" if 1 <= grp <= 8 else f"Group {grp}"
-                    summary = f"Keypad {button_label} Orphan Slot → {target_name}"
-                    explanation = f"{owner_name} has an unverified controller slot for {target_name} on {button_label}, but {target_name} has NO matching responder link. If this keypad button is NOT supposed to control {target_name}, delete this slot. If you want {button_label} to control {target_name}, click 'Add Responder Link'."
-                    fix_label = f"🗑️ Delete Stale Slot on {owner_name}"
-                    rec_action = "delete_record"
-                    sec_action = "create_reciprocal"
-                    sec_label = f"⚡ Add Responder Link on {target_name}"
+                    summary = f"Keypad {button_label} Missing Responder Link on {target_name}"
+                    explanation = f"{owner_name} ({button_label}) is programmed to control {target_name}, but {target_name} has NO matching responder record in its database."
+                    fix_label = f"⚡ Add Responder Link on {target_name}"
+                    rec_action = "create_reciprocal"
+                    sec_action = "delete_record"
+                    sec_label = f"🗑️ Delete Keypad Link (Decommission Button)"
                     can_auto = False
                 elif role == "Controller":
                     severity = "warning"
@@ -1415,11 +1613,6 @@ class TransactionService:
                     summary = f"Missing Controller Link: {owner_name} ← {target_name} (Grp {grp})"
                     explanation = f"{owner_name} is programmed to respond to Group {grp} from {target_name}, but {target_name} has no matching controller record to trigger it."
                     fix_label = f"⚡ Add Controller Link on {target_name}"
-
-                # Never offer to delete broken PLM links on Group 0 or 1; they must only be restored
-                if (owner == plm_addr or target == plm_addr) and grp in (0, 1):
-                    sec_action = None
-                    sec_label = None
 
                 issues.append(NetworkIssueItem(
                     id=f"half_{owner}_{target}_{grp}_{role}_{mem}",
@@ -1455,31 +1648,171 @@ class TransactionService:
             dev_name = get_device_name(dev_addr)
             dev_records = [r for r in dev.get("records", []) if r.get("in_use") and not r.get("high_water_mark")]
 
-            d2p = any(r.get("target_address", "").upper() == plm_addr and r.get("is_controller") and r.get("group") == 1 for r in dev_records) and \
-                  any(r.get("target_address", "").upper() == dev_addr and (r.get("is_responder") or not r.get("is_controller")) and r.get("group") == 1 for r in plm_records)
+            is_battery_dev = bool(dev.get("is_battery", False)) or int(dev.get("cat", 1) or 1) in (0x00, 0x10) or "keypad" in dev_name.lower() or "remote" in dev_name.lower()
+
             p2d = any(r.get("target_address", "").upper() == dev_addr and r.get("is_controller") and r.get("group") in (0, 1) for r in plm_records) and \
                   any(r.get("target_address", "").upper() == plm_addr and (r.get("is_responder") or not r.get("is_controller")) and r.get("group") in (0, 1) for r in dev_records)
 
-            if not d2p or not p2d:
-                issues.append(NetworkIssueItem(
-                    id=f"default_{dev_addr}",
-                    issue_type="missing_default",
-                    severity="error",
-                    owner_address=dev_addr,
-                    owner_name=dev_name,
-                    mem_addr=None,
-                    target_address=plm_addr,
-                    target_name="USB PowerLinc Modem (PLM)",
-                    group=1,
-                    role="Both",
-                    summary=f"Missing Default Reciprocal PLM Links for {dev_name}",
-                    explanation=f"{dev_name} is missing its default Group 0 (I2CS Auth / Direct Control) or Group 1 (Status Reporting) link pair with the PLM.",
-                    recommended_action="create_default_link",
-                    fix_label="⚡ Establish Default PLM Links",
-                    secondary_action=None,
-                    secondary_label=None,
-                    can_auto_fix=True,
-                ))
+            if is_battery_dev:
+                # Battery remotes and transmitters do not control a switched load and do not report Group 1 status.
+                # They only require the core Group 0 I2CS Auth link with the PLM.
+                if not p2d:
+                    issues.append(NetworkIssueItem(
+                        id=f"default_{dev_addr}",
+                        issue_type="missing_default",
+                        severity="error",
+                        owner_address=dev_addr,
+                        owner_name=dev_name,
+                        mem_addr=None,
+                        target_address=plm_addr,
+                        target_name="USB PowerLinc Modem (PLM)",
+                        group=0,
+                        role="Both",
+                        summary=f"Missing Core Group 0 PLM Link for {dev_name}",
+                        explanation=f"{dev_name} is missing its core Group 0 (I2CS Auth) communication link with the PLM.",
+                        recommended_action="create_default_link",
+                        fix_label="⚡ Establish Default PLM Links",
+                        secondary_action=None,
+                        secondary_label=None,
+                        can_auto_fix=True,
+                    ))
+            else:
+                d2p = any(r.get("target_address", "").upper() == plm_addr and r.get("is_controller") and r.get("group") == 1 for r in dev_records) and \
+                      any(r.get("target_address", "").upper() == dev_addr and (r.get("is_responder") or not r.get("is_controller")) and r.get("group") == 1 for r in plm_records)
+
+                if not d2p or not p2d:
+                    issues.append(NetworkIssueItem(
+                        id=f"default_{dev_addr}",
+                        issue_type="missing_default",
+                        severity="error",
+                        owner_address=dev_addr,
+                        owner_name=dev_name,
+                        mem_addr=None,
+                        target_address=plm_addr,
+                        target_name="USB PowerLinc Modem (PLM)",
+                        group=1,
+                        role="Both",
+                        summary=f"Missing Default Reciprocal PLM Links for {dev_name}",
+                        explanation=f"{dev_name} is missing its default Group 0 (I2CS Auth / Direct Control) or Group 1 (Status Reporting) link pair with the PLM.",
+                        recommended_action="create_default_link",
+                        fix_label="⚡ Establish Default PLM Links",
+                        secondary_action=None,
+                        secondary_label=None,
+                        can_auto_fix=True,
+                    ))
+
+        # 7. Check Scene Health (Empty Zombie Scenes, Diagnostic Group 251, Redundant Single-Device Scenes)
+        from app.services.scene_service import scene_service
+        try:
+            all_scenes = scene_service.get_all_scenes()
+            for sc in all_scenes:
+                sc_grp = sc.group
+                if sc_grp in (0, 1):
+                    continue
+
+                # Case A: Obsolete Diagnostic Group (Group 251 / range 250-255)
+                if sc_grp == 251 or sc_grp >= 250:
+                    issues.append(NetworkIssueItem(
+                        id=f"scene_diagnostic_{sc_grp}",
+                        issue_type="diagnostic_group",
+                        severity="warning",
+                        owner_address=plm_addr,
+                        owner_name="Insteon Network",
+                        mem_addr=None,
+                        target_address="00.00.00",
+                        target_name=f"Diagnostic Group {sc_grp}",
+                        group=sc_grp,
+                        role="Both",
+                        summary=f"Obsolete Diagnostic Group {sc_grp} (Legacy Engine Discovery Leftover)",
+                        explanation=(
+                            f"Group {sc_grp} is an internal diagnostic artifact created by legacy pyinsteon engine discovery. "
+                            f"It is not an active home automation scene and has 0 active responders, but consumes EEPROM slots "
+                            f"across the PLM and Main Bookcase."
+                        ),
+                        recommended_action="delete_scene",
+                        fix_label=f"🧹 Purge Diagnostic Group {sc_grp}",
+                        secondary_action=None,
+                        secondary_label=None,
+                        can_auto_fix=True,
+                    ))
+                # Case B: Empty Zombie Scene (0 Responders, but controllers exist)
+                elif len(sc.members) == 0 and len(sc.controllers) > 0:
+                    ctrl_names = ", ".join(f"{c.label} ({c.address})" for c in sc.controllers)
+                    is_kp_scene = any(is_keypad(c.address) for c in sc.controllers)
+                    if is_kp_scene:
+                        issues.append(NetworkIssueItem(
+                            id=f"scene_empty_{sc_grp}",
+                            issue_type="empty_scene",
+                            severity="info",
+                            owner_address=sc.controllers[0].address,
+                            owner_name=sc.controllers[0].label,
+                            mem_addr=None,
+                            target_address="00.00.00",
+                            target_name=f"Group {sc_grp}",
+                            group=sc_grp,
+                            role="Controller",
+                            summary=f"Keypad Button Scene {sc_grp} Has No Responder Devices",
+                            explanation=(
+                                f"Scene {sc_grp} ('{sc.name}') is controlled by {ctrl_names}, but no lights or devices are programmed "
+                                f"to respond to it. You can add member devices in the Scenes tab or delete this scene."
+                            ),
+                            recommended_action="delete_scene",
+                            fix_label=f"🗑️ Delete Scene {sc_grp}",
+                            secondary_action=None,
+                            secondary_label=None,
+                            can_auto_fix=False,
+                        ))
+                    else:
+                        issues.append(NetworkIssueItem(
+                            id=f"scene_empty_{sc_grp}",
+                            issue_type="empty_scene",
+                            severity="warning",
+                            owner_address=plm_addr,
+                            owner_name="USB PowerLinc Modem (PLM)",
+                            mem_addr=None,
+                            target_address="00.00.00",
+                            target_name=f"Group {sc_grp}",
+                            group=sc_grp,
+                            role="Controller",
+                            summary=f"Empty Scene {sc_grp} ('{sc.name}') Has 0 Responders",
+                            explanation=(
+                                f"Scene {sc_grp} has controller records defined on {ctrl_names}, but 0 responder devices. "
+                                f"Triggering this scene generates useless powerline traffic and wastes EEPROM slots."
+                            ),
+                            recommended_action="delete_scene",
+                            fix_label=f"🗑️ Delete Empty Scene {sc_grp}",
+                            secondary_action=None,
+                            secondary_label=None,
+                            can_auto_fix=True,
+                        ))
+                # Case C: Single-Device Redundant Scene (PLM is sole controller, only 1 responder)
+                elif len(sc.members) == 1 and len(sc.controllers) == 1 and sc.controllers[0].is_plm and sc_grp > 30:
+                    memb = sc.members[0]
+                    issues.append(NetworkIssueItem(
+                        id=f"scene_redundant_{sc_grp}",
+                        issue_type="scene_advisory",
+                        severity="info",
+                        owner_address=plm_addr,
+                        owner_name="USB PowerLinc Modem (PLM)",
+                        mem_addr=None,
+                        target_address=memb.address,
+                        target_name=memb.label,
+                        group=sc_grp,
+                        role="Controller",
+                        summary=f"Single-Device Redundant Scene {sc_grp} ({memb.label} only)",
+                        explanation=(
+                            f"Scene {sc_grp} ('{sc.name}') contains only one device ({memb.label}). Insteon scenes are designed "
+                            f"for multi-device broadcast scenes. Single devices can be commanded directly without a dedicated scene. "
+                            f"You can delete this scene to reclaim modem and switch EEPROM slots if not used in openHAB."
+                        ),
+                        recommended_action="delete_scene",
+                        fix_label=f"🗑️ Delete Scene {sc_grp}",
+                        secondary_action=None,
+                        secondary_label=None,
+                        can_auto_fix=False,
+                    ))
+        except Exception as sc_ex:
+            logger.warning(f"Error during scene health analysis: {sc_ex}")
 
         half_count = sum(1 for i in issues if i.issue_type == "half_link" and i.severity != "info")
         loopback_count = sum(1 for i in issues if i.issue_type == "loopback")
@@ -1488,9 +1821,11 @@ class TransactionService:
         grp0_count = sum(1 for i in issues if i.issue_type == "group_zero")
         missing_def_count = sum(1 for i in issues if i.issue_type == "missing_default")
         incomplete_count = sum(1 for i in issues if i.issue_type == "incomplete_read")
+        scene_diag_count = sum(1 for i in issues if i.issue_type == "diagnostic_group")
+        empty_scene_count = sum(1 for i in issues if i.issue_type == "empty_scene" and i.severity != "info")
 
         # Health score calculation: Partial reads incur only a small deduction (-2 each) rather than false half-link cascades (-30+)
-        deductions = (ghost_count * 10) + (missing_def_count * 5) + (loopback_count * 5) + (half_count * 3) + (dup_count * 2) + (grp0_count * 2) + (incomplete_count * 2)
+        deductions = (ghost_count * 10) + (missing_def_count * 5) + (loopback_count * 5) + (half_count * 3) + (dup_count * 2) + (grp0_count * 2) + (incomplete_count * 2) + (scene_diag_count * 3) + (empty_scene_count * 2)
         score = max(0, min(100, 100 - deductions))
 
         return NetworkAnalysisResponse(

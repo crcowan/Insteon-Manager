@@ -116,6 +116,9 @@ public class NetworkIssueModel : INotifyPropertyChanged
         "duplicate" => "Redundant Duplicate",
         "group_zero" => "Corrupted Group 0",
         "incomplete_read" => "Incomplete Hardware Read",
+        "diagnostic_group" => "Obsolete Diagnostic Group",
+        "empty_scene" => "Empty Zombie Scene",
+        "scene_advisory" => "Scene Advisory",
         _ => "Network Anomaly"
     };
 
