@@ -23,9 +23,19 @@ ENV/
 env.bak/
 venv.bak/
 
+# Local Configuration & Secrets
+.env
+.env.*
+!.env.example
+config.json
+secrets.json
+appsettings*.json
+!appsettings.json.example
+
 # Logs & Databases
 *.log
 *.sqlite
+*.sqlite3
 *.db
 out.txt
 err.txt
@@ -42,4 +52,3 @@ scratch/
 
 # Build artifacts & distributions
 dist/
-

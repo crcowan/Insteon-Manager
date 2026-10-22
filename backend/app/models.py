@@ -130,6 +130,21 @@ class ReciprocalLinkRequest(BaseModel):
     data3: int = Field(default=1, ge=0, le=255, description="Button/Sub-channel or Firmware (0-255)")
 
 
+class ReciprocalLinkUpdateRequest(BaseModel):
+    controller_address: str = Field(description="Controller device address")
+    responder_address: str = Field(description="Responder device address")
+    group: int = Field(default=1, ge=0, le=255, description="All-Link group")
+    data1: Optional[int] = Field(default=None, ge=0, le=255, description="New On-Level / Brightness (0-255)")
+    data2: Optional[int] = Field(default=None, ge=0, le=255, description="New Ramp Rate (0-255)")
+    data3: Optional[int] = Field(default=None, ge=0, le=255, description="New Button/Sub-channel (0-255)")
+
+
+class AldbRecordUpdateRequest(BaseModel):
+    data1: Optional[int] = Field(default=None, ge=0, le=255, description="Data 1 byte (On-Level 0-255 for responders)")
+    data2: Optional[int] = Field(default=None, ge=0, le=255, description="Data 2 byte (Ramp-Rate 0-255 for responders)")
+    data3: Optional[int] = Field(default=None, ge=0, le=255, description="Data 3 byte (Button/sub-channel 1-8 for keypads)")
+
+
 class DeviceReplaceRequest(BaseModel):
     old_address: str = Field(description="Address of decommissioned device")
     new_address: str = Field(description="Address of new replacement device")

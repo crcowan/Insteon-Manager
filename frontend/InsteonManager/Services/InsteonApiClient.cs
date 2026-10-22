@@ -369,6 +369,45 @@ public class InsteonApiClient
         }
     }
 
+    public async Task<(bool Success, string Message)> UpdateLinkPresetAsync(ReciprocalLinkUpdateRequestModel req)
+    {
+        try
+        {
+            var response = await _httpClient.PatchAsJsonAsync($"{_baseUrl}/insteon/links", req);
+            var content = await response.Content.ReadAsStringAsync();
+            if (response.IsSuccessStatusCode)
+            {
+                var res = JsonSerializer.Deserialize<GenericApiResponse>(content);
+                return (res?.Success ?? true, res?.Message ?? "Link preset updated successfully");
+            }
+            return (false, $"HTTP {(int)response.StatusCode}: {content}");
+        }
+        catch (Exception ex)
+        {
+            return (false, $"Link preset update error: {ex.Message}");
+        }
+    }
+
+    public async Task<(bool Success, string Message)> UpdateDeviceAldbRecordAsync(string address, string memAddr, AldbRecordUpdateRequestModel req)
+    {
+        try
+        {
+            var url = $"{_baseUrl}/insteon/devices/{Uri.EscapeDataString(address)}/aldb/{Uri.EscapeDataString(memAddr)}";
+            var response = await _httpClient.PatchAsJsonAsync(url, req);
+            var content = await response.Content.ReadAsStringAsync();
+            if (response.IsSuccessStatusCode)
+            {
+                var res = JsonSerializer.Deserialize<GenericApiResponse>(content);
+                return (res?.Success ?? true, res?.Message ?? $"Slot {memAddr} updated successfully");
+            }
+            return (false, $"HTTP {(int)response.StatusCode}: {content}");
+        }
+        catch (Exception ex)
+        {
+            return (false, $"Slot update error: {ex.Message}");
+        }
+    }
+
     public async Task<(bool Success, string Message)> ReplaceDeviceAsync(DeviceReplaceRequestModel req)
     {
         try

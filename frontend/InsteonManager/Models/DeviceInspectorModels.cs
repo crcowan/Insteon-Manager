@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
+using System.Text.Json.Serialization;
 
 namespace InsteonManager.Models;
 
@@ -399,7 +400,82 @@ public class ActiveLinkPairModel
     public string MemAddrController { get; set; } = string.Empty;
     public string MemAddrResponder { get; set; } = string.Empty;
 
+    public int Data1 { get; set; } = 255;
+    public int Data2 { get; set; } = 28;
+    public int Data3 { get; set; } = 1;
+
+    public double BrightnessPercent => Math.Round((Data1 / 255.0) * 100.0, 0);
+    public string BrightnessPercentText => $"{BrightnessPercent:F0}% ({Data1}/255)";
+    public string RampRateText => InsteonRampRateHelper.FormatRampRate(Data2);
+    public string PresetSummary => $"Level: {BrightnessPercentText}, Ramp: {RampRateText}";
+
     public string DisplayText => $"{ControllerFriendlyName} ({ControllerAddress}) ➔ {ResponderFriendlyName} ({ResponderAddress}) [Group {Group}]";
+    public string DetailedDisplayText => $"{DisplayText} — [{PresetSummary}]";
+}
+
+public static class InsteonRampRateHelper
+{
+    public static string FormatRampRate(int rate)
+    {
+        return rate switch
+        {
+            31 => "0.1s (Instant)",
+            30 => "0.2s",
+            29 => "0.3s",
+            28 => "0.5s (Default)",
+            27 => "2.0s",
+            26 => "4.5s",
+            25 => "6.5s",
+            24 => "8.5s",
+            23 => "19s",
+            22 => "21.5s",
+            21 => "23.5s",
+            20 => "26s",
+            19 => "28s",
+            18 => "30s",
+            17 => "32s",
+            16 => "34s",
+            15 => "38.5s",
+            14 => "43s",
+            13 => "47s",
+            12 => "60s (1m)",
+            255 => "Instant / Relay",
+            _ => $"{rate} steps"
+        };
+    }
+}
+
+public class AldbRecordUpdateRequestModel
+{
+    [JsonPropertyName("data1")]
+    public int? Data1 { get; set; }
+
+    [JsonPropertyName("data2")]
+    public int? Data2 { get; set; }
+
+    [JsonPropertyName("data3")]
+    public int? Data3 { get; set; }
+}
+
+public class ReciprocalLinkUpdateRequestModel
+{
+    [JsonPropertyName("controller_address")]
+    public string ControllerAddress { get; set; } = string.Empty;
+
+    [JsonPropertyName("responder_address")]
+    public string ResponderAddress { get; set; } = string.Empty;
+
+    [JsonPropertyName("group")]
+    public int Group { get; set; }
+
+    [JsonPropertyName("data1")]
+    public int? Data1 { get; set; }
+
+    [JsonPropertyName("data2")]
+    public int? Data2 { get; set; }
+
+    [JsonPropertyName("data3")]
+    public int? Data3 { get; set; }
 }
 
 public class DeviceLookupItem

@@ -14,6 +14,8 @@ from app.config import settings
 from app.models import (
     ALDBRecordResponse,
     ReciprocalLinkRequest,
+    ReciprocalLinkUpdateRequest,
+    AldbRecordUpdateRequest,
     DeviceReplaceRequest,
     GenericResponse,
     DeviceAddRequest,
@@ -28,7 +30,8 @@ logger = logging.getLogger("insteon_tx")
 try:
     import pyinsteon
     from pyinsteon.address import Address
-    from pyinsteon.constants import ResponseStatus
+    from pyinsteon.constants import ResponseStatus, ALDBStatus, ReadWriteMode
+    from pyinsteon.aldb.aldb_record import ALDBRecord, new_aldb_record_from_existing
     PYINSTEON_AVAILABLE = True
 except ImportError:
     PYINSTEON_AVAILABLE = False
@@ -193,29 +196,45 @@ class TransactionService:
 
             # Step 2: Write Controller record
             dev_ctrl.aldb._status = ALDBStatus.LOADED
-            dev_ctrl.aldb.add(
-                group=grp,
-                target=addr_resp,
-                controller=True,
-                data1=ctrl_d1,
-                data2=ctrl_d2,
-                data3=ctrl_d3,
+            existing_ctrl_rec = next(
+                (r for r in dev_ctrl.aldb.find(target=addr_resp, group=grp, is_controller=True)),
+                None,
             )
+            ctrl_mem = None
+            if existing_ctrl_rec is not None:
+                ctrl_mem = existing_ctrl_rec.mem_addr
+                logger.info(f"Reactivating existing controller slot 0x{ctrl_mem:04X} on {ctrl_addr}...")
+                if ctrl_mem in dev_ctrl.aldb._records:
+                    # Reset in-memory record to in_use=False to guarantee pyinsteon sees a delta and transmits to hardware
+                    old_r = dev_ctrl.aldb._records[ctrl_mem]
+                    dev_ctrl.aldb._records[ctrl_mem] = new_aldb_record_from_existing(old_r, in_use=False)
+                dev_ctrl.aldb.modify(
+                    mem_addr=ctrl_mem,
+                    in_use=True,
+                    data1=ctrl_d1,
+                    data2=ctrl_d2,
+                    data3=ctrl_d3,
+                )
+            else:
+                dev_ctrl.aldb.add(
+                    group=grp,
+                    target=addr_resp,
+                    controller=True,
+                    data1=ctrl_d1,
+                    data2=ctrl_d2,
+                    data3=ctrl_d3,
+                )
             ctrl_done, ctrl_failed = await dev_ctrl.aldb.async_write(force=True)
-            if ctrl_failed:
-                if getattr(dev_ctrl.aldb, "_read_write_mode", None) != ReadWriteMode.PEEK_POKE:
-                    logger.info(f"Standard write failed on controller {ctrl_addr}; retrying with legacy PEEK/POKE mode...")
-                    dev_ctrl.aldb._read_write_mode = ReadWriteMode.PEEK_POKE
-                    dev_ctrl.aldb._status = ALDBStatus.LOADED
-                    ctrl_done, ctrl_failed = await dev_ctrl.aldb.async_write(force=True)
-            if ctrl_failed:
+            if ctrl_failed or ctrl_done == 0:
                 dev_ctrl.aldb.clear_pending()
-                logger.error(f"Hardware write failed while creating Controller record on {ctrl_addr} (target {resp_addr}, Grp {grp}).")
+                logger.error(f"Hardware write failed while creating Controller record on {ctrl_addr} (target {resp_addr}, Grp {grp}, done={ctrl_done}, failed={ctrl_failed}).")
                 return GenericResponse(success=False, message=f"Failed writing Controller record to {ctrl_addr}. Snapshot was not modified.")
 
             # Two-Phase Live Silicon Verification for Controller
             ctrl_rec = next((r for r in dev_ctrl.aldb.find(target=addr_resp, group=grp, is_controller=True, in_use=True)), None)
-            ctrl_mem = ctrl_rec.mem_addr if ctrl_rec else None
+            ctrl_mem = ctrl_rec.mem_addr if ctrl_rec else ctrl_mem
+            v_ok_c = False
+            v_msg_c = ""
             if ctrl_mem is not None:
                 v_ok_c, v_msg_c, _ = await insteon_manager.verify_hardware_record(
                     address=ctrl_addr,
@@ -238,42 +257,55 @@ class TransactionService:
 
             # Step 3: Write Responder record
             dev_resp.aldb._status = ALDBStatus.LOADED
-            dev_resp.aldb.add(
-                group=grp,
-                target=addr_ctrl,
-                controller=False,
-                data1=resp_d1,
-                data2=resp_d2,
-                data3=resp_d3,
+            existing_resp_rec = next(
+                (r for r in dev_resp.aldb.find(target=addr_ctrl, group=grp, is_controller=False)),
+                None,
             )
+            resp_mem = None
+            if existing_resp_rec is not None:
+                resp_mem = existing_resp_rec.mem_addr
+                logger.info(f"Reactivating existing responder slot 0x{resp_mem:04X} on {resp_addr}...")
+                if resp_mem in dev_resp.aldb._records:
+                    old_r = dev_resp.aldb._records[resp_mem]
+                    dev_resp.aldb._records[resp_mem] = new_aldb_record_from_existing(old_r, in_use=False)
+                dev_resp.aldb.modify(
+                    mem_addr=resp_mem,
+                    in_use=True,
+                    data1=resp_d1,
+                    data2=resp_d2,
+                    data3=resp_d3,
+                )
+            else:
+                dev_resp.aldb.add(
+                    group=grp,
+                    target=addr_ctrl,
+                    controller=False,
+                    data1=resp_d1,
+                    data2=resp_d2,
+                    data3=resp_d3,
+                )
             resp_done, resp_failed = await dev_resp.aldb.async_write(force=True)
-            if resp_failed:
-                if getattr(dev_resp.aldb, "_read_write_mode", None) != ReadWriteMode.PEEK_POKE:
-                    logger.info(f"Standard write failed on responder {resp_addr}; retrying with legacy PEEK/POKE mode...")
-                    dev_resp.aldb._read_write_mode = ReadWriteMode.PEEK_POKE
-                    dev_resp.aldb._status = ALDBStatus.LOADED
-                    resp_done, resp_failed = await dev_resp.aldb.async_write(force=True)
+            if resp_failed or resp_done == 0:
+                dev_resp.aldb.clear_pending()
 
             # Two-Phase Live Silicon Verification for Responder
             v_ok_r = False
             v_msg_r = ""
-            resp_mem = None
-            if not resp_failed:
-                resp_rec = next((r for r in dev_resp.aldb.find(target=addr_ctrl, group=grp, is_controller=False, in_use=True)), None)
-                resp_mem = resp_rec.mem_addr if resp_rec else None
-                if resp_mem is not None:
-                    v_ok_r, v_msg_r, _ = await insteon_manager.verify_hardware_record(
-                        address=resp_addr,
-                        mem_addr=resp_mem,
-                        expected_target=ctrl_addr,
-                        expected_group=grp,
-                        expected_controller=False,
-                        expected_in_use=True,
-                        expected_data1=resp_d1,
-                        expected_data2=resp_d2,
-                    )
-                else:
-                    v_ok_r = True
+            resp_rec = next((r for r in dev_resp.aldb.find(target=addr_ctrl, group=grp, is_controller=False, in_use=True)), None)
+            resp_mem = resp_rec.mem_addr if resp_rec else resp_mem
+            if not resp_failed and resp_done > 0 and resp_mem is not None:
+                v_ok_r, v_msg_r, _ = await insteon_manager.verify_hardware_record(
+                    address=resp_addr,
+                    mem_addr=resp_mem,
+                    expected_target=ctrl_addr,
+                    expected_group=grp,
+                    expected_controller=False,
+                    expected_in_use=True,
+                    expected_data1=resp_d1,
+                    expected_data2=resp_d2,
+                )
+            elif not resp_failed and resp_done > 0:
+                v_ok_r = True
 
             if resp_failed or not v_ok_r:
                 err_detail = v_msg_r if not v_ok_r else "EEPROM write failed"
@@ -379,15 +411,11 @@ class TransactionService:
             if not ok_resp or not dev_resp:
                 return GenericResponse(success=False, message=f"Cannot delete link: {msg_resp}")
 
-            from pyinsteon.constants import ALDBStatus, ReadWriteMode
+            from pyinsteon.constants import ALDBStatus
             dev_ctrl.aldb._status = ALDBStatus.LOADED
             for rec in dev_ctrl.aldb.find(target=addr_resp, group=group, is_controller=True, in_use=True):
                 dev_ctrl.aldb.modify(mem_addr=rec.mem_addr, in_use=False)
             _, ctrl_failed = await dev_ctrl.aldb.async_write(force=True)
-            if ctrl_failed and getattr(dev_ctrl.aldb, "_read_write_mode", None) != ReadWriteMode.PEEK_POKE:
-                dev_ctrl.aldb._read_write_mode = ReadWriteMode.PEEK_POKE
-                dev_ctrl.aldb._status = ALDBStatus.LOADED
-                _, ctrl_failed = await dev_ctrl.aldb.async_write(force=True)
             if ctrl_failed:
                 dev_ctrl.aldb.clear_pending()
                 return GenericResponse(success=False, message=f"Hardware EEPROM write failed while deleting Controller record on {ctrl_clean}. Database was NOT modified.")
@@ -419,10 +447,6 @@ class TransactionService:
             for rec in dev_resp.aldb.find(target=addr_ctrl, group=group, is_controller=False, in_use=True):
                 dev_resp.aldb.modify(mem_addr=rec.mem_addr, in_use=False)
             _, resp_failed = await dev_resp.aldb.async_write(force=True)
-            if resp_failed and getattr(dev_resp.aldb, "_read_write_mode", None) != ReadWriteMode.PEEK_POKE:
-                dev_resp.aldb._read_write_mode = ReadWriteMode.PEEK_POKE
-                dev_resp.aldb._status = ALDBStatus.LOADED
-                _, resp_failed = await dev_resp.aldb.async_write(force=True)
             if resp_failed:
                 dev_resp.aldb.clear_pending()
                 if snapshot:
@@ -665,6 +689,207 @@ class TransactionService:
         return GenericResponse(
             success=True,
             message=f"Slot {clean_mem} on device {clean_addr} marked deleted successfully (Simulator).",
+        )
+
+    async def update_device_aldb_record(self, address: str, mem_addr: Any, req: AldbRecordUpdateRequest) -> GenericResponse:
+        """Surgically adjust data1 (On-Level), data2 (Ramp-Rate), and/or data3 on an individual ALDB slot with 2PC silicon verification."""
+        snapshot = self._load_snapshot()
+        clean_addr = address.strip().upper()
+        clean_mem = f"0x{mem_addr:04X}".upper() if isinstance(mem_addr, int) else str(mem_addr).strip().upper()
+
+        logger.info(f"Updating ALDB slot {clean_mem} on device {clean_addr} (data1={req.data1}, data2={req.data2}, data3={req.data3})...")
+
+        from app.insteon import insteon_manager
+        live_hw = insteon_manager.is_connected and not insteon_manager._mock_mode and PYINSTEON_AVAILABLE
+
+        # STRICT GUARD: Never perform offline fantasy mutations in production
+        if not settings.is_simulator and not live_hw:
+            logger.error(f"Cannot update slot {clean_mem} on {clean_addr}: No active hardware session lock.")
+            return GenericResponse(
+                success=False,
+                message=f"Active hardware session lock required before updating slot {clean_mem} on {clean_addr}. Please acquire a session first.",
+            )
+
+        plm_addr = snapshot.get("plm", {}).get("address", "53.C1.42").upper() if snapshot else "53.C1.42"
+
+        if live_hw:
+            ok, dev_obj, err_msg = await insteon_manager.ensure_device_aldb_ready_for_write(clean_addr, snapshot)
+            if not ok or not dev_obj:
+                return GenericResponse(success=False, message=err_msg)
+
+            mem_int = int(clean_mem, 16) if clean_mem.startswith("0X") else int(clean_mem)
+            rec = dev_obj.aldb.get(mem_int)
+
+            if not rec:
+                return GenericResponse(
+                    success=False,
+                    message=f"Slot {clean_mem} was not found in live ALDB for {clean_addr}.",
+                )
+
+            new_d1 = req.data1 if req.data1 is not None else rec.data1
+            new_d2 = req.data2 if req.data2 is not None else rec.data2
+            new_d3 = req.data3 if req.data3 is not None else rec.data3
+
+            dev_obj.aldb.modify(
+                mem_addr=mem_int,
+                data1=new_d1,
+                data2=new_d2,
+                data3=new_d3,
+            )
+            done, failed = await dev_obj.aldb.async_write(force=True)
+            if failed or done == 0:
+                dev_obj.aldb.clear_pending()
+                return GenericResponse(
+                    success=False,
+                    message=f"Hardware EEPROM write failed while updating slot {clean_mem} on {clean_addr}.",
+                )
+
+            # Two-Phase Live Silicon Verification for Update
+            v_ok, v_msg, _ = await insteon_manager.verify_hardware_record(
+                address=clean_addr,
+                mem_addr=mem_int,
+                expected_target=str(rec.target).upper(),
+                expected_group=int(rec.group),
+                expected_controller=bool(rec.is_controller),
+                expected_in_use=True,
+                expected_data1=new_d1,
+                expected_data2=new_d2,
+            )
+            if not v_ok:
+                logger.error(f"Hardware live silicon verification failed for slot {clean_mem} on {clean_addr}: {v_msg}")
+                return GenericResponse(
+                    success=False,
+                    message=f"Hardware EEPROM update verification failed: {v_msg}. Snapshot database was NOT modified.",
+                )
+
+            logger.info(f"Hardware EEPROM write verified on {clean_addr}: Slot {clean_mem} confirmed on silicon (data1={new_d1}, data2={new_d2}).")
+            await insteon_manager.refresh_device_db_delta_after_write(clean_addr, snapshot)
+
+            # Synchronize snapshot
+            if clean_addr == plm_addr and hasattr(dev_obj, "aldb"):
+                parsed_plm = insteon_manager._parse_aldb_records(dev_obj.aldb, source_address=clean_addr)
+                if "plm" not in snapshot:
+                    snapshot["plm"] = {}
+                snapshot["plm"]["records"] = [r.model_dump() for r in parsed_plm]
+                snapshot["plm"]["records_count"] = len(parsed_plm)
+                self._save_snapshot(snapshot)
+            else:
+                for d in snapshot.get("devices", []):
+                    if d.get("address", "").upper() == clean_addr:
+                        for r in d.get("records", []):
+                            if r.get("mem_addr", "").upper() == clean_mem:
+                                r["data1"] = new_d1
+                                r["data2"] = new_d2
+                                r["data3"] = new_d3
+                                break
+                        break
+                self._save_snapshot(snapshot)
+
+            return GenericResponse(
+                success=True,
+                message=f"Slot {clean_mem} on device {clean_addr} updated successfully (Level={new_d1}, Ramp={new_d2}).",
+                data={"mem_addr": clean_mem, "data1": new_d1, "data2": new_d2, "data3": new_d3},
+            )
+
+        # Simulator Mode fallback (offline)
+        target_snap_rec = None
+        records_list = None
+        if clean_addr == plm_addr:
+            records_list = snapshot.get("plm", {}).get("records", [])
+        else:
+            for d in snapshot.get("devices", []):
+                if d.get("address", "").upper() == clean_addr:
+                    records_list = d.get("records", [])
+                    break
+        if records_list:
+            for r in records_list:
+                if r.get("mem_addr", "").upper() == clean_mem:
+                    target_snap_rec = r
+                    break
+
+        if target_snap_rec is None:
+            return GenericResponse(
+                success=False,
+                message=f"Slot {clean_mem} not found on {clean_addr}.",
+            )
+
+        if req.data1 is not None:
+            target_snap_rec["data1"] = req.data1
+        if req.data2 is not None:
+            target_snap_rec["data2"] = req.data2
+        if req.data3 is not None:
+            target_snap_rec["data3"] = req.data3
+
+        self._save_snapshot(snapshot)
+        return GenericResponse(
+            success=True,
+            message=f"Slot {clean_mem} on device {clean_addr} updated successfully (Simulator).",
+            data={"mem_addr": clean_mem, "data1": target_snap_rec.get("data1"), "data2": target_snap_rec.get("data2"), "data3": target_snap_rec.get("data3")},
+        )
+
+    async def update_link(self, req: ReciprocalLinkUpdateRequest) -> GenericResponse:
+        """Update presets (brightness/on-level & ramp-rate) on the responder record of a reciprocal link pair."""
+        ctrl_clean = req.controller_address.strip().upper()
+        resp_clean = req.responder_address.strip().upper()
+        grp = req.group
+
+        snapshot = self._load_snapshot()
+        plm_addr = snapshot.get("plm", {}).get("address", "53.C1.42").upper() if snapshot else "53.C1.42"
+
+        # Find the responder record on resp_clean pointing to ctrl_clean for group grp
+        target_mem = None
+        records_list = []
+        if resp_clean == plm_addr:
+            records_list = snapshot.get("plm", {}).get("records", [])
+        else:
+            for d in snapshot.get("devices", []):
+                if d.get("address", "").upper() == resp_clean:
+                    records_list = d.get("records", [])
+                    break
+
+        for r in records_list:
+            if (
+                r.get("in_use")
+                and not r.get("high_water_mark")
+                and r.get("is_responder")
+                and r.get("group") == grp
+                and str(r.get("target_address", "")).upper() == ctrl_clean
+            ):
+                target_mem = r.get("mem_addr")
+                break
+
+        if not target_mem:
+            # Also check if target_mem exists in live hardware if live
+            from app.insteon import insteon_manager
+            live_hw = insteon_manager.is_connected and not insteon_manager._mock_mode and PYINSTEON_AVAILABLE
+            if live_hw:
+                dev = pyinsteon.devices.get(Address(resp_clean))
+                if dev and hasattr(dev, "aldb"):
+                    for m_addr, rec in dev.aldb.items():
+                        if (
+                            rec.is_in_use
+                            and rec.is_responder
+                            and rec.group == grp
+                            and str(rec.target).upper() == ctrl_clean
+                        ):
+                            target_mem = f"0x{m_addr:04X}"
+                            break
+
+        if not target_mem:
+            return GenericResponse(
+                success=False,
+                message=f"No active responder link found on {resp_clean} responding to {ctrl_clean} (Group {grp}).",
+            )
+
+        update_req = AldbRecordUpdateRequest(
+            data1=req.data1,
+            data2=req.data2,
+            data3=req.data3,
+        )
+        return await self.update_device_aldb_record(
+            address=resp_clean,
+            mem_addr=target_mem,
+            req=update_req,
         )
 
     async def purge_ghost_links(self, target_address: str) -> GenericResponse:

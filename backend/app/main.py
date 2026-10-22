@@ -26,6 +26,8 @@ from app.models import (
     SceneMemberAddRequest,
     SceneTriggerRequest,
     ReciprocalLinkRequest,
+    ReciprocalLinkUpdateRequest,
+    AldbRecordUpdateRequest,
     DeviceReplaceRequest,
     DeviceControlRequest,
     DeviceAddRequest,
@@ -552,6 +554,21 @@ async def delete_reciprocal_link(
         raise HTTPException(status_code=500, detail=str(exc))
 
 
+@app.patch("/insteon/links", response_model=GenericResponse)
+async def update_link_preset(req: ReciprocalLinkUpdateRequest):
+    """Surgically adjust On-Level (brightness) or Ramp Rate for an existing reciprocal link."""
+    if not session_manager.is_active and not settings.is_simulator:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Active session lock required before writing link presets to hardware. Call POST /session/acquire first.",
+        )
+    try:
+        return await transaction_service.update_link(req)
+    except Exception as exc:
+        logger.error(f"Error updating link preset: {exc}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
 @app.delete("/insteon/devices/{address}/aldb/{mem_addr}", response_model=GenericResponse)
 async def delete_device_aldb_record(address: str, mem_addr: str):
     """Mark an individual ALDB slot deleted (in_use=False) on a device."""
@@ -564,6 +581,21 @@ async def delete_device_aldb_record(address: str, mem_addr: str):
         return await transaction_service.delete_device_aldb_record(address=address, mem_addr=mem_addr)
     except Exception as exc:
         logger.error(f"Error deleting ALDB record {mem_addr} on {address}: {exc}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@app.patch("/insteon/devices/{address}/aldb/{mem_addr}", response_model=GenericResponse)
+async def update_device_aldb_record(address: str, mem_addr: str, req: AldbRecordUpdateRequest):
+    """Surgically adjust data1 (On-Level), data2 (Ramp Rate), and/or data3 on an individual ALDB slot."""
+    if not session_manager.is_active and not settings.is_simulator:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Active session lock required before writing ALDB slots to hardware. Call POST /session/acquire first.",
+        )
+    try:
+        return await transaction_service.update_device_aldb_record(address=address, mem_addr=mem_addr, req=req)
+    except Exception as exc:
+        logger.error(f"Error updating ALDB slot {mem_addr} on {address}: {exc}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(exc))
 
 

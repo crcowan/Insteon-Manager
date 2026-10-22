@@ -168,6 +168,9 @@ public class MainViewModel : ViewModelBase
         CreateReciprocalLinkCommand = new AsyncRelayCommand(CreateReciprocalLinkAsync, () => !string.IsNullOrEmpty(NewLinkControllerAddress) && !string.IsNullOrEmpty(NewLinkResponderAddress) && !IsLoading);
         DeleteReciprocalLinkCommand = new AsyncRelayCommand(DeleteReciprocalLinkAsync, () => !string.IsNullOrEmpty(DeleteLinkControllerAddress) && !string.IsNullOrEmpty(DeleteLinkResponderAddress) && !IsLoading && !IsProtectedPlmLink(DeleteLinkControllerAddress, DeleteLinkResponderAddress, DeleteLinkGroup));
         DeleteLinkFromEntryCommand = new AsyncRelayCommand<OrganizedAldbEntry>(DeleteLinkFromEntryAsync, entry => entry != null && !IsLoading && (!entry.IsProtectedPlmLink || entry.IsDuplicate));
+        StageUpdateLinkPresetCommand = new RelayCommand(StageUpdateLinkPreset, () => SelectedAdjustLink != null && !IsLoading);
+        UpdateLinkPresetNowCommand = new AsyncRelayCommand(UpdateLinkPresetNowAsync, () => SelectedAdjustLink != null && !IsLoading);
+        EditResponderPresetCommand = new RelayCommand<OrganizedAldbEntry>(EditResponderPreset, entry => entry != null && !IsLoading);
 
         ControlDeviceCommand = new AsyncRelayCommand<string>(ControlDeviceFromStringAsync, _ => !IsLoading);
         ControlSelectedNodeCommand = new AsyncRelayCommand<string>(ControlSelectedNodeAsync, _ => SelectedGraphNode != null && !IsLoading);
@@ -550,6 +553,9 @@ public class MainViewModel : ViewModelBase
     public AsyncRelayCommand CreateReciprocalLinkCommand { get; }
     public AsyncRelayCommand DeleteReciprocalLinkCommand { get; }
     public AsyncRelayCommand<OrganizedAldbEntry> DeleteLinkFromEntryCommand { get; }
+    public RelayCommand StageUpdateLinkPresetCommand { get; }
+    public AsyncRelayCommand UpdateLinkPresetNowCommand { get; }
+    public RelayCommand<OrganizedAldbEntry> EditResponderPresetCommand { get; }
     public RelayCommand SetSelectedNodeAsControllerCommand { get; }
     public RelayCommand SetSelectedNodeAsResponderCommand { get; }
     public RelayCommand SetSelectedNodeAsReplaceOldCommand { get; }
@@ -1197,6 +1203,69 @@ public class MainViewModel : ViewModelBase
             }
         }
     }
+
+    private ActiveLinkPairModel? _selectedAdjustLink;
+    public ActiveLinkPairModel? SelectedAdjustLink
+    {
+        get => _selectedAdjustLink;
+        set
+        {
+            if (SetProperty(ref _selectedAdjustLink, value))
+            {
+                if (value != null)
+                {
+                    AdjustLinkOnLevel = value.Data1;
+                    AdjustLinkRampRate = value.Data2;
+                }
+                OnPropertyChanged(nameof(HasSelectedAdjustLink));
+                OnPropertyChanged(nameof(AdjustLinkPresetSummary));
+                StageUpdateLinkPresetCommand?.NotifyCanExecuteChanged();
+                UpdateLinkPresetNowCommand?.NotifyCanExecuteChanged();
+            }
+        }
+    }
+
+    public bool HasSelectedAdjustLink => SelectedAdjustLink != null;
+
+    private int _adjustLinkOnLevel = 255;
+    public int AdjustLinkOnLevel
+    {
+        get => _adjustLinkOnLevel;
+        set
+        {
+            if (SetProperty(ref _adjustLinkOnLevel, Math.Clamp(value, 0, 255)))
+            {
+                OnPropertyChanged(nameof(AdjustLinkBrightnessPercent));
+                OnPropertyChanged(nameof(AdjustLinkBrightnessPercentText));
+                OnPropertyChanged(nameof(AdjustLinkPresetSummary));
+            }
+        }
+    }
+
+    public double AdjustLinkBrightnessPercent
+    {
+        get => Math.Round((_adjustLinkOnLevel / 255.0) * 100.0, 0);
+        set => AdjustLinkOnLevel = (int)Math.Round((value / 100.0) * 255.0, 0);
+    }
+
+    public string AdjustLinkBrightnessPercentText => $"{AdjustLinkBrightnessPercent:F0}% ({AdjustLinkOnLevel}/255)";
+
+    private int _adjustLinkRampRate = 28;
+    public int AdjustLinkRampRate
+    {
+        get => _adjustLinkRampRate;
+        set
+        {
+            if (SetProperty(ref _adjustLinkRampRate, Math.Clamp(value, 0, 255)))
+            {
+                OnPropertyChanged(nameof(AdjustLinkRampRateSecondsText));
+                OnPropertyChanged(nameof(AdjustLinkPresetSummary));
+            }
+        }
+    }
+
+    public string AdjustLinkRampRateSecondsText => InsteonRampRateHelper.FormatRampRate(AdjustLinkRampRate);
+    public string AdjustLinkPresetSummary => $"Brightness: {AdjustLinkBrightnessPercentText} | Ramp Rate: {AdjustLinkRampRateSecondsText}";
 
     public void AddLog(LogLevel level, string source, string message)
     {
@@ -2524,6 +2593,57 @@ public class MainViewModel : ViewModelBase
         CommitStagedChangesCommand?.NotifyCanExecuteChanged();
     }
 
+    public void StageUpdateLinkPreset()
+    {
+        if (SelectedAdjustLink == null)
+        {
+            StatusMessage = "Please select an active link to adjust preset.";
+            return;
+        }
+
+        var link = SelectedAdjustLink;
+        int level = AdjustLinkOnLevel;
+        int ramp = AdjustLinkRampRate;
+        string levelPct = AdjustLinkBrightnessPercentText;
+        string rampText = AdjustLinkRampRateSecondsText;
+
+        var staged = new StagedChangeModel
+        {
+            Id = $"PST-{DateTime.Now:HHmmss}",
+            TargetAddress = link.ResponderAddress,
+            TargetLabel = link.ResponderFriendlyName,
+            Operation = "UPDATE_LINK_PRESET",
+            CurrentState = $"Level: {link.BrightnessPercentText}, Ramp: {link.RampRateText}",
+            ProposedState = $"Level: {levelPct}, Ramp: {rampText}",
+            Description = $"Adjust brightness ({levelPct}) and ramp rate ({rampText}) on {link.ResponderFriendlyName} when triggered by {link.ControllerFriendlyName} (Group {link.Group})",
+            Risk = ChangeRisk.Low,
+            ExecutionHandler = async () =>
+            {
+                var req = new ReciprocalLinkUpdateRequestModel
+                {
+                    ControllerAddress = link.ControllerAddress,
+                    ResponderAddress = link.ResponderAddress,
+                    Group = link.Group,
+                    Data1 = level,
+                    Data2 = ramp,
+                };
+                var res = await _apiClient.UpdateLinkPresetAsync(req);
+                if (res.Success)
+                {
+                    link.Data1 = level;
+                    link.Data2 = ramp;
+                }
+                return res;
+            }
+        };
+
+        StagedChanges.Add(staged);
+        StatusMessage = $"Staged preset update for link to {link.ResponderFriendlyName}. Review in Pending Changes.";
+        AddLog(LogLevel.Info, "Staging", $"Staged preset update for link {link.ControllerAddress} -> {link.ResponderAddress} (Grp {link.Group}): Level={level}, Ramp={ramp}.");
+        SelectedTabIndex = 4;
+        CommitStagedChangesCommand?.NotifyCanExecuteChanged();
+    }
+
     public void StageDeleteLink()
     {
         if (string.IsNullOrWhiteSpace(DeleteLinkControllerAddress) || string.IsNullOrWhiteSpace(DeleteLinkResponderAddress))
@@ -3397,6 +3517,101 @@ public class MainViewModel : ViewModelBase
         }
     }
 
+    public async Task UpdateLinkPresetNowAsync()
+    {
+        if (SelectedAdjustLink == null)
+        {
+            StatusMessage = "Please select an active link to adjust preset.";
+            return;
+        }
+
+        var link = SelectedAdjustLink;
+        int level = AdjustLinkOnLevel;
+        int ramp = AdjustLinkRampRate;
+
+        if (!await EnsureSessionActiveAsync($"update preset on link {link.ControllerAddress} -> {link.ResponderAddress}")) return;
+
+        IsLoading = true;
+        StatusMessage = $"Writing preset update to {link.ResponderFriendlyName} (Group {link.Group})...";
+        AddLog(LogLevel.Info, "LinkAdjuster", $"Initiating live EEPROM preset update on {link.ResponderAddress} (Level={level}, Ramp={ramp}) for controller {link.ControllerAddress}...");
+        try
+        {
+            var req = new ReciprocalLinkUpdateRequestModel
+            {
+                ControllerAddress = link.ControllerAddress,
+                ResponderAddress = link.ResponderAddress,
+                Group = link.Group,
+                Data1 = level,
+                Data2 = ramp,
+            };
+            var (success, msg) = await _apiClient.UpdateLinkPresetAsync(req);
+            if (success)
+            {
+                link.Data1 = level;
+                link.Data2 = ramp;
+                StatusMessage = $"Preset updated successfully on {link.ResponderFriendlyName}.";
+                AddLog(LogLevel.Success, "LinkAdjuster", msg);
+                await QueryAldbAsync(silent: true);
+            }
+            else
+            {
+                StatusMessage = $"Preset update failed: {msg}";
+                AddLog(LogLevel.Error, "LinkAdjuster", msg);
+            }
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = $"Preset update error: {ex.Message}";
+            AddLog(LogLevel.Error, "LinkAdjuster", $"Preset update failed: {ex.Message}");
+        }
+        finally
+        {
+            IsLoading = false;
+        }
+    }
+
+    public void EditResponderPreset(OrganizedAldbEntry? entry)
+    {
+        if (entry == null) return;
+
+        // Try to find the existing link in ActiveLinkPairs
+        var link = ActiveLinkPairs.FirstOrDefault(l =>
+            l.ResponderAddress.Equals(entry.OwnerAddress, StringComparison.OrdinalIgnoreCase) &&
+            l.ControllerAddress.Equals(entry.TargetAddress, StringComparison.OrdinalIgnoreCase) &&
+            l.Group == entry.Group
+        );
+
+        if (link != null)
+        {
+            SelectedAdjustLink = link;
+        }
+        else
+        {
+            // Create a temporary ActiveLinkPairModel entry
+            var customLink = new ActiveLinkPairModel
+            {
+                ControllerAddress = entry.TargetAddress,
+                ControllerFriendlyName = entry.TargetFriendlyName,
+                ResponderAddress = entry.OwnerAddress,
+                ResponderFriendlyName = entry.OwnerFriendlyName,
+                Group = entry.Group,
+                MemAddrResponder = entry.MemAddr,
+                Data1 = entry.Data1,
+                Data2 = entry.Data2,
+                Data3 = entry.Data3,
+            };
+            ActiveLinkPairs.Add(customLink);
+            SelectedAdjustLink = customLink;
+        }
+
+        AdjustLinkOnLevel = entry.Data1;
+        AdjustLinkRampRate = entry.Data2;
+
+        SelectedTabIndex = 6; // Switch to Tab 7 (Tools & Maintenance)
+        StatusMessage = $"Loaded preset for {entry.OwnerFriendlyName} (Group {entry.Group}) in Live Link Preset Adjuster.";
+        AddLog(LogLevel.Info, "UI", $"Loaded preset for slot {entry.MemAddr} on {entry.OwnerAddress} in Live Link Preset Adjuster.");
+    }
+
     public async Task DeleteReciprocalLinkAsync()
     {
         if (string.IsNullOrWhiteSpace(DeleteLinkControllerAddress) || string.IsNullOrWhiteSpace(DeleteLinkResponderAddress))
@@ -3619,6 +3834,12 @@ public class MainViewModel : ViewModelBase
             string srcName = friendlyMap.TryGetValue(c.SourceAddress!, out var sn) ? sn : c.SourceAddress!;
             string tgtName = friendlyMap.TryGetValue(c.TargetAddress, out var tn) ? tn : c.TargetAddress;
 
+            var resp = records.FirstOrDefault(r =>
+                r.InUse && !r.HighWaterMark && r.IsResponder && r.Group == c.Group &&
+                string.Equals(r.SourceAddress, c.TargetAddress, StringComparison.OrdinalIgnoreCase) &&
+                string.Equals(r.TargetAddress, c.SourceAddress, StringComparison.OrdinalIgnoreCase)
+            );
+
             ActiveLinkPairs.Add(new ActiveLinkPairModel
             {
                 ControllerAddress = c.SourceAddress!,
@@ -3627,6 +3848,10 @@ public class MainViewModel : ViewModelBase
                 ResponderFriendlyName = tgtName,
                 Group = c.Group,
                 MemAddrController = c.MemAddr,
+                MemAddrResponder = resp?.MemAddr ?? string.Empty,
+                Data1 = resp?.Data1 ?? 255,
+                Data2 = resp?.Data2 ?? 28,
+                Data3 = resp?.Data3 ?? 1,
             });
         }
     }

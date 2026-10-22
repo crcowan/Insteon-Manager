@@ -296,8 +296,8 @@ class SceneService:
 
             logger.info(f"Writing updated preset to {clean_addr} (Level={new_data1}, Ramp={new_data2})...")
             done, failed = await dev_obj.aldb.async_write(force=True)
-            if failed and getattr(dev_obj.aldb, "_read_write_mode", None) != ReadWriteMode.PEEK_POKE:
-                logger.info(f"Standard extended write failed on {clean_addr}; retrying with legacy PEEK/POKE mode...")
+            if failed and getattr(dev_obj, "engine_version", None) == EngineVersion.I1 and getattr(dev_obj.aldb, "_read_write_mode", None) != ReadWriteMode.PEEK_POKE:
+                logger.info(f"Standard extended write failed on legacy I1 device {clean_addr}; retrying with PEEK/POKE mode...")
                 dev_obj.aldb._read_write_mode = ReadWriteMode.PEEK_POKE
                 dev_obj.aldb._status = ALDBStatus.LOADED
                 done, failed = await dev_obj.aldb.async_write(force=True)

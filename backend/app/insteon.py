@@ -619,7 +619,7 @@ class InsteonManager:
         expected_in_use: bool,
         expected_data1: Optional[int] = None,
         expected_data2: Optional[int] = None,
-        timeout: float = 6.0,
+        timeout: float = 12.0,
     ) -> Tuple[bool, str, Optional[Dict[str, Any]]]:
         """Perform a live read-back from physical device EEPROM to verify that a write or deletion actually took effect."""
         if not self.is_connected or self._mock_mode or not PYINSTEON_AVAILABLE:
@@ -679,17 +679,43 @@ class InsteonManager:
                 return True, "PLM record not found in active table (deleted)", None
             return False, f"PLM record ({clean_target}, Grp {expected_group}) not found in live modem ALDB", None
 
-        # Case 2: Peer Line Device verification via live EEPROM peek
+        # Case 2: Peer Line Device verification via live EEPROM read-back
         mem_int = int(str(mem_addr), 16) if str(mem_addr).upper().startswith("0X") else int(mem_addr)
         dev = pyinsteon.devices.get(Address(clean_addr))
         if not dev or not hasattr(dev, "aldb"):
             return False, f"Device {clean_addr} not registered in pyinsteon", None
 
+        is_peek_poke = getattr(dev.aldb, "read_write_mode", None) == ReadWriteMode.PEEK_POKE
+
         for attempt in range(1, 4):
             try:
                 async with async_timeout.timeout(timeout):
-                    rec = await self._fast_peek_record(dev.aldb, mem_int)
+                    rec = None
+                    if not is_peek_poke and hasattr(dev.aldb, "_read_manager") and dev.aldb._read_manager:
+                        try:
+                            # Canonical Insteon I2/I2CS Extended ALDB Read (0x2F, action 0x00) directly querying EEPROM
+                            async for r in dev.aldb._read_manager.async_read(
+                                mem_addr=mem_int, num_recs=1, read_write_mode=ReadWriteMode.STANDARD
+                            ):
+                                rec = r
+                                break
+                        except Exception as ex_read:
+                            logger.debug(f"Extended ALDB read error on {clean_addr} slot 0x{mem_int:04X}: {ex_read}")
+
+                    # Fallback to peek only if device is configured for PEEK_POKE (legacy Engine 1) or on final attempt
+                    if rec is None and (is_peek_poke or attempt == 3):
+                        rec = await self._fast_peek_record(dev.aldb, mem_int)
+
+                    # Handle erased cells (hit_erased on I3 devices) for deletion verification
+                    if rec is None and not expected_in_use:
+                        if getattr(getattr(dev.aldb, "_read_manager", None), "hit_erased", False):
+                            return True, f"Slot 0x{mem_int:04X} verified erased/deleted on silicon", None
+
                     if rec is not None:
+                        # Synchronize pyinsteon internal cache record with live hardware truth
+                        if hasattr(dev.aldb, "_records"):
+                            dev.aldb._records[mem_int] = rec
+
                         if not expected_in_use:
                             if not rec.is_in_use or rec.is_high_water_mark:
                                 return True, f"Slot 0x{mem_int:04X} verified deleted on silicon (in_use=False)", None
@@ -709,7 +735,7 @@ class InsteonManager:
                                 if attempt < 3:
                                     logger.warning(
                                         f"Verification attempt {attempt}/3 on {clean_addr} slot 0x{mem_int:04X} "
-                                        f"read target {rec.target} (expected {clean_target}); draining and retrying peek..."
+                                        f"read target {rec.target} (expected {clean_target}); draining and retrying verification..."
                                     )
                                     self._drain_outbound_queue()
                                     await asyncio.sleep(0.6 * attempt)
@@ -719,7 +745,7 @@ class InsteonManager:
                                 if attempt < 3:
                                     logger.warning(
                                         f"Verification attempt {attempt}/3 on {clean_addr} slot 0x{mem_int:04X} "
-                                        f"read group {rec.group} (expected {expected_group}); draining and retrying peek..."
+                                        f"read group {rec.group} (expected {expected_group}); draining and retrying verification..."
                                     )
                                     self._drain_outbound_queue()
                                     await asyncio.sleep(0.6 * attempt)
@@ -1139,7 +1165,7 @@ class InsteonManager:
         # If still not loaded (e.g. db_delta changed on hardware since snapshot), read live ALDB first
         if not dev_obj.aldb.is_loaded or len(dev_obj.aldb) == 0:
             logger.info(f"Loading live ALDB from {clean_addr} before hardware write (live db_delta={live_delta}, cached={snap_delta})...")
-            use_peek_poke = dev_obj.engine_version in (EngineVersion.I1, EngineVersion.I2)
+            use_peek_poke = dev_obj.engine_version == EngineVersion.I1
             await self._read_aldb_robust(dev_obj.aldb, prefer_bulk=True, use_peek_poke=use_peek_poke)
             if not dev_obj.aldb.is_loaded and len(dev_obj.aldb) == 0:
                 return (
@@ -1147,6 +1173,19 @@ class InsteonManager:
                     None,
                     f"Live ALDB read refused or failed by {clean_addr}. Hardware write aborted to prevent memory corruption. (Check device communication or Set-button authorization).",
                 )
+
+        # Configure ALDB read/write mode: Only confirmed legacy I1 devices require ReadWriteMode.PEEK_POKE.
+        # I2 and I2CS devices natively use Standard Extended ALDB Read/Write (0x2F).
+        is_legacy_i1 = (
+            getattr(dev_obj, "engine_version", None) == EngineVersion.I1
+            or str((cached_dev or {}).get("engine_version", "")).lower() == "i1"
+        )
+        if hasattr(dev_obj, "aldb"):
+            if is_legacy_i1:
+                dev_obj.aldb._read_write_mode = ReadWriteMode.PEEK_POKE
+                logger.info(f"Configured ALDB read/write mode to PEEK_POKE for legacy I1 device {clean_addr}.")
+            else:
+                dev_obj.aldb._read_write_mode = ReadWriteMode.STANDARD
 
         return True, dev_obj, "Device ALDB ready"
 
