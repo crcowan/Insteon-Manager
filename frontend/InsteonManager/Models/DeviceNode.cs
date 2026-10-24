@@ -19,6 +19,16 @@ public class DeviceNode : INotifyPropertyChanged
     private bool _isBattery;
     private bool _isFilterChecked = true;
     private bool _isVisible = true;
+    private string _modelName = string.Empty;
+    private string _engineVersion = string.Empty;
+    private string _readStrategy = string.Empty;
+    private string _writeStrategy = string.Empty;
+    private int _cat;
+    private int _subcat;
+    private int _firmware;
+    private bool _isKeypad;
+    private int _buttonCount = 1;
+    private bool _isDimmable = true;
 
     public string Address
     {
@@ -149,9 +159,106 @@ public class DeviceNode : INotifyPropertyChanged
             if (SetProperty(ref _deviceType, value))
             {
                 OnPropertyChanged(nameof(CategoryBadge));
+                OnPropertyChanged(nameof(DetailedHardwareTooltip));
             }
         }
     }
+
+    public string ModelName
+    {
+        get => _modelName;
+        set
+        {
+            if (SetProperty(ref _modelName, value))
+            {
+                OnPropertyChanged(nameof(HardwareSummary));
+                OnPropertyChanged(nameof(DetailedHardwareTooltip));
+            }
+        }
+    }
+
+    public string EngineVersion
+    {
+        get => _engineVersion;
+        set
+        {
+            if (SetProperty(ref _engineVersion, value))
+            {
+                OnPropertyChanged(nameof(HardwareSummary));
+                OnPropertyChanged(nameof(EngineBadgeShort));
+                OnPropertyChanged(nameof(DetailedHardwareTooltip));
+            }
+        }
+    }
+
+    public string ReadStrategy
+    {
+        get => _readStrategy;
+        set { if (SetProperty(ref _readStrategy, value)) OnPropertyChanged(nameof(DetailedHardwareTooltip)); }
+    }
+
+    public string WriteStrategy
+    {
+        get => _writeStrategy;
+        set { if (SetProperty(ref _writeStrategy, value)) OnPropertyChanged(nameof(DetailedHardwareTooltip)); }
+    }
+
+    public int Cat
+    {
+        get => _cat;
+        set { if (SetProperty(ref _cat, value)) OnPropertyChanged(nameof(DetailedHardwareTooltip)); }
+    }
+
+    public int Subcat
+    {
+        get => _subcat;
+        set { if (SetProperty(ref _subcat, value)) OnPropertyChanged(nameof(DetailedHardwareTooltip)); }
+    }
+
+    public int Firmware
+    {
+        get => _firmware;
+        set { if (SetProperty(ref _firmware, value)) OnPropertyChanged(nameof(DetailedHardwareTooltip)); }
+    }
+
+    public bool IsKeypad
+    {
+        get => _isKeypad;
+        set => SetProperty(ref _isKeypad, value);
+    }
+
+    public int ButtonCount
+    {
+        get => _buttonCount;
+        set => SetProperty(ref _buttonCount, value);
+    }
+
+    public bool IsDimmable
+    {
+        get => _isDimmable;
+        set => SetProperty(ref _isDimmable, value);
+    }
+
+    public string EngineBadgeShort => EngineVersion?.ToLowerInvariant() switch
+    {
+        "i1" => "I1",
+        "i2" => "I2",
+        "i2cs" => "I2CS",
+        _ => EngineVersion?.ToUpperInvariant() ?? ""
+    };
+
+    public string HardwareSummary => !string.IsNullOrWhiteSpace(ModelName)
+        ? (string.IsNullOrWhiteSpace(EngineBadgeShort) ? ModelName : $"{ModelName} • {EngineBadgeShort}")
+        : DeviceType;
+
+    public string DetailedHardwareTooltip =>
+        $"📍 Device: {FriendlyName} ({Address})\n" +
+        $"🏷️ Model: {(string.IsNullOrWhiteSpace(ModelName) ? DeviceType : ModelName)}\n" +
+        $"🔬 Hardware Spec: Cat 0x{Cat:X2}, Subcat 0x{Subcat:X2}" + (Firmware > 0 ? $", Firmware v{Firmware}" : "") + "\n" +
+        $"⚙️ Engine: {(string.IsNullOrWhiteSpace(EngineVersion) ? "Standard" : EngineVersion.ToUpperInvariant())}\n" +
+        $"🔌 Silicon I/O: {ReadStrategy} / {WriteStrategy}\n" +
+        $"⚡ Power: {(IsBattery ? "🔋 Battery Remote" : "⚡ AC Line Powered")}" +
+        (IsKeypad ? $"\n🎛️ Keypad: {ButtonCount} Buttons" : "");
 
     public event PropertyChangedEventHandler? PropertyChanged;
 

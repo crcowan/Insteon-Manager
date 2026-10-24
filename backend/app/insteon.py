@@ -4,6 +4,7 @@ import os
 import json
 import logging
 import asyncio
+import time
 from typing import List, Optional, Dict, Any, Tuple
 
 # Tune pyinsteon serial write pacing before importing pyinsteon
@@ -11,6 +12,12 @@ os.environ.setdefault("PYINSTEON_WRITE_WAIT", "0.30")
 
 from app.config import settings
 from app.models import ALDBRecordResponse, PlmInfoResponse, DeviceSummary
+from app.device_registry import (
+    get_device_hardware_profile,
+    DeviceHardwareProfile,
+    ReadStrategy,
+    WriteStrategy,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -81,6 +88,45 @@ except ImportError as _imp_err:
             return self._addr
 
 KNOWN_RETIRED_ADDRESSES = {"2C.E7.EF", "39.F1.75", "39.BA.04", "34.28.58", "16.41.31", "06.52.D1"}
+
+
+class HardwareBusPacer:
+    """Zero-crossing synchronization and multi-hop pacing arbiter for Insteon dual-mesh network.
+
+    Prevents powerline/RF repeater packet collisions and EEPROM charge-pump read race conditions.
+    """
+    def __init__(self):
+        self._lock = asyncio.Lock()
+        self._last_cmd_time: float = 0.0
+        self._last_write_time: float = 0.0
+        self._min_inter_cmd_delay: float = 0.30     # 300ms between standard commands
+        self._min_extended_cmd_delay: float = 0.50  # 500ms between extended messages (3 hops)
+        self._post_write_settle_delay: float = 0.50 # 500ms post-EEPROM charge pump settle
+
+    async def pace_command(self, is_extended: bool = False):
+        async with self._lock:
+            now = time.monotonic()
+            delay = self._min_extended_cmd_delay if is_extended else self._min_inter_cmd_delay
+            elapsed = now - self._last_cmd_time
+            if elapsed < delay:
+                await asyncio.sleep(delay - elapsed)
+            self._last_cmd_time = time.monotonic()
+
+    async def mark_write_completed(self):
+        async with self._lock:
+            now = time.monotonic()
+            self._last_write_time = now
+            self._last_cmd_time = now
+
+    async def wait_post_write_settle(self):
+        async with self._lock:
+            now = time.monotonic()
+            elapsed = now - self._last_write_time
+            if elapsed < self._post_write_settle_delay:
+                await asyncio.sleep(self._post_write_settle_delay - elapsed)
+
+
+bus_pacer = HardwareBusPacer()
 
 
 def _apply_pyinsteon_optimizations():
@@ -374,12 +420,19 @@ class InsteonManager:
 
     async def _fast_peek_record(self, aldb, mem_addr: int):
         """Read a single 8-byte ALDB record using 10-byte Standard PEEK_POKE (I1/I2 fallback)."""
-        rm = aldb._read_manager
+        rm = getattr(aldb, "_read_manager", None)
+        if not rm:
+            try:
+                from pyinsteon.managers.aldb_read_manager import ALDBReadManager
+                aldb._read_manager = ALDBReadManager(aldb)
+                rm = aldb._read_manager
+            except Exception:
+                pass
         get_health(aldb.address).record_success()
 
         async def _clean_peek(target_mem: int):
             # Allow any multi-hop powerline/RF echo from the previous peek to arrive and drain it
-            await asyncio.sleep(0.25)
+            await asyncio.sleep(0.2)
             try:
                 pm = getattr(rm, "_peek_manager", None)
                 if pm and hasattr(pm, "_peek_value_queue"):
@@ -393,6 +446,9 @@ class InsteonManager:
             return await rm._async_peek(mem_addr=target_mem)
 
         flags_byte = await _clean_peek(mem_addr - 7)
+        if flags_byte is None or flags_byte == -1:
+            await asyncio.sleep(0.25)
+            flags_byte = await _clean_peek(mem_addr - 7)
         if flags_byte is None or flags_byte == -1:
             return None
 
@@ -430,6 +486,9 @@ class InsteonManager:
         rem_bytes = {}
         for offset in range(6, -1, -1):
             val = await _clean_peek(mem_addr - offset)
+            if val is None or val == -1:
+                await asyncio.sleep(0.25)
+                val = await _clean_peek(mem_addr - offset)
             if val is None or val == -1:
                 return None
             rem_bytes[offset] = val
@@ -685,100 +744,140 @@ class InsteonManager:
         if not dev or not hasattr(dev, "aldb"):
             return False, f"Device {clean_addr} not registered in pyinsteon", None
 
-        is_peek_poke = getattr(dev.aldb, "read_write_mode", None) == ReadWriteMode.PEEK_POKE
+        profile = get_device_hardware_profile(clean_addr)
+        is_peek_poke = profile.write_strategy == WriteStrategy.PEEK_POKE or getattr(dev.aldb, "read_write_mode", None) == ReadWriteMode.PEEK_POKE
+        is_direct_peek = profile.read_strategy in (ReadStrategy.PEEK, ReadStrategy.HYBRID) or is_peek_poke
+
+        # Allow device hardware EEPROM write cycle to stabilize and bus to clear
+        await bus_pacer.wait_post_write_settle()
+        self._drain_outbound_queue()
 
         for attempt in range(1, 4):
+            rec = None
             try:
-                async with async_timeout.timeout(timeout):
-                    rec = None
-                    if not is_peek_poke and hasattr(dev.aldb, "_read_manager") and dev.aldb._read_manager:
+                # Step A: Direct Fast PEEK if device profile dictates PEEK or HYBRID (bypasses I2 read trap)
+                if is_direct_peek:
+                    logger.debug(f"Direct PEEK verification on {clean_addr} slot 0x{mem_int:04X} (Strategy: {profile.read_strategy.value})...")
+                    try:
+                        async with async_timeout.timeout(8.0):
+                            rec = await self._fast_peek_record(dev.aldb, mem_int)
+                    except (asyncio.TimeoutError, Exception) as ex_peek:
+                        logger.debug(f"Direct PEEK verification on {clean_addr} slot 0x{mem_int:04X} error: {ex_peek}")
+                else:
+                    # Step B: Attempt Extended ALDB Read (0x2F) if device is standard
+                    if hasattr(dev.aldb, "_read_manager") and dev.aldb._read_manager:
                         try:
-                            # Canonical Insteon I2/I2CS Extended ALDB Read (0x2F, action 0x00) directly querying EEPROM
-                            async for r in dev.aldb._read_manager.async_read(
-                                mem_addr=mem_int, num_recs=1, read_write_mode=ReadWriteMode.STANDARD
-                            ):
-                                rec = r
-                                break
-                        except Exception as ex_read:
-                            logger.debug(f"Extended ALDB read error on {clean_addr} slot 0x{mem_int:04X}: {ex_read}")
+                            async with async_timeout.timeout(3.5):
+                                async for r in dev.aldb._read_manager.async_read(
+                                    mem_addr=mem_int, num_recs=1, read_write_mode=ReadWriteMode.STANDARD
+                                ):
+                                    rec = r
+                                    break
+                        except (asyncio.TimeoutError, Exception) as ex_read:
+                            logger.debug(f"Extended ALDB read on {clean_addr} slot 0x{mem_int:04X} attempt {attempt}: {ex_read}")
+                        finally:
+                            try:
+                                if hasattr(dev.aldb, "_read_manager") and dev.aldb._read_manager:
+                                    await dev.aldb._read_manager.async_stop()
+                            except Exception:
+                                pass
 
-                    # Fallback to peek only if device is configured for PEEK_POKE (legacy Engine 1) or on final attempt
-                    if rec is None and (is_peek_poke or attempt == 3):
-                        rec = await self._fast_peek_record(dev.aldb, mem_int)
+                    # Step C: Fast PEEK fallback (0x28) directly querying EEPROM bytes if extended read yielded no record
+                    if rec is None:
+                        logger.debug(f"Attempting fast PEEK verification on {clean_addr} slot 0x{mem_int:04X} (attempt {attempt}/3)...")
+                        try:
+                            async with async_timeout.timeout(8.0):
+                                rec = await self._fast_peek_record(dev.aldb, mem_int)
+                        except (asyncio.TimeoutError, Exception) as ex_peek:
+                            logger.debug(f"Fast PEEK verification on {clean_addr} slot 0x{mem_int:04X} error: {ex_peek}")
 
-                    # Handle erased cells (hit_erased on I3 devices) for deletion verification
-                    if rec is None and not expected_in_use:
-                        if getattr(getattr(dev.aldb, "_read_manager", None), "hit_erased", False):
-                            return True, f"Slot 0x{mem_int:04X} verified erased/deleted on silicon", None
+                # Step C: Handle erased cells (hit_erased on I3 devices) for deletion verification
+                if rec is None and not expected_in_use:
+                    if getattr(getattr(dev.aldb, "_read_manager", None), "hit_erased", False):
+                        return True, f"Slot 0x{mem_int:04X} verified erased/deleted on silicon", None
 
-                    if rec is not None:
-                        # Synchronize pyinsteon internal cache record with live hardware truth
-                        if hasattr(dev.aldb, "_records"):
-                            dev.aldb._records[mem_int] = rec
+                # Step D: If record was retrieved from silicon, verify properties
+                if rec is not None:
+                    # Synchronize pyinsteon internal cache record with live hardware truth
+                    if hasattr(dev.aldb, "_records"):
+                        dev.aldb._records[mem_int] = rec
 
-                        if not expected_in_use:
-                            if not rec.is_in_use or rec.is_high_water_mark:
-                                return True, f"Slot 0x{mem_int:04X} verified deleted on silicon (in_use=False)", None
+                    if not expected_in_use:
+                        if not rec.is_in_use or rec.is_high_water_mark:
+                            return True, f"Slot 0x{mem_int:04X} verified deleted on silicon (in_use=False)", None
+                        if attempt < 3:
+                            self._drain_outbound_queue()
+                            await asyncio.sleep(0.5 * attempt)
+                            continue
+                        return False, f"Slot 0x{mem_int:04X} on {clean_addr} still has in_use=True on hardware silicon", None
+                    else:
+                        if not rec.is_in_use:
                             if attempt < 3:
                                 self._drain_outbound_queue()
                                 await asyncio.sleep(0.5 * attempt)
                                 continue
-                            return False, f"Slot 0x{mem_int:04X} on {clean_addr} still has in_use=True on hardware silicon", None
-                        else:
-                            if not rec.is_in_use:
-                                if attempt < 3:
-                                    self._drain_outbound_queue()
-                                    await asyncio.sleep(0.5 * attempt)
-                                    continue
-                                return False, f"Slot 0x{mem_int:04X} on {clean_addr} has in_use=False on hardware silicon", None
-                            if str(rec.target).upper() != clean_target:
-                                if attempt < 3:
-                                    logger.warning(
-                                        f"Verification attempt {attempt}/3 on {clean_addr} slot 0x{mem_int:04X} "
-                                        f"read target {rec.target} (expected {clean_target}); draining and retrying verification..."
-                                    )
-                                    self._drain_outbound_queue()
-                                    await asyncio.sleep(0.6 * attempt)
-                                    continue
-                                return False, f"Slot 0x{mem_int:04X} on {clean_addr} targets {rec.target}, expected {clean_target}", None
-                            if rec.group != expected_group:
-                                if attempt < 3:
-                                    logger.warning(
-                                        f"Verification attempt {attempt}/3 on {clean_addr} slot 0x{mem_int:04X} "
-                                        f"read group {rec.group} (expected {expected_group}); draining and retrying verification..."
-                                    )
-                                    self._drain_outbound_queue()
-                                    await asyncio.sleep(0.6 * attempt)
-                                    continue
-                                return False, f"Slot 0x{mem_int:04X} on {clean_addr} has group {rec.group}, expected {expected_group}", None
-                            if bool(rec.is_controller) != expected_controller:
-                                if attempt < 3:
-                                    self._drain_outbound_queue()
-                                    await asyncio.sleep(0.5 * attempt)
-                                    continue
-                                return False, f"Slot 0x{mem_int:04X} on {clean_addr} has controller={rec.is_controller}, expected {expected_controller}", None
-                            if expected_data1 is not None and int(getattr(rec, "data1", 0) or 0) != int(expected_data1):
-                                return False, f"Slot 0x{mem_int:04X} on {clean_addr} has data1={rec.data1} (Level) on silicon, expected {expected_data1}", None
-                            if expected_data2 is not None and int(getattr(rec, "data2", 0) or 0) != int(expected_data2):
-                                return False, f"Slot 0x{mem_int:04X} on {clean_addr} has data2={rec.data2} (Ramp) on silicon, expected {expected_data2}", None
-                            return True, f"Slot 0x{mem_int:04X} verified on physical hardware silicon", {
-                                "mem_addr": f"0x{mem_int:04X}",
-                                "target": clean_target,
-                                "group": expected_group,
-                                "is_controller": expected_controller,
-                                "data1": int(getattr(rec, "data1", 0) or 0),
-                                "data2": int(getattr(rec, "data2", 0) or 0),
-                                "data3": int(getattr(rec, "data3", 0) or 0),
-                            }
-            except asyncio.TimeoutError:
-                self._drain_outbound_queue()
-                if attempt < 3:
-                    await asyncio.sleep(0.5 * attempt)
+                            return False, f"Slot 0x{mem_int:04X} on {clean_addr} has in_use=False on hardware silicon", None
+                        if str(rec.target).upper() != clean_target:
+                            if attempt < 3:
+                                logger.warning(
+                                    f"Verification attempt {attempt}/3 on {clean_addr} slot 0x{mem_int:04X} "
+                                    f"read target {rec.target} (expected {clean_target}); retrying..."
+                                )
+                                self._drain_outbound_queue()
+                                await asyncio.sleep(0.6 * attempt)
+                                continue
+                            return False, f"Slot 0x{mem_int:04X} on {clean_addr} targets {rec.target}, expected {clean_target}", None
+                        if rec.group != expected_group:
+                            if attempt < 3:
+                                logger.warning(
+                                    f"Verification attempt {attempt}/3 on {clean_addr} slot 0x{mem_int:04X} "
+                                    f"read group {rec.group} (expected {expected_group}); retrying..."
+                                )
+                                self._drain_outbound_queue()
+                                await asyncio.sleep(0.6 * attempt)
+                                continue
+                            return False, f"Slot 0x{mem_int:04X} on {clean_addr} has group {rec.group}, expected {expected_group}", None
+                        if bool(rec.is_controller) != expected_controller:
+                            if attempt < 3:
+                                self._drain_outbound_queue()
+                                await asyncio.sleep(0.5 * attempt)
+                                continue
+                            return False, f"Slot 0x{mem_int:04X} on {clean_addr} has controller={rec.is_controller}, expected {expected_controller}", None
+                        if expected_data1 is not None and int(getattr(rec, "data1", 0) or 0) != int(expected_data1):
+                            if attempt < 3:
+                                logger.warning(
+                                    f"Verification attempt {attempt}/3 on {clean_addr} slot 0x{mem_int:04X} "
+                                    f"read data1={rec.data1} (expected {expected_data1}); retrying..."
+                                )
+                                self._drain_outbound_queue()
+                                await asyncio.sleep(0.6 * attempt)
+                                continue
+                            return False, f"Slot 0x{mem_int:04X} on {clean_addr} has data1={rec.data1} (Level) on silicon, expected {expected_data1}", None
+                        if expected_data2 is not None and int(getattr(rec, "data2", 0) or 0) != int(expected_data2):
+                            if attempt < 3:
+                                logger.warning(
+                                    f"Verification attempt {attempt}/3 on {clean_addr} slot 0x{mem_int:04X} "
+                                    f"read data2={rec.data2} (expected {expected_data2}); retrying..."
+                                )
+                                self._drain_outbound_queue()
+                                await asyncio.sleep(0.6 * attempt)
+                                continue
+                            return False, f"Slot 0x{mem_int:04X} on {clean_addr} has data2={rec.data2} (Ramp) on silicon, expected {expected_data2}", None
+                        return True, f"Slot 0x{mem_int:04X} verified on physical hardware silicon", {
+                            "mem_addr": f"0x{mem_int:04X}",
+                            "target": clean_target,
+                            "group": expected_group,
+                            "is_controller": expected_controller,
+                            "data1": int(getattr(rec, "data1", 0) or 0),
+                            "data2": int(getattr(rec, "data2", 0) or 0),
+                            "data3": int(getattr(rec, "data3", 0) or 0),
+                        }
             except Exception as ex:
-                logger.debug(f"Live verification error for {clean_addr} slot 0x{mem_int:04X}: {ex}")
-                self._drain_outbound_queue()
-                if attempt < 3:
-                    await asyncio.sleep(0.5 * attempt)
+                logger.debug(f"Live verification iteration error for {clean_addr} slot 0x{mem_int:04X}: {ex}")
+
+            self._drain_outbound_queue()
+            if attempt < 3:
+                await asyncio.sleep(0.6 * attempt)
 
         return False, f"Physical hardware read-back timeout verifying slot 0x{mem_int:04X} on {clean_addr}", None
 
@@ -1060,21 +1159,30 @@ class InsteonManager:
     async def _get_or_create_pyinsteon_device(
         self, addr_obj: Address, cat: int = 1, subcat: int = 0, firmware: int = 0
     ) -> Any:
-        """Retrieve or instantiate a pyinsteon device object without triggering background network inspection."""
+        """Retrieve or instantiate a pyinsteon device object using the authoritative hardware profile."""
+        clean_addr = str(addr_obj).upper()
+        profile = get_device_hardware_profile(clean_addr, cat=cat, subcat=subcat, firmware=firmware)
+
         dev = pyinsteon.devices.get(addr_obj)
-        if dev is not None and (int(getattr(dev, "subcat", 0) or 0) != 0 or subcat == 0):
+        if dev is not None and (int(getattr(dev, "subcat", 0) or 0) == profile.subcat and int(getattr(dev, "cat", 0) or 0) == profile.cat):
             return dev
+
+        eff_cat = profile.cat
+        eff_subcat = profile.subcat
+        eff_fw = profile.firmware
+
         try:
             pyinsteon.devices.delay_inspection = True
-            pyinsteon.devices.set_id(addr_obj, int(cat or 1), int(subcat or 0), int(firmware or 0))
+            pyinsteon.devices.set_id(addr_obj, int(eff_cat), int(eff_subcat), int(eff_fw))
             await asyncio.sleep(0.05)
             dev = pyinsteon.devices.get(addr_obj)
         except Exception:
             pass
+
         if dev is None:
             from pyinsteon.managers.device_id_manager import DeviceId
             from pyinsteon.managers.utils import create_device
-            dev = create_device(DeviceId(addr_obj, int(cat or 1), int(subcat or 0), int(firmware or 0)))
+            dev = create_device(DeviceId(addr_obj, int(eff_cat), int(eff_subcat), int(eff_fw)))
             pyinsteon.devices._devices[addr_obj] = dev
         return dev
 
@@ -1114,30 +1222,32 @@ class InsteonManager:
         addr_obj = Address(clean_addr)
         get_health(addr_obj).record_success()
 
-        is_batt = bool((cached_dev or {}).get("is_battery", False)) or int((cached_dev or {}).get("cat", 1) or 1) in (0x00, 0x10)
-        desc = (cached_dev or {}).get("label") or (cached_dev or {}).get("description") or clean_addr
-        if "keypad" in desc.lower() or "remote" in desc.lower():
-            is_batt = True
+        # Resolve authoritative hardware profile
+        profile = get_device_hardware_profile(
+            clean_addr,
+            cat=(cached_dev or {}).get("cat"),
+            subcat=(cached_dev or {}).get("subcat"),
+            firmware=(cached_dev or {}).get("firmware"),
+            engine_version=(cached_dev or {}).get("engine_version"),
+            label=(cached_dev or {}).get("label") or (cached_dev or {}).get("description"),
+        )
 
-        ping_ok, live_delta, _ = await self._fast_ping_and_db_delta(addr_obj, timeout=5.5, is_battery=is_batt)
+        ping_ok, live_delta, _ = await self._fast_ping_and_db_delta(addr_obj, timeout=5.5, is_battery=profile.is_battery)
         if not ping_ok:
-            if is_batt:
+            if profile.is_battery:
                 return (
                     False,
                     None,
-                    f"Device {clean_addr} ({desc}) did not respond to ping. If it is a battery-powered Mini Keypad/Remote, hold its Set button for 3 seconds to wake it before writing to hardware.",
+                    f"Device {clean_addr} ({profile.description}) is a battery-powered remote/sensor and is asleep. "
+                    f"Please press and hold its Set button for 3 seconds until the LED blinks (waking its RF receiver), then retry.",
                 )
             return (
                 False,
                 None,
-                f"Device {clean_addr} ({desc}) is unreachable on the powerline/RF mesh (failed 0x19 status ping). Write aborted.",
+                f"Device {clean_addr} ({profile.description}) is unreachable on the powerline/RF mesh (failed 0x19 status ping). Write aborted.",
             )
 
-        cat = int((cached_dev or {}).get("cat", 1) or 1)
-        subcat = int((cached_dev or {}).get("subcat", 0) or 0)
-        fw = int((cached_dev or {}).get("firmware", 0) or 0)
-
-        dev_obj = await self._get_or_create_pyinsteon_device(addr_obj, cat, subcat, fw)
+        dev_obj = await self._get_or_create_pyinsteon_device(addr_obj, profile.cat, profile.subcat, profile.firmware)
 
         if getattr(dev_obj, "engine_version", EngineVersion.UNKNOWN) == EngineVersion.UNKNOWN:
             try:
@@ -1165,7 +1275,7 @@ class InsteonManager:
         # If still not loaded (e.g. db_delta changed on hardware since snapshot), read live ALDB first
         if not dev_obj.aldb.is_loaded or len(dev_obj.aldb) == 0:
             logger.info(f"Loading live ALDB from {clean_addr} before hardware write (live db_delta={live_delta}, cached={snap_delta})...")
-            use_peek_poke = dev_obj.engine_version == EngineVersion.I1
+            use_peek_poke = profile.write_strategy == WriteStrategy.PEEK_POKE or dev_obj.engine_version == EngineVersion.I1
             await self._read_aldb_robust(dev_obj.aldb, prefer_bulk=True, use_peek_poke=use_peek_poke)
             if not dev_obj.aldb.is_loaded and len(dev_obj.aldb) == 0:
                 return (
@@ -1174,16 +1284,11 @@ class InsteonManager:
                     f"Live ALDB read refused or failed by {clean_addr}. Hardware write aborted to prevent memory corruption. (Check device communication or Set-button authorization).",
                 )
 
-        # Configure ALDB read/write mode: Only confirmed legacy I1 devices require ReadWriteMode.PEEK_POKE.
-        # I2 and I2CS devices natively use Standard Extended ALDB Read/Write (0x2F).
-        is_legacy_i1 = (
-            getattr(dev_obj, "engine_version", None) == EngineVersion.I1
-            or str((cached_dev or {}).get("engine_version", "")).lower() == "i1"
-        )
+        # Configure ALDB read/write mode using profile write strategy
         if hasattr(dev_obj, "aldb"):
-            if is_legacy_i1:
+            if profile.write_strategy == WriteStrategy.PEEK_POKE:
                 dev_obj.aldb._read_write_mode = ReadWriteMode.PEEK_POKE
-                logger.info(f"Configured ALDB read/write mode to PEEK_POKE for legacy I1 device {clean_addr}.")
+                logger.info(f"Configured ALDB read/write mode to PEEK_POKE for legacy device {clean_addr}.")
             else:
                 dev_obj.aldb._read_write_mode = ReadWriteMode.STANDARD
 
@@ -1242,29 +1347,58 @@ class InsteonManager:
                 or snap_d.get("description")
                 or ("USB PowerLinc Modem (PLM)" if dev == pyinsteon.devices.modem else str(dev))
             )
+            profile = get_device_hardware_profile(
+                addr_str,
+                cat=int(dev.cat or snap_d.get("cat", 0) or 0),
+                subcat=int(dev.subcat or snap_d.get("subcat", 0) or 0),
+                firmware=int(getattr(dev, "firmware", 0) or snap_d.get("firmware", 0) or 0),
+                label=desc,
+            )
             results.append(
                 DeviceSummary(
                     address=addr_str,
-                    cat=int(dev.cat or snap_d.get("cat", 0) or 0),
-                    subcat=int(dev.subcat or snap_d.get("subcat", 0) or 0),
-                    firmware=int(getattr(dev, "firmware", 0) or snap_d.get("firmware", 0) or 0),
+                    cat=profile.cat,
+                    subcat=profile.subcat,
+                    firmware=profile.firmware,
                     description=desc,
-                    is_battery=bool(getattr(dev, "is_battery", False) or snap_d.get("is_battery", False)),
+                    is_battery=profile.is_battery,
                     aldb_record_count=live_count if live_count > 0 else snap_count,
+                    model_name=profile.model_name,
+                    engine_version=profile.engine_version,
+                    read_strategy=profile.read_strategy.value if hasattr(profile.read_strategy, "value") else str(profile.read_strategy),
+                    write_strategy=profile.write_strategy.value if hasattr(profile.write_strategy, "value") else str(profile.write_strategy),
+                    is_keypad=profile.is_keypad,
+                    button_count=profile.button_count,
+                    is_dimmable=profile.is_dimmable,
                 )
             )
 
         for addr_str, snap_d in snap_by_addr.items():
             if addr_str not in seen_addrs:
+                desc = snap_d.get("label") or snap_d.get("description", "Insteon Device")
+                profile = get_device_hardware_profile(
+                    addr_str,
+                    cat=int(snap_d.get("cat", 0) or 0),
+                    subcat=int(snap_d.get("subcat", 0) or 0),
+                    firmware=int(snap_d.get("firmware", 0) or 0),
+                    label=desc,
+                )
                 results.append(
                     DeviceSummary(
                         address=addr_str,
-                        cat=int(snap_d.get("cat", 0) or 0),
-                        subcat=int(snap_d.get("subcat", 0) or 0),
-                        firmware=int(snap_d.get("firmware", 0) or 0),
-                        description=snap_d.get("label") or snap_d.get("description", "Insteon Device"),
-                        is_battery=bool(snap_d.get("is_battery", False)),
+                        cat=profile.cat,
+                        subcat=profile.subcat,
+                        firmware=profile.firmware,
+                        description=desc,
+                        is_battery=profile.is_battery,
                         aldb_record_count=len(snap_d.get("records", [])),
+                        model_name=profile.model_name,
+                        engine_version=profile.engine_version,
+                        read_strategy=profile.read_strategy.value if hasattr(profile.read_strategy, "value") else str(profile.read_strategy),
+                        write_strategy=profile.write_strategy.value if hasattr(profile.write_strategy, "value") else str(profile.write_strategy),
+                        is_keypad=profile.is_keypad,
+                        button_count=profile.button_count,
+                        is_dimmable=profile.is_dimmable,
                     )
                 )
         return results
@@ -1344,29 +1478,60 @@ class InsteonManager:
             results: List[DeviceSummary] = []
             if "plm" in snapshot and snapshot["plm"]:
                 p = snapshot["plm"]
+                plm_addr = p.get("address", "53.C1.42")
+                plm_prof = get_device_hardware_profile(
+                    plm_addr,
+                    cat=p.get("cat", 3),
+                    subcat=p.get("subcat", 21),
+                    firmware=p.get("firmware", 158),
+                    label="USB PowerLinc Modem (PLM)",
+                )
                 results.append(
                     DeviceSummary(
-                        address=p.get("address", "1A.2B.3C"),
-                        cat=p.get("cat", 3),
-                        subcat=p.get("subcat", 21),
-                        firmware=p.get("firmware", 0),
+                        address=plm_addr,
+                        cat=plm_prof.cat,
+                        subcat=plm_prof.subcat,
+                        firmware=plm_prof.firmware,
                         description="USB PowerLinc Modem (PLM)",
                         is_battery=False,
                         aldb_record_count=len(p.get("records", [])),
+                        model_name=plm_prof.model_name,
+                        engine_version=plm_prof.engine_version,
+                        read_strategy=plm_prof.read_strategy.value if hasattr(plm_prof.read_strategy, "value") else str(plm_prof.read_strategy),
+                        write_strategy=plm_prof.write_strategy.value if hasattr(plm_prof.write_strategy, "value") else str(plm_prof.write_strategy),
+                        is_keypad=plm_prof.is_keypad,
+                        button_count=plm_prof.button_count,
+                        is_dimmable=plm_prof.is_dimmable,
                     )
                 )
             for d in snapshot["devices"]:
                 if not self.is_active_snapshot_device(d):
                     continue
+                d_addr = d.get("address", "")
+                d_desc = d.get("label") or d.get("description", "Insteon Device")
+                prof = get_device_hardware_profile(
+                    d_addr,
+                    cat=d.get("cat", 0),
+                    subcat=d.get("subcat", 0),
+                    firmware=d.get("firmware", 0),
+                    label=d_desc,
+                )
                 results.append(
                     DeviceSummary(
-                        address=d.get("address", ""),
-                        cat=d.get("cat", 0),
-                        subcat=d.get("subcat", 0),
-                        firmware=d.get("firmware", 0),
-                        description=d.get("label") or d.get("description", "Insteon Device"),
-                        is_battery=d.get("is_battery", False),
+                        address=d_addr,
+                        cat=prof.cat,
+                        subcat=prof.subcat,
+                        firmware=prof.firmware,
+                        description=d_desc,
+                        is_battery=prof.is_battery,
                         aldb_record_count=len(d.get("records", [])),
+                        model_name=prof.model_name,
+                        engine_version=prof.engine_version,
+                        read_strategy=prof.read_strategy.value if hasattr(prof.read_strategy, "value") else str(prof.read_strategy),
+                        write_strategy=prof.write_strategy.value if hasattr(prof.write_strategy, "value") else str(prof.write_strategy),
+                        is_keypad=prof.is_keypad,
+                        button_count=prof.button_count,
+                        is_dimmable=prof.is_dimmable,
                     )
                 )
             return results
@@ -1384,6 +1549,14 @@ class InsteonManager:
             with open(temp_file, "w", encoding="utf-8") as f:
                 json.dump(data, f, indent=2)
             os.replace(temp_file, path)
+            # Keep all workspace network_snapshot.json locations in sync
+            for sync_candidate in ("network_snapshot.json", "backend/network_snapshot.json", "../network_snapshot.json"):
+                try:
+                    if os.path.isfile(sync_candidate) and os.path.abspath(sync_candidate) != os.path.abspath(path):
+                        with open(sync_candidate, "w", encoding="utf-8") as sf:
+                            json.dump(data, sf, indent=2)
+                except Exception:
+                    pass
             # Keep timestamped snapshot history in snapshots/ to ensure zero data loss
             snap_dir = os.path.join("backend", "snapshots") if os.path.isdir("backend") else "snapshots"
             try:

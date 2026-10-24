@@ -11,7 +11,7 @@ $piHost = "openhabian5"
 $destDir = "/opt/insteon-bridge"
 
 Write-Host "==> Uploading application Python files to ${piHost}:${destDir}/app/ ..." -ForegroundColor Cyan
-scp "$repoRoot\backend\app\config.py" "$repoRoot\backend\app\insteon.py" "$repoRoot\backend\app\main.py" "$repoRoot\backend\app\models.py" "$repoRoot\backend\app\session.py" "${piUser}@${piHost}:${destDir}/app/"
+scp "$repoRoot\backend\app\config.py" "$repoRoot\backend\app\insteon.py" "$repoRoot\backend\app\main.py" "$repoRoot\backend\app\models.py" "$repoRoot\backend\app\session.py" "$repoRoot\backend\app\device_registry.py" "${piUser}@${piHost}:${destDir}/app/"
 scp "$repoRoot\backend\app\services\transaction_service.py" "$repoRoot\backend\app\services\scene_service.py" "${piUser}@${piHost}:${destDir}/app/services/"
 
 Write-Host "==> Restarting insteon-bridge service on ${piHost}..." -ForegroundColor Cyan

@@ -764,6 +764,7 @@ public class MainViewModel : ViewModelBase
                 OnPropertyChanged(nameof(HasSelectedGraphNode));
                 OnPropertyChanged(nameof(HasSelectedControllableGraphNode));
                 OnPropertyChanged(nameof(SelectedGraphNodeTitle));
+                OnPropertyChanged(nameof(SelectedGraphNodeHardwareBadge));
                 ControlSelectedNodeCommand?.NotifyCanExecuteChanged();
             }
         }
@@ -775,6 +776,29 @@ public class MainViewModel : ViewModelBase
     public string SelectedGraphNodeTitle => SelectedGraphNode != null
         ? $"{SelectedGraphNode.FriendlyName} ({SelectedGraphNode.Address})"
         : "No Device Selected";
+
+    public string SelectedGraphNodeHardwareBadge
+    {
+        get
+        {
+            if (SelectedGraphNode == null) return string.Empty;
+            var node = SelectedGraphNode;
+            var parts = new List<string>();
+            if (!string.IsNullOrWhiteSpace(node.ModelName))
+                parts.Add($"🏷️ Model: {node.ModelName}");
+            if (node.Cat > 0 || node.Subcat > 0)
+                parts.Add($"🔬 Cat: 0x{node.Cat:X2}/0x{node.Subcat:X2}" + (node.Firmware > 0 ? $" v{node.Firmware}" : ""));
+            if (!string.IsNullOrWhiteSpace(node.EngineBadgeShort))
+                parts.Add($"⚙️ {node.EngineBadgeShort}");
+            if (!string.IsNullOrWhiteSpace(node.ReadStrategy))
+                parts.Add($"🔌 {node.ReadStrategy}");
+            if (node.IsBattery)
+                parts.Add("🔋 Battery");
+            else
+                parts.Add("⚡ Line");
+            return string.Join("  •  ", parts);
+        }
+    }
 
     private int _selectedNodeBrightness = 100;
     public int SelectedNodeBrightness
@@ -1941,6 +1965,16 @@ public class MainViewModel : ViewModelBase
                 DeviceType = devType,
                 RecordCount = count,
                 IsBattery = isBatt,
+                ModelName = summary?.ModelName ?? string.Empty,
+                EngineVersion = summary?.EngineVersion ?? string.Empty,
+                ReadStrategy = summary?.ReadStrategy ?? string.Empty,
+                WriteStrategy = summary?.WriteStrategy ?? string.Empty,
+                Cat = summary?.Cat ?? 0,
+                Subcat = summary?.Subcat ?? 0,
+                Firmware = summary?.Firmware ?? 0,
+                IsKeypad = summary?.IsKeypad ?? false,
+                ButtonCount = summary?.ButtonCount ?? 1,
+                IsDimmable = summary?.IsDimmable ?? true,
                 // Default select line devices with active records
                 IsSelected = count > 0 && !isBatt,
             };
@@ -2038,6 +2072,16 @@ public class MainViewModel : ViewModelBase
                 HasMissingDefaultLink = (missing != null),
                 DefaultLinkIssue = missing?.IssueSummary ?? string.Empty,
                 DefaultLinkRecommendation = missing?.Recommendation ?? string.Empty,
+                ModelName = dev.ModelName,
+                EngineVersion = dev.EngineVersion,
+                ReadStrategy = dev.ReadStrategy,
+                WriteStrategy = dev.WriteStrategy,
+                Cat = dev.Cat,
+                Subcat = dev.Subcat,
+                Firmware = dev.Firmware,
+                IsKeypad = dev.IsKeypad,
+                ButtonCount = dev.ButtonCount,
+                IsDimmable = dev.IsDimmable,
             };
 
             // Get records owned by this device
@@ -2274,6 +2318,13 @@ public class MainViewModel : ViewModelBase
             LinkCount = records.Count(r => r.InUse && (r.SourceAddress == plmAddress || r.SourceAddress == "PLM Modem" || (plmAddress == "53.C1.42" && r.SourceAddress == "1A.2B.3C"))),
             IsFilterChecked = previousUnchecked == null || !previousUnchecked.Contains(plmAddress),
             IsVisible = true,
+            ModelName = plmDev?.ModelName ?? "2413U",
+            EngineVersion = plmDev?.EngineVersion ?? "i2cs",
+            ReadStrategy = plmDev?.ReadStrategy ?? "STANDARD",
+            WriteStrategy = plmDev?.WriteStrategy ?? "STANDARD",
+            Cat = plmDev?.Cat ?? 3,
+            Subcat = plmDev?.Subcat ?? 21,
+            Firmware = plmDev?.Firmware ?? 158,
         };
         plmNode.PropertyChanged += (s, e) =>
         {
@@ -2386,6 +2437,16 @@ public class MainViewModel : ViewModelBase
                 LinkCount = linkCount,
                 IsFilterChecked = previousUnchecked == null || !previousUnchecked.Contains(address),
                 IsVisible = true,
+                ModelName = devSummary?.ModelName ?? string.Empty,
+                EngineVersion = devSummary?.EngineVersion ?? string.Empty,
+                ReadStrategy = devSummary?.ReadStrategy ?? string.Empty,
+                WriteStrategy = devSummary?.WriteStrategy ?? string.Empty,
+                Cat = devSummary?.Cat ?? 0,
+                Subcat = devSummary?.Subcat ?? 0,
+                Firmware = devSummary?.Firmware ?? 0,
+                IsKeypad = devSummary?.IsKeypad ?? false,
+                ButtonCount = devSummary?.ButtonCount ?? 1,
+                IsDimmable = devSummary?.IsDimmable ?? true,
             };
             peerNode.PropertyChanged += (s, e) =>
             {

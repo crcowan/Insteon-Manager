@@ -225,6 +225,9 @@ class TransactionService:
                     data3=ctrl_d3,
                 )
             ctrl_done, ctrl_failed = await dev_ctrl.aldb.async_write(force=True)
+            from app.insteon import bus_pacer
+            await bus_pacer.mark_write_completed()
+
             if ctrl_failed or ctrl_done == 0:
                 dev_ctrl.aldb.clear_pending()
                 logger.error(f"Hardware write failed while creating Controller record on {ctrl_addr} (target {resp_addr}, Grp {grp}, done={ctrl_done}, failed={ctrl_failed}).")
@@ -246,6 +249,36 @@ class TransactionService:
                     expected_data1=ctrl_d1,
                     expected_data2=ctrl_d2,
                 )
+                if not v_ok_c and existing_ctrl_rec is not None:
+                    logger.warning(
+                        f"Reactivating mid-table slot 0x{ctrl_mem:04X} on {ctrl_addr} failed silicon verification ({v_msg_c}). "
+                        f"Pivoting to append fresh link at High Water Mark..."
+                    )
+                    dev_ctrl.aldb.clear_pending()
+                    dev_ctrl.aldb.add(
+                        group=grp,
+                        target=addr_resp,
+                        controller=True,
+                        data1=ctrl_d1,
+                        data2=ctrl_d2,
+                        data3=ctrl_d3,
+                    )
+                    ctrl_done, ctrl_failed = await dev_ctrl.aldb.async_write(force=True)
+                    await bus_pacer.mark_write_completed()
+                    ctrl_rec = next((r for r in dev_ctrl.aldb.find(target=addr_resp, group=grp, is_controller=True, in_use=True)), None)
+                    ctrl_mem = ctrl_rec.mem_addr if ctrl_rec else ctrl_mem
+                    if not ctrl_failed and ctrl_mem is not None:
+                        v_ok_c, v_msg_c, _ = await insteon_manager.verify_hardware_record(
+                            address=ctrl_addr,
+                            mem_addr=ctrl_mem,
+                            expected_target=resp_addr,
+                            expected_group=grp,
+                            expected_controller=True,
+                            expected_in_use=True,
+                            expected_data1=ctrl_d1,
+                            expected_data2=ctrl_d2,
+                        )
+
                 if not v_ok_c:
                     dev_ctrl.aldb.clear_pending()
                     logger.error(f"Hardware live silicon verification failed on controller {ctrl_addr}: {v_msg_c}")
@@ -285,6 +318,7 @@ class TransactionService:
                     data3=resp_d3,
                 )
             resp_done, resp_failed = await dev_resp.aldb.async_write(force=True)
+            await bus_pacer.mark_write_completed()
             if resp_failed or resp_done == 0:
                 dev_resp.aldb.clear_pending()
 
@@ -304,6 +338,35 @@ class TransactionService:
                     expected_data1=resp_d1,
                     expected_data2=resp_d2,
                 )
+                if not v_ok_r and existing_resp_rec is not None:
+                    logger.warning(
+                        f"Reactivating mid-table responder slot 0x{resp_mem:04X} on {resp_addr} failed silicon verification ({v_msg_r}). "
+                        f"Pivoting to append fresh link at High Water Mark..."
+                    )
+                    dev_resp.aldb.clear_pending()
+                    dev_resp.aldb.add(
+                        group=grp,
+                        target=addr_ctrl,
+                        controller=False,
+                        data1=resp_d1,
+                        data2=resp_d2,
+                        data3=resp_d3,
+                    )
+                    resp_done, resp_failed = await dev_resp.aldb.async_write(force=True)
+                    await bus_pacer.mark_write_completed()
+                    resp_rec = next((r for r in dev_resp.aldb.find(target=addr_ctrl, group=grp, is_controller=False, in_use=True)), None)
+                    resp_mem = resp_rec.mem_addr if resp_rec else resp_mem
+                    if not resp_failed and resp_mem is not None:
+                        v_ok_r, v_msg_r, _ = await insteon_manager.verify_hardware_record(
+                            address=resp_addr,
+                            mem_addr=resp_mem,
+                            expected_target=ctrl_addr,
+                            expected_group=grp,
+                            expected_controller=False,
+                            expected_in_use=True,
+                            expected_data1=resp_d1,
+                            expected_data2=resp_d2,
+                        )
             elif not resp_failed and resp_done > 0:
                 v_ok_r = True
 
@@ -575,6 +638,8 @@ class TransactionService:
             dev_obj.aldb.modify(mem_addr=mem_int, in_use=False)
             logger.info(f"Hardware EEPROM: Marked slot {clean_mem} (Group {rec_group}, target {rec_target}) deleted on {clean_addr}.")
             _, failed = await dev_obj.aldb.async_write(force=True)
+            from app.insteon import bus_pacer
+            await bus_pacer.mark_write_completed()
             if failed:
                 dev_obj.aldb.clear_pending()
                 return GenericResponse(
@@ -737,6 +802,8 @@ class TransactionService:
                 data3=new_d3,
             )
             done, failed = await dev_obj.aldb.async_write(force=True)
+            from app.insteon import bus_pacer
+            await bus_pacer.mark_write_completed()
             if failed or done == 0:
                 dev_obj.aldb.clear_pending()
                 return GenericResponse(

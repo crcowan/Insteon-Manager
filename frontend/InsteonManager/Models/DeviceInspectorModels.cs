@@ -13,6 +13,16 @@ public class SelectableDeviceItem : INotifyPropertyChanged
     private string _deviceType = string.Empty;
     private int _recordCount;
     private bool _isBattery;
+    private string _modelName = string.Empty;
+    private string _engineVersion = string.Empty;
+    private string _readStrategy = string.Empty;
+    private string _writeStrategy = string.Empty;
+    private int _cat;
+    private int _subcat;
+    private int _firmware;
+    private bool _isKeypad;
+    private int _buttonCount = 1;
+    private bool _isDimmable = true;
 
     public string Address
     {
@@ -62,6 +72,80 @@ public class SelectableDeviceItem : INotifyPropertyChanged
 
     public string CategoryBadge => IsBattery ? "Battery Sensor" : (string.IsNullOrWhiteSpace(DeviceType) ? "Line Device" : DeviceType);
 
+    public string ModelName
+    {
+        get => _modelName;
+        set { if (SetProperty(ref _modelName, value)) { OnPropertyChanged(nameof(HardwareSubtitle)); OnPropertyChanged(nameof(ModelBadge)); } }
+    }
+
+    public string EngineVersion
+    {
+        get => _engineVersion;
+        set { if (SetProperty(ref _engineVersion, value)) { OnPropertyChanged(nameof(HardwareSubtitle)); OnPropertyChanged(nameof(EngineBadge)); } }
+    }
+
+    public string ReadStrategy
+    {
+        get => _readStrategy;
+        set => SetProperty(ref _readStrategy, value);
+    }
+
+    public string WriteStrategy
+    {
+        get => _writeStrategy;
+        set => SetProperty(ref _writeStrategy, value);
+    }
+
+    public int Cat
+    {
+        get => _cat;
+        set => SetProperty(ref _cat, value);
+    }
+
+    public int Subcat
+    {
+        get => _subcat;
+        set => SetProperty(ref _subcat, value);
+    }
+
+    public int Firmware
+    {
+        get => _firmware;
+        set => SetProperty(ref _firmware, value);
+    }
+
+    public bool IsKeypad
+    {
+        get => _isKeypad;
+        set => SetProperty(ref _isKeypad, value);
+    }
+
+    public int ButtonCount
+    {
+        get => _buttonCount;
+        set => SetProperty(ref _buttonCount, value);
+    }
+
+    public bool IsDimmable
+    {
+        get => _isDimmable;
+        set => SetProperty(ref _isDimmable, value);
+    }
+
+    public string ModelBadge => string.IsNullOrWhiteSpace(ModelName) ? "" : ModelName;
+
+    public string EngineBadge => EngineVersion?.ToLowerInvariant() switch
+    {
+        "i1" => "I1 (Legacy)",
+        "i2" => "I2",
+        "i2cs" => "I2CS",
+        _ => EngineVersion?.ToUpperInvariant() ?? ""
+    };
+
+    public string HardwareSubtitle => !string.IsNullOrWhiteSpace(ModelName)
+        ? $"{ModelName} • {EngineBadge}"
+        : CategoryBadge;
+
     public event PropertyChangedEventHandler? PropertyChanged;
 
     protected bool SetProperty<T>(ref T field, T value, [CallerMemberName] string? propertyName = null)
@@ -88,6 +172,16 @@ public class OrganizedDeviceAldb : INotifyPropertyChanged
     private bool _hasMissingDefaultLink;
     private string _defaultLinkIssue = string.Empty;
     private string _defaultLinkRecommendation = string.Empty;
+    private string _modelName = string.Empty;
+    private string _engineVersion = string.Empty;
+    private string _readStrategy = string.Empty;
+    private string _writeStrategy = string.Empty;
+    private int _cat;
+    private int _subcat;
+    private int _firmware;
+    private bool _isKeypad;
+    private int _buttonCount = 1;
+    private bool _isDimmable = true;
 
     public string Address
     {
@@ -147,7 +241,83 @@ public class OrganizedDeviceAldb : INotifyPropertyChanged
     public int ControllerCount => ControllerRecords.Count;
     public int ResponderCount => ResponderRecords.Count;
 
-    public bool IsKeypad => InsteonKeypadHelper.IsKeypadDevice(FriendlyName, DeviceType, Address);
+    public bool IsKeypad
+    {
+        get => _isKeypad || InsteonKeypadHelper.IsKeypadDevice(FriendlyName, DeviceType, Address);
+        set => SetProperty(ref _isKeypad, value);
+    }
+
+    public string ModelName
+    {
+        get => _modelName;
+        set { if (SetProperty(ref _modelName, value)) { OnPropertyChanged(nameof(ModelBadge)); } }
+    }
+
+    public string EngineVersion
+    {
+        get => _engineVersion;
+        set { if (SetProperty(ref _engineVersion, value)) { OnPropertyChanged(nameof(EngineBadge)); } }
+    }
+
+    public string ReadStrategy
+    {
+        get => _readStrategy;
+        set { if (SetProperty(ref _readStrategy, value)) { OnPropertyChanged(nameof(StrategyBadge)); } }
+    }
+
+    public string WriteStrategy
+    {
+        get => _writeStrategy;
+        set { if (SetProperty(ref _writeStrategy, value)) { OnPropertyChanged(nameof(StrategyBadge)); } }
+    }
+
+    public int Cat
+    {
+        get => _cat;
+        set { if (SetProperty(ref _cat, value)) { OnPropertyChanged(nameof(CatSubcatBadge)); } }
+    }
+
+    public int Subcat
+    {
+        get => _subcat;
+        set { if (SetProperty(ref _subcat, value)) { OnPropertyChanged(nameof(CatSubcatBadge)); } }
+    }
+
+    public int Firmware
+    {
+        get => _firmware;
+        set { if (SetProperty(ref _firmware, value)) { OnPropertyChanged(nameof(CatSubcatBadge)); } }
+    }
+
+    public int ButtonCount
+    {
+        get => _buttonCount;
+        set => SetProperty(ref _buttonCount, value);
+    }
+
+    public bool IsDimmable
+    {
+        get => _isDimmable;
+        set => SetProperty(ref _isDimmable, value);
+    }
+
+    public string ModelBadge => string.IsNullOrWhiteSpace(ModelName) ? "Model: Unknown" : $"🏷️ Model {ModelName}";
+
+    public string CatSubcatBadge => $"🔬 Cat: 0x{Cat:X2} | Subcat: 0x{Subcat:X2}" + (Firmware > 0 ? $" | FW: v{Firmware}" : "");
+
+    public string EngineBadge => EngineVersion?.ToLowerInvariant() switch
+    {
+        "i1" => "⚙️ Engine: I1 (Legacy 10-byte)",
+        "i2" => "⚙️ Engine: I2 (Dual-Band)",
+        "i2cs" => "⚙️ Engine: I2CS (Dual-Band Checksum)",
+        _ => $"⚙️ Engine: {(string.IsNullOrWhiteSpace(EngineVersion) ? "Standard" : EngineVersion.ToUpperInvariant())}"
+    };
+
+    public string StrategyBadge => $"🔌 Silicon I/O: {ReadStrategy} / {WriteStrategy}";
+
+    public string PowerBadge => IsBattery ? "🔋 Battery Remote (Sleeps)" : "⚡ AC Line Powered";
+
+    public string CapabilitiesBadge => IsKeypad ? $"🎛️ {ButtonCount}-Button Keypad" : (IsDimmable ? "💡 Dimmer Light" : "🔘 Relay Switch");
     public ObservableCollection<KeypadButtonSummaryModel> KeypadButtons { get; set; } = new();
     public bool HasKeypadButtons => IsKeypad && KeypadButtons.Count > 0;
 

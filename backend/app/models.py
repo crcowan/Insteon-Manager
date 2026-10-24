@@ -49,6 +49,13 @@ class DeviceSummary(BaseModel):
     description: str = ""
     is_battery: bool = False
     aldb_record_count: int = 0
+    model_name: str = ""
+    engine_version: str = ""
+    read_strategy: str = ""
+    write_strategy: str = ""
+    is_keypad: bool = False
+    button_count: int = 1
+    is_dimmable: bool = True
 
 
 class PlmInfoResponse(BaseModel):

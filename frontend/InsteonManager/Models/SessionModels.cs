@@ -45,6 +45,27 @@ public class DeviceSummaryModel
 
     [JsonPropertyName("aldb_record_count")]
     public int AldbRecordCount { get; set; }
+
+    [JsonPropertyName("model_name")]
+    public string ModelName { get; set; } = string.Empty;
+
+    [JsonPropertyName("engine_version")]
+    public string EngineVersion { get; set; } = string.Empty;
+
+    [JsonPropertyName("read_strategy")]
+    public string ReadStrategy { get; set; } = string.Empty;
+
+    [JsonPropertyName("write_strategy")]
+    public string WriteStrategy { get; set; } = string.Empty;
+
+    [JsonPropertyName("is_keypad")]
+    public bool IsKeypad { get; set; }
+
+    [JsonPropertyName("button_count")]
+    public int ButtonCount { get; set; } = 1;
+
+    [JsonPropertyName("is_dimmable")]
+    public bool IsDimmable { get; set; } = true;
 }
 
 public class GenericApiResponse

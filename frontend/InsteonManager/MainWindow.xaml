@@ -536,8 +536,14 @@
                                 <DockPanel Grid.Row="1" LastChildFill="False">
                                     <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                                         <TextBlock Text="💡 Selected Node:" FontWeight="Bold" FontSize="12" Foreground="{StaticResource AccentBlue}" VerticalAlignment="Center" Margin="0,0,6,0" />
-                                        <Border Background="#1E1E2E" CornerRadius="4" Padding="8,4" Margin="0,0,10,0" VerticalAlignment="Center" BorderBrush="#313244" BorderThickness="1">
+                                        <Border Background="#1E1E2E" CornerRadius="4" Padding="8,4" Margin="0,0,6,0" VerticalAlignment="Center" BorderBrush="#313244" BorderThickness="1">
                                             <TextBlock Text="{Binding SelectedGraphNodeTitle}" FontWeight="SemiBold" FontSize="11" Foreground="{StaticResource TextPrimary}" TextTrimming="CharacterEllipsis" MaxWidth="220" />
+                                        </Border>
+                                        <!-- Authoritative Silicon Hardware Profile Pill -->
+                                        <Border Background="#181825" CornerRadius="4" Padding="8,4" Margin="0,0,10,0" VerticalAlignment="Center" BorderBrush="#45475A" BorderThickness="1"
+                                                Visibility="{Binding HasSelectedGraphNode, Converter={StaticResource BoolToVis}}"
+                                                ToolTip="Authoritative Insteon Hardware Profile &amp; Silicon Strategy">
+                                            <TextBlock Text="{Binding SelectedGraphNodeHardwareBadge}" FontWeight="SemiBold" FontSize="10" Foreground="{StaticResource AccentAmber}" />
                                         </Border>
                                         
                                         <!-- Staging Actions -->
@@ -672,6 +678,7 @@
                                             <!-- Node Card Element (Mouse Drag & Right-Click Handlers) -->
                                             <Border Width="{Binding Width}" Height="{Binding Height}" CornerRadius="8" Padding="10"
                                                     Cursor="SizeAll"
+                                                    ToolTip="{Binding DetailedHardwareTooltip}"
                                                     Tag="{Binding DataContext, RelativeSource={RelativeSource AncestorType=Window}}"
                                                     MouseLeftButtonDown="Node_MouseLeftButtonDown"
                                                     MouseRightButtonDown="Node_MouseRightButtonDown"
@@ -776,8 +783,11 @@
                                                         </TextBlock>
                                                     </StackPanel>
 
-                                                    <!-- Description / Device Type -->
-                                                    <TextBlock Grid.Row="1" Text="{Binding DeviceType}" FontSize="11" Foreground="{StaticResource TextMuted}" TextWrapping="Wrap" Margin="0,4,0,0" />
+                                                    <!-- Description & Hardware Summary -->
+                                                    <StackPanel Grid.Row="1" Margin="0,3,0,0">
+                                                        <TextBlock Text="{Binding FriendlyName}" FontSize="11" FontWeight="SemiBold" Foreground="{StaticResource TextPrimary}" TextTrimming="CharacterEllipsis" />
+                                                        <TextBlock Text="{Binding HardwareSummary}" FontSize="10" Foreground="{StaticResource AccentAmber}" TextTrimming="CharacterEllipsis" Margin="0,1,0,0" />
+                                                    </StackPanel>
 
                                                     <!-- Footer (Quick Action Buttons & Link Count Badge) -->
                                                     <DockPanel Grid.Row="2" LastChildFill="False" Margin="0,4,0,0">
@@ -980,7 +990,8 @@
                                 <ItemsControl ItemsSource="{Binding FilteredMapNodes}">
                                     <ItemsControl.ItemTemplate>
                                         <DataTemplate DataType="{x:Type models:DeviceNode}">
-                                            <Border Margin="0,2" Padding="8,6" Background="#1E1E2E" CornerRadius="6" BorderBrush="#313244" BorderThickness="1">
+                                            <Border Margin="0,2" Padding="8,6" Background="#1E1E2E" CornerRadius="6" BorderBrush="#313244" BorderThickness="1"
+                                                    ToolTip="{Binding DetailedHardwareTooltip}">
                                                 <DockPanel LastChildFill="True">
                                                     <!-- Checkbox -->
                                                     <CheckBox IsChecked="{Binding IsFilterChecked}" VerticalAlignment="Center" Margin="0,0,8,0" DockPanel.Dock="Left" />
@@ -1006,7 +1017,7 @@
                                                                     </Style>
                                                                 </TextBlock.Style>
                                                             </TextBlock>
-                                                            <TextBlock Text="{Binding CategoryBadge}" FontSize="10" Foreground="{StaticResource TextMuted}" TextTrimming="CharacterEllipsis" />
+                                                            <TextBlock Text="{Binding HardwareSummary}" FontSize="10" Foreground="{StaticResource AccentAmber}" TextTrimming="CharacterEllipsis" />
                                                         </StackPanel>
                                                     </StackPanel>
                                                 </DockPanel>
@@ -1087,7 +1098,7 @@
                                                         <TextBlock Text="{Binding FriendlyName}" FontWeight="SemiBold" FontSize="12" Foreground="{StaticResource TextPrimary}" TextTrimming="CharacterEllipsis" />
                                                         <StackPanel Orientation="Horizontal" Margin="0,1,0,0">
                                                             <TextBlock Text="{Binding Address}" FontSize="11" FontWeight="Bold" Foreground="{StaticResource AccentBlue}" Margin="0,0,6,0" />
-                                                            <TextBlock Text="{Binding CategoryBadge}" FontSize="10" Foreground="{StaticResource TextMuted}" TextTrimming="CharacterEllipsis" />
+                                                            <TextBlock Text="{Binding HardwareSubtitle}" FontSize="10" Foreground="{StaticResource AccentAmber}" TextTrimming="CharacterEllipsis" />
                                                         </StackPanel>
                                                     </StackPanel>
                                                 </DockPanel>
@@ -1230,6 +1241,42 @@
                                                                     ToolTip="Interrogate only this device's All-Link Database directly from hardware (resumes partial reads automatically)" />
                                                         </StackPanel>
                                                     </DockPanel>
+
+                                                    <!-- AUTHORITATIVE HARDWARE PROFILE & SILICON METADATA RIBBON -->
+                                                    <Border Background="#181825" CornerRadius="6" Padding="10,6" Margin="0,0,0,12" BorderBrush="#313244" BorderThickness="1">
+                                                        <WrapPanel Orientation="Horizontal">
+                                                            <!-- Model Pill -->
+                                                            <Border Background="#25253A" CornerRadius="4" Padding="7,3" Margin="0,2,8,2" BorderBrush="#45475A" BorderThickness="1">
+                                                                <TextBlock Text="{Binding ModelBadge}" FontSize="11" FontWeight="Bold" Foreground="{StaticResource AccentAmber}" />
+                                                            </Border>
+
+                                                            <!-- Category / Subcategory / FW Pill -->
+                                                            <Border Background="#1E1E2E" CornerRadius="4" Padding="7,3" Margin="0,2,8,2" BorderBrush="#313244" BorderThickness="1">
+                                                                <TextBlock Text="{Binding CatSubcatBadge}" FontSize="11" Foreground="{StaticResource TextPrimary}" />
+                                                            </Border>
+
+                                                            <!-- Engine Version Pill -->
+                                                            <Border Background="#1E1E2E" CornerRadius="4" Padding="7,3" Margin="0,2,8,2" BorderBrush="#313244" BorderThickness="1">
+                                                                <TextBlock Text="{Binding EngineBadge}" FontSize="11" FontWeight="SemiBold" Foreground="{StaticResource AccentBlue}" />
+                                                            </Border>
+
+                                                            <!-- Silicon I/O Strategy Pill -->
+                                                            <Border Background="#222B38" CornerRadius="4" Padding="7,3" Margin="0,2,8,2" BorderBrush="#314B60" BorderThickness="1"
+                                                                    ToolTip="Hardware EEPROM read and write protocol implementation for this silicon generation">
+                                                                <TextBlock Text="{Binding StrategyBadge}" FontSize="11" FontWeight="SemiBold" Foreground="#89DCEB" />
+                                                            </Border>
+
+                                                            <!-- Power Source Pill -->
+                                                            <Border Background="#1E1E2E" CornerRadius="4" Padding="7,3" Margin="0,2,8,2" BorderBrush="#313244" BorderThickness="1">
+                                                                <TextBlock Text="{Binding PowerBadge}" FontSize="11" Foreground="{StaticResource AccentGreen}" />
+                                                            </Border>
+
+                                                            <!-- Capabilities Pill -->
+                                                            <Border Background="#1E1E2E" CornerRadius="4" Padding="7,3" Margin="0,2,0,2" BorderBrush="#313244" BorderThickness="1">
+                                                                <TextBlock Text="{Binding CapabilitiesBadge}" FontSize="11" Foreground="{StaticResource TextMuted}" />
+                                                            </Border>
+                                                        </WrapPanel>
+                                                    </Border>
 
                                                     <!-- MISSING DEFAULT PLM LINK ALERT BANNER -->
                                                     <Border Background="#3B252C" CornerRadius="6" Padding="14,10" Margin="0,0,0,12" BorderBrush="#F38BA8" BorderThickness="1">

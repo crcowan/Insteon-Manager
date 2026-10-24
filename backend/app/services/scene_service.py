@@ -282,6 +282,7 @@ class SceneService:
                     if matches:
                         rec_obj = matches[0]
                         mem_int = rec_obj.mem_addr
+                        r["mem_addr"] = f"0x{mem_int:04X}"
 
                 if rec_obj:
                     dev_obj.aldb.modify(
@@ -302,9 +303,15 @@ class SceneService:
                 dev_obj.aldb._status = ALDBStatus.LOADED
                 done, failed = await dev_obj.aldb.async_write(force=True)
 
+            from app.insteon import bus_pacer
+            await bus_pacer.mark_write_completed()
+
             if failed:
                 dev_obj.aldb.clear_pending()
                 raise RuntimeError(f"Hardware EEPROM write to {clean_addr} failed. Snapshot was NOT modified.")
+
+            # Allow EEPROM charge-pump burn cycle to complete before silicon read-back
+            await bus_pacer.wait_post_write_settle()
 
             # MANDATORY TWO-PHASE SILICON READ-BACK VERIFICATION
             for r in matching_recs:
