@@ -544,6 +544,9 @@ public class OrganizedAldbEntry
     public bool IsProtectedPlmLink { get; set; }
     public bool IsDuplicate { get; set; }
     public bool IsGroupZero { get; set; }
+    public bool CanDelete => !IsProtectedPlmLink || IsDuplicate;
+    public bool IsLockedCoreLink => IsProtectedPlmLink && !IsDuplicate;
+    public string CoreLinkTooltip => "Protected Core PLM Link: Required for I2CS hardware authorization (Group 0) or real-time status reporting to the hub (Group 1). Deleting the sole active copy is locked to prevent bricking device communication.";
     public bool HasIssue => !IsProtectedPlmLink && (IsDuplicate || IsGroupZero);
     public string IssueBadge => (IsDuplicate && IsGroupZero) 
         ? "⚠️ Duplicate Grp 0" 

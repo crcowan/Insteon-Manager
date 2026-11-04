@@ -87,14 +87,18 @@ A comprehensive diagnostic engine inspects the entire network topology against a
 
 ## 🖥️ Application Features & User Interface
 
-| Tab | Feature | Description |
+The desktop application supports **Browse Mode** (inspecting the cached network snapshot at any time without interrupting openHAB) and **Manage Mode** (exclusive hardware lock for live powerline reads and verified commits).
+
+| Workspace | Feature | Description |
 |---|---|---|
-| **Tab 1** | **🕸️ Network Topology Map** | Interactive force-directed node graph showing all devices, link reciprocity, signal paths, and real-time device control (On/Off/Dim). |
-| **Tab 2** | **📑 Device ALDB Inspector** | Deep inspection of raw EEPROM records. Categorizes Controller vs. Responder links, decodes high/low bitmasks, and provides direct hardware querying. |
-| **Tab 3** | **📋 Staged Changes & Commit** | Safety workbench allowing complex linking, unlinking, and scene changes to be reviewed as diffs before touching physical hardware. |
-| **Tab 4** | **🎭 Insteon Scenes & Presets** | Create new scenes, delete obsolete scenes, add responder devices with custom ramp rates, and adjust brightness presets surgically with instant hardware verification. |
-| **Tab 5** | **⚡ Advanced Operations & Recovery** | Atomic reciprocal link creation/deletion, ghost target purge, and the seamless "Clone & Swap" Device Replacement Wizard. |
-| **Tab 6** | **🩺 Network Health Analyzer** | 7-step automated health inspection scoring network integrity from 0–100% with 1-click batch auto-repair for half-links and ghost targets. |
+| **Tab 1** | **🗺️ Network Topology Map** | Interactive node-and-link graph showing all devices, link reciprocity, hardware profile badges, and real-time device/scene testing. |
+| **Tab 2** | **📑 Organized Device ALDBs** | Device-centric inspector categorizing Controller vs. Responder links, keypad button mappings, silicon I/O profiles, and locked core PLM links. |
+| **Tab 3** | **📋 Raw ALDB Table** | Flat searchable/sortable table of all raw EEPROM records across the network with bitmask flags and hex bytes. |
+| **Tab 4** | **📜 Event & Bridge Log** | Real-time streaming log of Raspberry Pi bridge operations, powerline transactions, and session heartbeats. |
+| **Tab 5** | **⚖️ Pending Changes & Verification** | Pre-commit safety staging queue allowing link, scene, and health fixes to be reviewed as diffs before writing to physical EEPROM. |
+| **Tab 6** | **🎭 Insteon Scenes** | Scene membership, controller/responder matrix, live scene triggers, and surgical responder brightness/ramp-rate preset tuning. |
+| **Tab 7** | **🔧 Network Tools & Recovery** | New device registration, default PLM link audit, reciprocal link creator/remover, ghost target purge, and "Clone & Swap" Device Replacement Wizard. |
+| **Tab 8** | **♥ Network Health Analyzer** | 7-step automated health inspection scoring network integrity from 0–100% with 6-category anomaly breakdown and staged/batch repair. |
 
 ---
 

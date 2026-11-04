@@ -72,6 +72,14 @@ public class SceneModel : INotifyPropertyChanged
 
     public string MemberCountText => $"{Members?.Count ?? 0} Members";
 
+    public string ControllersSummaryText => Controllers == null || Controllers.Count == 0
+        ? "None (Orphan Scene)"
+        : string.Join(" • ", Controllers.Select(c => c.IsPlm ? "[C] PLM Hub" : $"[C] {c.Label} (Btn {c.ButtonGroup})"));
+
+    public string RespondersSummaryText => Members == null || Members.Count == 0
+        ? "No Responder Devices"
+        : string.Join(" • ", Members.Select(m => $"[R] {m.Label} ({m.BrightnessPercent:F0}% @ {m.RampRateSecondsText})"));
+
     public event PropertyChangedEventHandler? PropertyChanged;
 
     protected bool SetProperty<T>(ref T field, T value, [CallerMemberName] string? propertyName = null)
@@ -336,4 +344,42 @@ public class SceneCreateRequestModel
 
     [JsonPropertyName("members")]
     public List<SceneMemberAddRequestModel> Members { get; set; } = new();
+}
+
+public class DeviceSceneRoleChipModel
+{
+    public int SceneGroup { get; set; }
+    public string SceneName { get; set; } = string.Empty;
+    public bool IsController { get; set; }
+    public bool IsResponder { get; set; }
+    public string BadgeText { get; set; } = string.Empty;
+    public string ToolTipText { get; set; } = string.Empty;
+
+    public string ChipBackground => (IsController && IsResponder)
+        ? "#2D364C"
+        : (IsController ? "#3B2A20" : "#1B2B22");
+
+    public string ChipBorder => (IsController && IsResponder)
+        ? "#89B4FA"
+        : (IsController ? "#F9E2AF" : "#A6E3A1");
+
+    public string ChipForeground => (IsController && IsResponder)
+        ? "#89B4FA"
+        : (IsController ? "#F9E2AF" : "#A6E3A1");
+}
+
+public class DeviceSceneMatrixRowModel
+{
+    public string DeviceAddress { get; set; } = string.Empty;
+    public string DeviceName { get; set; } = string.Empty;
+    public string DeviceModelBadge { get; set; } = string.Empty;
+    public int ControlledScenesCount { get; set; }
+    public int ResponderScenesCount { get; set; }
+    public ObservableCollection<DeviceSceneRoleChipModel> SceneChips { get; set; } = new();
+
+    public string DisplayDevice => string.IsNullOrWhiteSpace(DeviceName)
+        ? DeviceAddress
+        : $"{DeviceName} ({DeviceAddress})";
+
+    public string ParticipationSummary => $"[C] Controls {ControlledScenesCount} • [R] Responds to {ResponderScenesCount}";
 }

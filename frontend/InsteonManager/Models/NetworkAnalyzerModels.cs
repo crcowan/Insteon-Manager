@@ -129,6 +129,23 @@ public class NetworkIssueModel : INotifyPropertyChanged
     public bool HasMemAddr => !string.IsNullOrEmpty(MemAddr);
     public bool HasSecondaryAction => !string.IsNullOrEmpty(SecondaryAction);
 
+    public bool RequiresBatteryWake => IsBatteryDevice(OwnerAddress, OwnerName)
+        || (RecommendedAction == "create_reciprocal" && IsBatteryDevice(TargetAddress, TargetName));
+
+    public string BatteryWakeHint => "🔋 Battery Device Sleeping: Hold the Set button on the remote/sensor until its LED blinks before executing a live EEPROM write, or Stage the fix for when you are next to the device.";
+
+    private static bool IsBatteryDevice(string? addr, string? name)
+    {
+        if (!string.IsNullOrWhiteSpace(addr) && addr.Equals("1C.2C.40", StringComparison.OrdinalIgnoreCase))
+            return true;
+        if (string.IsNullOrWhiteSpace(name))
+            return false;
+        string lower = name.ToLowerInvariant();
+        return lower.Contains("battery") || lower.Contains("remote") || lower.Contains("mini") ||
+               lower.Contains("sensor") || lower.Contains("motion") || lower.Contains("leak") ||
+               lower.Contains("2342");
+    }
+
     public event PropertyChangedEventHandler? PropertyChanged;
     protected void OnPropertyChanged([CallerMemberName] string? propName = null) =>
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propName));

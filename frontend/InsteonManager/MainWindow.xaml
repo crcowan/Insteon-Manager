@@ -164,14 +164,14 @@
                     <Setter Property="Background" Value="#B4BEFE" />
                 </Trigger>
                 <DataTrigger Binding="{Binding IsSessionActive}" Value="True">
-                    <Setter Property="Background" Value="#F38BA8" />
+                    <Setter Property="Background" Value="#F9E2AF" />
                 </DataTrigger>
                 <MultiDataTrigger>
                     <MultiDataTrigger.Conditions>
                         <Condition Binding="{Binding IsSessionActive}" Value="True" />
                         <Condition Binding="{Binding RelativeSource={RelativeSource Self}, Path=IsMouseOver}" Value="True" />
                     </MultiDataTrigger.Conditions>
-                    <Setter Property="Background" Value="#EBA0AC" />
+                    <Setter Property="Background" Value="#FAE3B0" />
                 </MultiDataTrigger>
             </Style.Triggers>
         </Style>
@@ -396,7 +396,10 @@
                     <TextBlock Text="Pi Backend URL:" VerticalAlignment="Center" Margin="0,0,8,0" Foreground="{StaticResource TextMuted}" />
                     <TextBox Text="{Binding BackendUrl, UpdateSourceTrigger=PropertyChanged}" Width="180" Padding="8,4" Background="{StaticResource DarkSurfaceLight}" Foreground="{StaticResource TextPrimary}" BorderThickness="1" BorderBrush="#45475A" />
                     <Button Content="Test Link" Command="{Binding CheckConnectionCommand}" Margin="8,0,0,0" Padding="10,4" />
-                    <Button Content="Force Restore openHAB" Command="{Binding ForceRestoreOpenhabCommand}" Style="{StaticResource DangerButtonStyle}" Margin="8,0,0,0" Padding="10,4" ToolTip="Emergency recovery to re-enable openHAB Insteon Thing" />
+                    <Button Content="⚙️ Restore openHAB" Command="{Binding ForceRestoreOpenhabCommand}"
+                            Background="#25202A" Foreground="#EBA0AC" BorderBrush="#6C5058" BorderThickness="1"
+                            Margin="8,0,0,0" Padding="10,4" FontSize="11"
+                            ToolTip="Emergency recovery: Force re-enable openHAB Insteon Thing if a previous session exited abnormally" />
                 </StackPanel>
             </Grid>
         </Border>
@@ -406,6 +409,28 @@
             <DockPanel LastChildFill="False">
                 <!-- Actions (Docked Right for layout priority) -->
                 <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+                    <!-- Persistent Pending Changes Tray Chip -->
+                    <Button Content="{Binding PendingChangesBadgeText}"
+                            Command="{Binding GoToPendingChangesCommand}"
+                            Padding="12,7" Margin="0,0,12,0"
+                            ToolTip="Click to review and commit staged network changes in the Pending Changes workspace">
+                        <Button.Style>
+                            <Style TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+                                <Setter Property="Background" Value="#1E1E2E" />
+                                <Setter Property="Foreground" Value="{StaticResource TextMuted}" />
+                                <Setter Property="BorderBrush" Value="#45475A" />
+                                <Setter Property="BorderThickness" Value="1" />
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding HasPendingChanges}" Value="True">
+                                        <Setter Property="Background" Value="#3B2A20" />
+                                        <Setter Property="Foreground" Value="#F9E2AF" />
+                                        <Setter Property="BorderBrush" Value="#F9E2AF" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Button.Style>
+                    </Button>
+
                     <Button Content="{Binding SessionToggleButtonText}" 
                             Command="{Binding ToggleSessionCommand}" 
                             Style="{StaticResource SessionToggleButtonStyle}"
@@ -434,8 +459,16 @@
 
                 <!-- Status Badges (Docked Left) -->
                 <StackPanel DockPanel.Dock="Left" Orientation="Horizontal" VerticalAlignment="Center">
+                    <!-- Workspace Mode Badge (Browse vs Manage) -->
+                    <Border CornerRadius="12" Padding="10,4" Margin="0,0,10,0"
+                            Background="{Binding ModeBadgeBackground}"
+                            BorderBrush="{Binding ModeBadgeForeground}" BorderThickness="1"
+                            ToolTip="{Binding ModeBadgeToolTip}">
+                        <TextBlock Text="{Binding ModeBadgeText}" Foreground="{Binding ModeBadgeForeground}" FontWeight="Bold" FontSize="11" VerticalAlignment="Center" />
+                    </Border>
+
                     <!-- openHAB Status Badge -->
-                    <Border CornerRadius="12" Padding="10,4" Margin="0,0,12,0" Background="{StaticResource DarkSurfaceLight}">
+                    <Border CornerRadius="12" Padding="10,4" Margin="0,0,10,0" Background="{StaticResource DarkSurfaceLight}">
                         <StackPanel Orientation="Horizontal">
                             <Ellipse Width="10" Height="10" Margin="0,0,6,0" VerticalAlignment="Center">
                                 <Ellipse.Style>
@@ -454,7 +487,7 @@
                     </Border>
 
                     <!-- Session Lock Badge -->
-                    <Border CornerRadius="12" Padding="10,4" Margin="0,0,12,0" Background="{StaticResource DarkSurfaceLight}">
+                    <Border CornerRadius="12" Padding="10,4" Margin="0,0,10,0" Background="{StaticResource DarkSurfaceLight}">
                         <StackPanel Orientation="Horizontal">
                             <Ellipse Width="10" Height="10" Margin="0,0,6,0" VerticalAlignment="Center">
                                 <Ellipse.Style>
@@ -475,20 +508,8 @@
             </DockPanel>
         </Border>
 
-        <!-- 3. Main Workspace: Tabs -->
+        <!-- 3. Main Workspace: Tabs (Always interactive in Browse Mode; live hardware writes prompt for Manage Mode) -->
         <TabControl Grid.Row="2" SelectedIndex="{Binding SelectedTabIndex}" Background="Transparent" BorderThickness="0" Margin="12,8,12,8">
-            <TabControl.Style>
-                <Style TargetType="TabControl">
-                    <Setter Property="Opacity" Value="0.4" />
-                    <Setter Property="IsEnabled" Value="False" />
-                    <Style.Triggers>
-                        <DataTrigger Binding="{Binding IsSessionActive}" Value="True">
-                            <Setter Property="Opacity" Value="1.0" />
-                            <Setter Property="IsEnabled" Value="True" />
-                        </DataTrigger>
-                    </Style.Triggers>
-                </Style>
-            </TabControl.Style>
             <!-- TAB 1: Network Topology Graph (Canvas with Dynamic Links & Draggable Nodes) -->
             <TabItem Header="🗺️ Network Topology Map">
                 <Grid Background="{StaticResource DarkSurface}">
@@ -1141,7 +1162,12 @@
                                          BorderThickness="1" BorderBrush="#45475A" />
                                 
                                 <StackPanel Grid.Column="3" Orientation="Horizontal" VerticalAlignment="Center">
-                                    <TextBlock Text="Organized by Controllers (Scenes Driven) &amp; Responders (Scenes Triggering)" FontSize="11" Foreground="{StaticResource TextMuted}" />
+                                    <CheckBox IsChecked="{Binding ShowRawAldbDetails}"
+                                              Content="🔬 Show Raw Memory Slots &amp; Hex"
+                                              Foreground="{StaticResource AccentAmber}" FontSize="11" FontWeight="SemiBold"
+                                              VerticalAlignment="Center" Margin="0,0,16,0"
+                                              ToolTip="Toggle visibility of raw EEPROM slot addresses (0x0FFF) and Data1/Data2/Data3 hex bytes" />
+                                    <TextBlock Text="Organized by Controllers (Scenes Driven) &amp; Responders (Scenes Triggering)" FontSize="11" Foreground="{StaticResource TextMuted}" VerticalAlignment="Center" />
                                 </StackPanel>
                             </Grid>
                         </Border>
@@ -1149,6 +1175,31 @@
                         <!-- Scrollable Cards Container -->
                         <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Padding="16">
                             <StackPanel>
+                                <!-- Plain-English Insteon Concepts Quick Guide (Expandable for Non-Expert / New Users) -->
+                                <Expander IsExpanded="False" Margin="0,0,0,12">
+                                    <Expander.Header>
+                                        <StackPanel Orientation="Horizontal">
+                                            <TextBlock Text="ℹ️ Quick Guide: Understanding Insteon Links, Roles &amp; Protected Groups" FontSize="12" FontWeight="SemiBold" Foreground="{StaticResource AccentBlue}" />
+                                            <TextBlock Text="(Click to expand plain-English glossary)" FontSize="11" Foreground="{StaticResource TextMuted}" Margin="8,0,0,0" VerticalAlignment="Center" />
+                                        </StackPanel>
+                                    </Expander.Header>
+                                    <Border Background="#181825" CornerRadius="6" Padding="14,10" Margin="0,6,0,0" BorderBrush="#313244" BorderThickness="1">
+                                        <UniformGrid Columns="3">
+                                            <StackPanel Margin="0,0,12,0">
+                                                <TextBlock Text="🎮 [C] Controller Role" FontWeight="Bold" FontSize="11" Foreground="{StaticResource AccentBlue}" />
+                                                <TextBlock Text="When you press a paddle or button on this device, it broadcasts a command on its Group number to turn linked Responder devices ON or OFF." FontSize="11" Foreground="{StaticResource TextMuted}" TextWrapping="Wrap" Margin="0,3,0,0" />
+                                            </StackPanel>
+                                            <StackPanel Margin="6,0,6,0">
+                                                <TextBlock Text="💡 [R] Responder Role" FontWeight="Bold" FontSize="11" Foreground="{StaticResource AccentGreen}" />
+                                                <TextBlock Text="This device listens for broadcasts from a linked Controller and automatically goes to its stored On-Level (brightness) at its stored Ramp Rate." FontSize="11" Foreground="{StaticResource TextMuted}" TextWrapping="Wrap" Margin="0,3,0,0" />
+                                            </StackPanel>
+                                            <StackPanel Margin="12,0,0,0">
+                                                <TextBlock Text="🔒 Protected Core Links (Grp 0 &amp; 1)" FontWeight="Bold" FontSize="11" Foreground="{StaticResource AccentAmber}" />
+                                                <TextBlock Text="Links with your PLM Hub (53.C1.42) on Group 0 (I2CS Security Auth) and Group 1 (Status Reporting) are required for openHAB to control and hear the device. They are locked against accidental deletion." FontSize="11" Foreground="{StaticResource TextMuted}" TextWrapping="Wrap" Margin="0,3,0,0" />
+                                            </StackPanel>
+                                        </UniformGrid>
+                                    </Border>
+                                </Expander>
                                 <!-- Empty State if no device selected -->
                                 <Border Background="{StaticResource DarkSurfaceLight}" CornerRadius="8" Padding="24" Margin="0,16" HorizontalAlignment="Center" MaxWidth="500">
                                     <Border.Style>
@@ -1303,14 +1354,8 @@
                                                                         Command="{Binding DataContext.StageDefaultLinkForDeviceCommand, RelativeSource={RelativeSource AncestorType=Window}}"
                                                                         CommandParameter="{Binding}"
                                                                         Style="{StaticResource PrimaryButtonStyle}"
-                                                                        Padding="12,6" Margin="0,0,8,0"
-                                                                        ToolTip="Stage reciprocal Group 1 link with PLM into 'Pending Changes' for safety review" />
-                                                                <Button Content="⚡ Fix Link Now"
-                                                                        Command="{Binding DataContext.FixDefaultLinkForDeviceCommand, RelativeSource={RelativeSource AncestorType=Window}}"
-                                                                        CommandParameter="{Binding}"
-                                                                        Background="#3D2930" Foreground="#F38BA8" BorderBrush="#E78284" BorderThickness="1"
-                                                                        Padding="10,6" FontWeight="SemiBold"
-                                                                        ToolTip="Immediately write reciprocal Group 1 link with PLM (53.C1.42)" />
+                                                                        Padding="12,6"
+                                                                        ToolTip="Stage reciprocal Group 0/1 link with PLM into 'Pending Changes' for preflight safety review" />
                                                             </StackPanel>
                                                         </DockPanel>
                                                     </Border>
@@ -1444,11 +1489,11 @@
                                                                         <ColumnDefinition Width="130" />
                                                                         <ColumnDefinition Width="75" />
                                                                     </Grid.ColumnDefinitions>
-                                                                    <TextBlock Grid.Column="0" Text="Mem Addr" />
+                                                                    <TextBlock Grid.Column="0" Text="Mem Addr" Visibility="{Binding DataContext.ShowRawAldbDetails, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource BoolToVis}}" />
                                                                     <TextBlock Grid.Column="1" Text="Scene/Grp" />
                                                                     <TextBlock Grid.Column="2" Text="Target Device" />
                                                                     <TextBlock Grid.Column="3" Text="Relationship / Description" />
-                                                                    <TextBlock Grid.Column="4" Text="Raw Data" />
+                                                                    <TextBlock Grid.Column="4" Text="Raw Data" Visibility="{Binding DataContext.ShowRawAldbDetails, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource BoolToVis}}" />
                                                                     <TextBlock Grid.Column="5" Text="" />
                                                                 </Grid>
                                                                 <Separator Background="#313244" Margin="0,2" />
@@ -1467,7 +1512,7 @@
                                                                                         <ColumnDefinition Width="130" />
                                                                                         <ColumnDefinition Width="40" />
                                                                                     </Grid.ColumnDefinitions>
-                                                                                    <TextBlock Grid.Column="0" Text="{Binding MemAddr}" FontSize="11" Foreground="{StaticResource TextMuted}" VerticalAlignment="Center" />
+                                                                                    <TextBlock Grid.Column="0" Text="{Binding MemAddr}" FontSize="11" Foreground="{StaticResource TextMuted}" VerticalAlignment="Center" Visibility="{Binding DataContext.ShowRawAldbDetails, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource BoolToVis}}" />
                                                                                     <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
                                                                                         <Border Background="#89B4FA" CornerRadius="4" Padding="6,2" HorizontalAlignment="Left">
                                                                                             <Border.Style>
@@ -1500,12 +1545,20 @@
                                                                                             FontWeight="SemiBold" FontSize="11" Foreground="{StaticResource AccentBlue}"
                                                                                             ToolTip="Click to inspect this target device's ALDB database in Tab 2" Cursor="Hand" />
                                                                                     <TextBlock Grid.Column="3" Text="{Binding DecodedSummary}" FontSize="11" Foreground="{StaticResource TextMuted}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
-                                                                                    <TextBlock Grid.Column="4" Text="{Binding DataHex}" FontSize="10" Foreground="#6C7086" VerticalAlignment="Center" />
-                                                                                    <Button Grid.Column="5" Content="🗑️" 
-                                                                                            Command="{Binding DataContext.DeleteLinkFromEntryCommand, RelativeSource={RelativeSource AncestorType=Window}}"
-                                                                                            CommandParameter="{Binding}"
-                                                                                            Padding="4,2" FontSize="10" Background="#312229" Foreground="#F38BA8" 
-                                                                                            BorderBrush="#E78284" BorderThickness="1" ToolTip="Delete this reciprocal link" VerticalAlignment="Center" HorizontalAlignment="Right" />
+                                                                                    <TextBlock Grid.Column="4" Text="{Binding DataHex}" FontSize="10" Foreground="#6C7086" VerticalAlignment="Center" Visibility="{Binding DataContext.ShowRawAldbDetails, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource BoolToVis}}" />
+                                                                                    <StackPanel Grid.Column="5" Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+                                                                                        <Border Background="#1E293B" BorderBrush="#45475A" BorderThickness="1" CornerRadius="4" Padding="5,2"
+                                                                                                Visibility="{Binding IsLockedCoreLink, Converter={StaticResource BoolToVis}}"
+                                                                                                ToolTip="{Binding CoreLinkTooltip}">
+                                                                                            <TextBlock Text="🔒 Core" FontSize="9" FontWeight="SemiBold" Foreground="#94A3B8" />
+                                                                                        </Border>
+                                                                                        <Button Content="🗑️" 
+                                                                                                Command="{Binding DataContext.DeleteLinkFromEntryCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                                                                CommandParameter="{Binding}"
+                                                                                                Visibility="{Binding CanDelete, Converter={StaticResource BoolToVis}}"
+                                                                                                Padding="4,2" FontSize="10" Background="#312229" Foreground="#F38BA8" 
+                                                                                                BorderBrush="#E78284" BorderThickness="1" ToolTip="Stage removal of this link in Pending Changes" />
+                                                                                    </StackPanel>
                                                                                 </Grid>
                                                                             </Border>
                                                                         </DataTemplate>
@@ -1537,11 +1590,11 @@
                                                                         <ColumnDefinition Width="130" />
                                                                         <ColumnDefinition Width="75" />
                                                                     </Grid.ColumnDefinitions>
-                                                                    <TextBlock Grid.Column="0" Text="Mem Addr" />
+                                                                    <TextBlock Grid.Column="0" Text="Mem Addr" Visibility="{Binding DataContext.ShowRawAldbDetails, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource BoolToVis}}" />
                                                                     <TextBlock Grid.Column="1" Text="Scene/Grp" />
                                                                     <TextBlock Grid.Column="2" Text="Triggered By (Controller)" />
                                                                     <TextBlock Grid.Column="3" Text="Configuration (On-Level, Ramp, Button)" />
-                                                                    <TextBlock Grid.Column="4" Text="Raw Data" />
+                                                                    <TextBlock Grid.Column="4" Text="Raw Data" Visibility="{Binding DataContext.ShowRawAldbDetails, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource BoolToVis}}" />
                                                                     <TextBlock Grid.Column="5" Text="" />
                                                                 </Grid>
                                                                 <Separator Background="#313244" Margin="0,2" />
@@ -1560,7 +1613,7 @@
                                                                                         <ColumnDefinition Width="130" />
                                                                                         <ColumnDefinition Width="75" />
                                                                                     </Grid.ColumnDefinitions>
-                                                                                    <TextBlock Grid.Column="0" Text="{Binding MemAddr}" FontSize="11" Foreground="{StaticResource TextMuted}" VerticalAlignment="Center" />
+                                                                                    <TextBlock Grid.Column="0" Text="{Binding MemAddr}" FontSize="11" Foreground="{StaticResource TextMuted}" VerticalAlignment="Center" Visibility="{Binding DataContext.ShowRawAldbDetails, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource BoolToVis}}" />
                                                                                     <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
                                                                                         <Border Background="#A6E3A1" CornerRadius="4" Padding="6,2" HorizontalAlignment="Left">
                                                                                             <Border.Style>
@@ -1593,18 +1646,24 @@
                                                                                             FontWeight="SemiBold" FontSize="11" Foreground="{StaticResource AccentGreen}"
                                                                                             ToolTip="Click to inspect this target device's ALDB database in Tab 2" Cursor="Hand" />
                                                                                     <TextBlock Grid.Column="3" Text="{Binding DecodedSummary}" FontSize="11" Foreground="{StaticResource AccentAmber}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
-                                                                                    <TextBlock Grid.Column="4" Text="{Binding DataHex}" FontSize="10" Foreground="#6C7086" VerticalAlignment="Center" />
+                                                                                    <TextBlock Grid.Column="4" Text="{Binding DataHex}" FontSize="10" Foreground="#6C7086" VerticalAlignment="Center" Visibility="{Binding DataContext.ShowRawAldbDetails, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource BoolToVis}}" />
                                                                                     <StackPanel Grid.Column="5" Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
                                                                                         <Button Content="✏️" 
                                                                                                 Command="{Binding DataContext.EditResponderPresetCommand, RelativeSource={RelativeSource AncestorType=Window}}"
                                                                                                 CommandParameter="{Binding}"
                                                                                                 Padding="4,2" FontSize="10" Background="#263445" Foreground="#89B4FA" 
                                                                                                 BorderBrush="#89B4FA" BorderThickness="1" ToolTip="Adjust Brightness &amp; Ramp Rate for this link" Margin="0,0,4,0" />
+                                                                                        <Border Background="#1E293B" BorderBrush="#45475A" BorderThickness="1" CornerRadius="4" Padding="5,2"
+                                                                                                Visibility="{Binding IsLockedCoreLink, Converter={StaticResource BoolToVis}}"
+                                                                                                ToolTip="{Binding CoreLinkTooltip}">
+                                                                                            <TextBlock Text="🔒 Core" FontSize="9" FontWeight="SemiBold" Foreground="#94A3B8" />
+                                                                                        </Border>
                                                                                         <Button Content="🗑️" 
                                                                                                 Command="{Binding DataContext.DeleteLinkFromEntryCommand, RelativeSource={RelativeSource AncestorType=Window}}"
                                                                                                 CommandParameter="{Binding}"
+                                                                                                Visibility="{Binding CanDelete, Converter={StaticResource BoolToVis}}"
                                                                                                 Padding="4,2" FontSize="10" Background="#312229" Foreground="#F38BA8" 
-                                                                                                BorderBrush="#E78284" BorderThickness="1" ToolTip="Delete this reciprocal link" />
+                                                                                                BorderBrush="#E78284" BorderThickness="1" ToolTip="Stage removal of this link in Pending Changes" />
                                                                                     </StackPanel>
                                                                                 </Grid>
                                                                             </Border>
@@ -1778,10 +1837,11 @@
                 </Grid>
             </TabItem>
 
-            <!-- TAB 4: Staged Changes / Pre-Commit Verification (Future-Ready Verification Display) -->
-            <TabItem Header="⚖️ Pending Changes &amp; Verification">
+            <!-- TAB 4: Staged Changes / Pre-Commit Verification -->
+            <TabItem Header="{Binding PendingChangesTabHeader}">
                 <Grid Background="{StaticResource DarkSurface}">
                     <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
                         <RowDefinition Height="Auto" />
                         <RowDefinition Height="*" />
                     </Grid.RowDefinitions>
@@ -1796,32 +1856,44 @@
 
                             <StackPanel Grid.Column="0" VerticalAlignment="Center">
                                 <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
-                                    <TextBlock Text="🛡️ Pre-Commit Change Verification" FontWeight="Bold" FontSize="14" Foreground="{StaticResource AccentAmber}" />
+                                    <TextBlock Text="🛡️ Pre-Commit Change Verification &amp; Undo History" FontWeight="Bold" FontSize="14" Foreground="{StaticResource AccentAmber}" />
                                     <Border Background="#45475A" CornerRadius="10" Padding="8,2" Margin="10,0,0,0">
                                         <TextBlock Text="{Binding StagedChanges.Count, StringFormat='{}{0} staged actions'}" FontSize="11" FontWeight="Bold" Foreground="{StaticResource AccentAmber}" />
                                     </Border>
                                 </StackPanel>
-                                <TextBlock Text="All device modifications (link additions, deletions, replacements, scene adjustments) are staged here for review before writing across the Insteon powerline." 
+                                <TextBlock Text="All structural modifications (link additions, deletions, replacements, scene membership, and health repairs) are staged here for preflight safety inspection before writing across the Insteon powerline." 
                                            FontSize="12" Foreground="{StaticResource TextMuted}" TextWrapping="Wrap" />
                             </StackPanel>
 
                             <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
-                                <Button Content="+ Stage Sample Action" Command="{Binding StageSampleChangeCommand}" 
-                                        ToolTip="Add a preview change to test the staging and verification display"
-                                        Margin="0,0,8,0" Padding="12,6" />
+                                <Button Content="{Binding LastUndoButtonText}"
+                                        Command="{Binding StageUndoLastChangeCommand}"
+                                        Visibility="{Binding CanUndoLastChange, Converter={StaticResource BoolToVis}}"
+                                        Background="#263445" Foreground="#89B4FA" BorderBrush="#89B4FA" BorderThickness="1"
+                                        FontWeight="SemiBold" Margin="0,0,8,0" Padding="12,6"
+                                        ToolTip="Stage an inverse EEPROM write to undo the most recent preset or link modification" />
                                 <Button Content="❌ Discard Staged Changes" Command="{Binding DiscardStagedChangesCommand}" 
                                         ToolTip="Clear all pending changes without touching hardware"
                                         Margin="0,0,8,0" Padding="12,6" />
                                 <Button Content="✔️ Commit Changes to Hardware" Command="{Binding CommitStagedChangesCommand}" 
                                         Style="{StaticResource PrimaryButtonStyle}"
-                                        ToolTip="Transmit verified changes across the Insteon network and update ALDB"
+                                        ToolTip="Transmit verified changes across the Insteon network and verify EEPROM readback"
                                         Padding="14,6" />
                             </StackPanel>
                         </Grid>
                     </Border>
 
+                    <!-- Preflight Safety & Impact Banner -->
+                    <Border Grid.Row="1" Background="{Binding PreflightBackground}" BorderBrush="{Binding PreflightBorder}" BorderThickness="1"
+                            CornerRadius="6" Padding="14,10" Margin="16,12,16,8">
+                        <StackPanel>
+                            <TextBlock Text="{Binding PreflightHeadline}" FontWeight="Bold" FontSize="12" Foreground="{Binding PreflightForeground}" />
+                            <TextBlock Text="{Binding PreflightSubtext}" FontSize="11" Foreground="{StaticResource TextMuted}" Margin="0,3,0,0" TextWrapping="Wrap" />
+                        </StackPanel>
+                    </Border>
+
                     <!-- Staged Changes Verification Table -->
-                    <DataGrid Grid.Row="1" ItemsSource="{Binding StagedChanges}"
+                    <DataGrid Grid.Row="2" ItemsSource="{Binding StagedChanges}"
                               AutoGenerateColumns="False"
                               CanUserAddRows="False"
                               IsReadOnly="True"
@@ -1905,8 +1977,9 @@
                                     </StackPanel>
 
                                     <StackPanel Grid.Row="0" Grid.Column="1" Orientation="Horizontal" Margin="0,0,0,8">
+                                        <Button Content="{Binding SceneMatrixToggleText}" Command="{Binding ToggleSceneMatrixViewCommand}" Padding="8,4" FontSize="11" Background="#25324A" Foreground="#89B4FA" BorderBrush="#89B4FA" BorderThickness="1" Margin="0,0,6,0" ToolTip="Switch between the Scene Preset Tuner and the Device × Scene Participation Matrix" />
                                         <Button Content="➕ New" Command="{Binding OpenCreateSceneDialogCommand}" Padding="8,4" FontSize="11" Background="#2A3D34" Foreground="#A6E3A1" BorderBrush="#A6E3A1" BorderThickness="1" Margin="0,0,6,0" ToolTip="Create a new Insteon scene" />
-                                        <Button Content="🔄 Refresh" Command="{Binding RefreshScenesCommand}" Padding="8,4" FontSize="11" />
+                                        <Button Content="🔄" Command="{Binding RefreshScenesCommand}" Padding="8,4" FontSize="11" ToolTip="Refresh scenes" />
                                     </StackPanel>
 
                                     <TextBox Grid.Row="1" Grid.ColumnSpan="2" Text="{Binding SceneFilterText, UpdateSourceTrigger=PropertyChanged}" 
@@ -1971,211 +2044,292 @@
                         </Grid>
                     </Border>
 
-                    <!-- Right: Scene Details & Fine-Grained Member Tuning -->
+                    <!-- Right: Scene Details & Fine-Grained Member Tuning OR Device × Scene Matrix -->
                     <Grid Grid.Column="1" Margin="20">
-                        <Grid.RowDefinitions>
-                            <RowDefinition Height="Auto" /> <!-- Scene Header & Broadcast Controls -->
-                            <RowDefinition Height="Auto" /> <!-- Controllers Summary Banner -->
-                            <RowDefinition Height="*" />    <!-- Member Devices Table & Sliders -->
-                        </Grid.RowDefinitions>
+                        <!-- VIEW A: Scene Preset Tuner -->
+                        <Grid Visibility="{Binding IsSceneTunerView, Converter={StaticResource BoolToVis}}">
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" /> <!-- Scene Header & Broadcast Controls -->
+                                <RowDefinition Height="Auto" /> <!-- Controllers Summary Banner -->
+                                <RowDefinition Height="*" />    <!-- Member Devices Table & Sliders -->
+                            </Grid.RowDefinitions>
 
-                        <!-- Row 0: Scene Banner & Broadcast Trigger Buttons -->
-                        <Border Grid.Row="0" Background="{StaticResource DarkSurfaceLight}" CornerRadius="8" Padding="16,14" Margin="0,0,0,14" BorderBrush="#45475A" BorderThickness="1">
-                            <Grid>
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="*" />
-                                    <ColumnDefinition Width="Auto" />
-                                </Grid.ColumnDefinitions>
+                            <!-- Row 0: Scene Banner & Broadcast Trigger Buttons -->
+                            <Border Grid.Row="0" Background="{StaticResource DarkSurfaceLight}" CornerRadius="8" Padding="16,14" Margin="0,0,0,14" BorderBrush="#45475A" BorderThickness="1">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
 
-                                <StackPanel Grid.Column="0" VerticalAlignment="Center">
-                                    <TextBlock Text="{Binding SelectedScene.DisplayTitle, FallbackValue='Select a Scene to Inspect'}" FontSize="18" FontWeight="Bold" Foreground="{StaticResource AccentBlue}" />
-                                    <TextBlock Text="Adjust brightness and ramp rate presets surgically in each responder's EEPROM with zero full-scene rebuilds." FontSize="12" Foreground="{StaticResource TextMuted}" Margin="0,4,0,0" />
-                                </StackPanel>
-
-                                <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
-                                    <Button Content="⚡ Trigger ON" Command="{Binding TriggerSceneOnCommand}" Style="{StaticResource PrimaryButtonStyle}" Margin="0,0,8,0" Padding="14,8" ToolTip="Broadcast All-Link ON command for this scene group" />
-                                    <Button Content="🌙 Trigger OFF" Command="{Binding TriggerSceneOffCommand}" Margin="0,0,8,0" Padding="14,8" ToolTip="Broadcast All-Link OFF command for this scene group" />
-                                    <Button Content="⚡⚡ Fast ON" Command="{Binding TriggerSceneFastOnCommand}" Margin="0,0,8,0" Padding="10,8" ToolTip="Instantaneous 0ms jump to On-Level" />
-                                    <Button Content="🌙🌙 Fast OFF" Command="{Binding TriggerSceneFastOffCommand}" Margin="0,0,12,0" Padding="10,8" ToolTip="Instantaneous 0ms jump to Off" />
-                                    <Button Content="🗑️ Delete Scene" Command="{Binding DeleteSceneCommand}" Padding="12,8" Background="#3B252C" Foreground="#F38BA8" BorderBrush="#F38BA8" BorderThickness="1" ToolTip="Permanently delete this scene and reciprocal links from all devices and PLM" />
-                                </StackPanel>
-                            </Grid>
-                        </Border>
-
-                        <!-- Row 1: Controllers Summary -->
-                        <Border Grid.Row="1" Background="#181825" CornerRadius="6" Padding="12,8" Margin="0,0,0,14" BorderBrush="#313244" BorderThickness="1">
-                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                                <TextBlock Text="🎮 Controllers:" FontWeight="Bold" FontSize="12" Foreground="{StaticResource AccentAmber}" VerticalAlignment="Center" Margin="0,0,10,0" />
-                                <ItemsControl ItemsSource="{Binding SelectedScene.Controllers}">
-                                    <ItemsControl.ItemsPanel>
-                                        <ItemsPanelTemplate>
-                                            <StackPanel Orientation="Horizontal" />
-                                        </ItemsPanelTemplate>
-                                    </ItemsControl.ItemsPanel>
-                                    <ItemsControl.ItemTemplate>
-                                        <DataTemplate>
-                                            <Border Background="#313244" CornerRadius="4" Padding="6,2" Margin="0,0,8,0">
-                                                <TextBlock Text="{Binding DisplayName}" FontSize="11" Foreground="{StaticResource TextPrimary}" />
-                                            </Border>
-                                        </DataTemplate>
-                                    </ItemsControl.ItemTemplate>
-                                </ItemsControl>
-                            </StackPanel>
-                        </Border>
-
-                        <!-- Row 2: Members Presets List -->
-                        <Border Grid.Row="2" Background="{StaticResource DarkSurfaceLight}" CornerRadius="8" Padding="14" BorderBrush="#313244" BorderThickness="1">
-                            <Grid>
-                                <Grid.RowDefinitions>
-                                    <RowDefinition Height="Auto" />
-                                    <RowDefinition Height="Auto" />
-                                    <RowDefinition Height="*" />
-                                </Grid.RowDefinitions>
-
-                                <DockPanel Grid.Row="0" Margin="0,0,0,10">
-                                    <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
-                                        <Button Content="➕ Add Device to Scene" Command="{Binding OpenAddDeviceToSceneDialogCommand}"
-                                                Background="#2A3D34" Foreground="#A6E3A1" BorderBrush="#A6E3A1" BorderThickness="1"
-                                                Padding="12,5" FontSize="12" FontWeight="SemiBold"
-                                                ToolTip="Add a new responder device to this scene with verified reciprocal links" />
+                                    <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                                        <TextBlock Text="{Binding SelectedScene.DisplayTitle, FallbackValue='Select a Scene to Inspect'}" FontSize="18" FontWeight="Bold" Foreground="{StaticResource AccentBlue}" />
+                                        <TextBlock Text="Adjust brightness and ramp rate presets surgically in each responder's EEPROM (with automatic Undo support), or stage scene membership changes." FontSize="12" Foreground="{StaticResource TextMuted}" Margin="0,4,0,0" />
                                     </StackPanel>
-                                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                                        <TextBlock Text="💡 Scene Member Presets (Brightness &amp; Ramp Rate)" FontWeight="Bold" FontSize="14" Foreground="{StaticResource TextPrimary}" VerticalAlignment="Center" />
-                                        <TextBlock Text="{Binding SelectedScene.Members.Count, StringFormat='({0} Responder Devices)'}" FontSize="12" Foreground="{StaticResource TextMuted}" Margin="8,0,0,0" VerticalAlignment="Center" />
+
+                                    <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                                        <Button Content="📊 Matrix View" Command="{Binding ToggleSceneMatrixViewCommand}" Margin="0,0,8,0" Padding="12,8" Background="#25324A" Foreground="#89B4FA" BorderBrush="#89B4FA" BorderThickness="1" FontWeight="SemiBold" ToolTip="View all devices and their Controller [C] / Responder [R] participation across all scenes" />
+                                        <Button Content="⚡ Trigger ON" Command="{Binding TriggerSceneOnCommand}" Style="{StaticResource PrimaryButtonStyle}" Margin="0,0,8,0" Padding="14,8" ToolTip="Broadcast All-Link ON command for this scene group" />
+                                        <Button Content="🌙 Trigger OFF" Command="{Binding TriggerSceneOffCommand}" Margin="0,0,8,0" Padding="14,8" ToolTip="Broadcast All-Link OFF command for this scene group" />
+                                        <Button Content="⚡⚡ Fast ON" Command="{Binding TriggerSceneFastOnCommand}" Margin="0,0,8,0" Padding="10,8" ToolTip="Instantaneous 0ms jump to On-Level" />
+                                        <Button Content="🌙🌙 Fast OFF" Command="{Binding TriggerSceneFastOffCommand}" Margin="0,0,12,0" Padding="10,8" ToolTip="Instantaneous 0ms jump to Off" />
+                                        <Button Content="📋 Stage Delete Scene" Command="{Binding StageDeleteSceneCommand}" Padding="12,8" Background="#3B252C" Foreground="#F38BA8" BorderBrush="#F38BA8" BorderThickness="1" ToolTip="Stage deletion of this scene and its reciprocal links in Pending Changes" />
                                     </StackPanel>
-                                </DockPanel>
+                                </Grid>
+                            </Border>
 
-                                <!-- Inline Add Member Form (Collapsible) -->
-                                <Border Grid.Row="1" Background="#181825" BorderBrush="#89B4FA" BorderThickness="1.5" CornerRadius="6" Padding="14,12" Margin="0,0,0,12"
-                                        Visibility="{Binding IsAddingMemberToScene, Converter={StaticResource BoolToVis}}">
-                                    <Grid>
-                                        <Grid.RowDefinitions>
-                                            <RowDefinition Height="Auto" />
-                                            <RowDefinition Height="Auto" />
-                                        </Grid.RowDefinitions>
-
-                                        <DockPanel Grid.Row="0" Margin="0,0,0,10">
-                                            <TextBlock Text="➕ Add Device to Current Scene" FontWeight="Bold" FontSize="13" Foreground="{StaticResource AccentBlue}" VerticalAlignment="Center" />
-                                            <TextBlock Text="Select a responder device, configure initial presets, and write reciprocal hardware links" FontSize="11" Foreground="{StaticResource TextMuted}" Margin="10,0,0,0" VerticalAlignment="Center" />
-                                        </DockPanel>
-
-                                        <Grid Grid.Row="1">
-                                            <Grid.ColumnDefinitions>
-                                                <!-- Device Selector -->
-                                                <ColumnDefinition Width="280" />
-                                                <!-- On Level Slider -->
-                                                <ColumnDefinition Width="260" />
-                                                <!-- Ramp Rate Slider -->
-                                                <ColumnDefinition Width="200" />
-                                                <!-- Action Buttons -->
-                                                <ColumnDefinition Width="*" />
-                                            </Grid.ColumnDefinitions>
-
-                                            <!-- Col 0: Device Selector -->
-                                            <StackPanel Grid.Column="0" Margin="0,0,14,0">
-                                                <TextBlock Text="Responder Device:" FontSize="11" Foreground="{StaticResource TextMuted}" Margin="0,0,0,4" />
-                                                <ComboBox ItemsSource="{Binding DeviceLookupChoices}" SelectedItem="{Binding SelectedDeviceToAddToScene}"
-                                                          DisplayMemberPath="DisplayText"
-                                                          Padding="8,5" Background="#1E1E2E" Foreground="{StaticResource TextPrimary}" />
-                                            </StackPanel>
-
-                                            <!-- Col 1: Brightness Preset Slider -->
-                                            <StackPanel Grid.Column="1" Margin="0,0,14,0">
-                                                <DockPanel Margin="0,0,0,4">
-                                                    <TextBlock Text="Initial Brightness:" FontSize="11" Foreground="{StaticResource TextMuted}" />
-                                                    <TextBlock Text="{Binding NewSceneMemberBrightnessPercentText}" FontWeight="Bold" FontSize="11" Foreground="{StaticResource AccentGreen}" HorizontalAlignment="Right" />
-                                                </DockPanel>
-                                                <Slider Minimum="0" Maximum="255" Value="{Binding NewSceneMemberOnLevel, Mode=TwoWay}" SmallChange="5" LargeChange="25" />
-                                            </StackPanel>
-
-                                            <!-- Col 2: Ramp Rate Slider -->
-                                            <StackPanel Grid.Column="2" Margin="0,0,14,0">
-                                                <DockPanel Margin="0,0,0,4">
-                                                    <TextBlock Text="Initial Ramp Rate:" FontSize="11" Foreground="{StaticResource TextMuted}" />
-                                                    <TextBlock Text="{Binding NewSceneMemberRampRateSecondsText}" FontWeight="Bold" FontSize="11" Foreground="{StaticResource AccentAmber}" HorizontalAlignment="Right" />
-                                                </DockPanel>
-                                                <Slider Minimum="0" Maximum="31" Value="{Binding NewSceneMemberRampRate, Mode=TwoWay}" SmallChange="1" LargeChange="5" />
-                                            </StackPanel>
-
-                                            <!-- Col 3: Action Buttons -->
-                                            <StackPanel Grid.Column="3" Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
-                                                <Button Content="✓ Add to Scene Now" Command="{Binding AddDeviceToSceneNowCommand}"
-                                                        Style="{StaticResource PrimaryButtonStyle}" Padding="12,6" FontSize="11" Margin="0,0,8,0"
-                                                        ToolTip="Write verified reciprocal links to responder EEPROM and controllers" />
-                                                <Button Content="Cancel" Command="{Binding CancelAddDeviceToSceneCommand}"
-                                                        Padding="10,6" FontSize="11" Background="#313244" Foreground="{StaticResource TextPrimary}" />
-                                            </StackPanel>
-                                        </Grid>
-                                    </Grid>
-                                </Border>
-
-                                <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto">
-                                    <ItemsControl ItemsSource="{Binding SelectedScene.Members}">
+                            <!-- Row 1: Controllers Summary -->
+                            <Border Grid.Row="1" Background="#181825" CornerRadius="6" Padding="12,8" Margin="0,0,0,14" BorderBrush="#313244" BorderThickness="1">
+                                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                    <TextBlock Text="🎮 Controllers:" FontWeight="Bold" FontSize="12" Foreground="{StaticResource AccentAmber}" VerticalAlignment="Center" Margin="0,0,10,0" />
+                                    <ItemsControl ItemsSource="{Binding SelectedScene.Controllers}">
+                                        <ItemsControl.ItemsPanel>
+                                            <ItemsPanelTemplate>
+                                                <StackPanel Orientation="Horizontal" />
+                                            </ItemsPanelTemplate>
+                                        </ItemsControl.ItemsPanel>
                                         <ItemsControl.ItemTemplate>
                                             <DataTemplate>
-                                                <Border Background="#1E1E2E" CornerRadius="6" Padding="14,10" Margin="0,0,0,8" BorderBrush="#313244" BorderThickness="1">
+                                                <Border Background="#313244" CornerRadius="4" Padding="6,2" Margin="0,0,8,0">
+                                                    <TextBlock Text="{Binding DisplayName}" FontSize="11" Foreground="{StaticResource TextPrimary}" />
+                                                </Border>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </StackPanel>
+                            </Border>
+
+                            <!-- Row 2: Members Presets List -->
+                            <Border Grid.Row="2" Background="{StaticResource DarkSurfaceLight}" CornerRadius="8" Padding="14" BorderBrush="#313244" BorderThickness="1">
+                                <Grid>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="*" />
+                                    </Grid.RowDefinitions>
+
+                                    <DockPanel Grid.Row="0" Margin="0,0,0,10">
+                                        <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                                            <Button Content="➕ Add Device to Scene" Command="{Binding OpenAddDeviceToSceneDialogCommand}"
+                                                    Background="#2A3D34" Foreground="#A6E3A1" BorderBrush="#A6E3A1" BorderThickness="1"
+                                                    Padding="12,5" FontSize="12" FontWeight="SemiBold"
+                                                    ToolTip="Stage a new responder device into this scene with verified reciprocal links" />
+                                        </StackPanel>
+                                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                            <TextBlock Text="💡 Scene Member Presets (Brightness &amp; Ramp Rate)" FontWeight="Bold" FontSize="14" Foreground="{StaticResource TextPrimary}" VerticalAlignment="Center" />
+                                            <TextBlock Text="{Binding SelectedScene.Members.Count, StringFormat='({0} Responder Devices)'}" FontSize="12" Foreground="{StaticResource TextMuted}" Margin="8,0,0,0" VerticalAlignment="Center" />
+                                        </StackPanel>
+                                    </DockPanel>
+
+                                    <!-- Inline Add Member Form (Collapsible) -->
+                                    <Border Grid.Row="1" Background="#181825" BorderBrush="#89B4FA" BorderThickness="1.5" CornerRadius="6" Padding="14,12" Margin="0,0,0,12"
+                                            Visibility="{Binding IsAddingMemberToScene, Converter={StaticResource BoolToVis}}">
+                                        <Grid>
+                                            <Grid.RowDefinitions>
+                                                <RowDefinition Height="Auto" />
+                                                <RowDefinition Height="Auto" />
+                                            </Grid.RowDefinitions>
+
+                                            <DockPanel Grid.Row="0" Margin="0,0,0,10">
+                                                <TextBlock Text="➕ Add Device to Current Scene" FontWeight="Bold" FontSize="13" Foreground="{StaticResource AccentBlue}" VerticalAlignment="Center" />
+                                                <TextBlock Text="Select a responder device, configure initial presets, and stage reciprocal hardware links" FontSize="11" Foreground="{StaticResource TextMuted}" Margin="10,0,0,0" VerticalAlignment="Center" />
+                                            </DockPanel>
+
+                                            <Grid Grid.Row="1">
+                                                <Grid.ColumnDefinitions>
+                                                    <!-- Device Selector -->
+                                                    <ColumnDefinition Width="280" />
+                                                    <!-- On Level Slider -->
+                                                    <ColumnDefinition Width="260" />
+                                                    <!-- Ramp Rate Slider -->
+                                                    <ColumnDefinition Width="200" />
+                                                    <!-- Action Buttons -->
+                                                    <ColumnDefinition Width="*" />
+                                                </Grid.ColumnDefinitions>
+
+                                                <!-- Col 0: Device Selector -->
+                                                <StackPanel Grid.Column="0" Margin="0,0,14,0">
+                                                    <TextBlock Text="Responder Device:" FontSize="11" Foreground="{StaticResource TextMuted}" Margin="0,0,0,4" />
+                                                    <ComboBox ItemsSource="{Binding DeviceLookupChoices}" SelectedItem="{Binding SelectedDeviceToAddToScene}"
+                                                              DisplayMemberPath="DisplayText"
+                                                              Padding="8,5" Background="#1E1E2E" Foreground="{StaticResource TextPrimary}" />
+                                                </StackPanel>
+
+                                                <!-- Col 1: Brightness Preset Slider -->
+                                                <StackPanel Grid.Column="1" Margin="0,0,14,0">
+                                                    <DockPanel Margin="0,0,0,4">
+                                                        <TextBlock Text="Initial Brightness:" FontSize="11" Foreground="{StaticResource TextMuted}" />
+                                                        <TextBlock Text="{Binding NewSceneMemberBrightnessPercentText}" FontWeight="Bold" FontSize="11" Foreground="{StaticResource AccentGreen}" HorizontalAlignment="Right" />
+                                                    </DockPanel>
+                                                    <Slider Minimum="0" Maximum="255" Value="{Binding NewSceneMemberOnLevel, Mode=TwoWay}" SmallChange="5" LargeChange="25" />
+                                                </StackPanel>
+
+                                                <!-- Col 2: Ramp Rate Slider -->
+                                                <StackPanel Grid.Column="2" Margin="0,0,14,0">
+                                                    <DockPanel Margin="0,0,0,4">
+                                                        <TextBlock Text="Initial Ramp Rate:" FontSize="11" Foreground="{StaticResource TextMuted}" />
+                                                        <TextBlock Text="{Binding NewSceneMemberRampRateSecondsText}" FontWeight="Bold" FontSize="11" Foreground="{StaticResource AccentAmber}" HorizontalAlignment="Right" />
+                                                    </DockPanel>
+                                                    <Slider Minimum="0" Maximum="31" Value="{Binding NewSceneMemberRampRate, Mode=TwoWay}" SmallChange="1" LargeChange="5" />
+                                                </StackPanel>
+
+                                                <!-- Col 3: Action Buttons -->
+                                                <StackPanel Grid.Column="3" Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+                                                    <Button Content="📋 Stage Add to Scene" Command="{Binding StageAddDeviceToSceneCommand}"
+                                                            Style="{StaticResource PrimaryButtonStyle}" Padding="12,6" FontSize="11" Margin="0,0,8,0"
+                                                            ToolTip="Stage reciprocal responder and controller links in Pending Changes" />
+                                                    <Button Content="Cancel" Command="{Binding CancelAddDeviceToSceneCommand}"
+                                                            Padding="10,6" FontSize="11" Background="#313244" Foreground="{StaticResource TextPrimary}" />
+                                                </StackPanel>
+                                            </Grid>
+                                        </Grid>
+                                    </Border>
+
+                                    <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto">
+                                        <ItemsControl ItemsSource="{Binding SelectedScene.Members}">
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate>
+                                                    <Border Background="#1E1E2E" CornerRadius="6" Padding="14,10" Margin="0,0,0,8" BorderBrush="#313244" BorderThickness="1">
+                                                        <Grid>
+                                                            <Grid.ColumnDefinitions>
+                                                                <!-- Device Name & Address (240px) -->
+                                                                <ColumnDefinition Width="240" />
+                                                                <!-- On-Level / Brightness Slider (320px) -->
+                                                                <ColumnDefinition Width="320" />
+                                                                <!-- Ramp Rate Stepper/Dropdown (220px) -->
+                                                                <ColumnDefinition Width="220" />
+                                                                <!-- Actions (Auto) -->
+                                                                <ColumnDefinition Width="*" />
+                                                            </Grid.ColumnDefinitions>
+
+                                                            <!-- Col 0: Device Identity -->
+                                                            <StackPanel Grid.Column="0" VerticalAlignment="Center" Margin="0,0,14,0">
+                                                                <TextBlock Text="{Binding Label}" FontWeight="Bold" FontSize="13" Foreground="{StaticResource AccentBlue}" TextTrimming="CharacterEllipsis" />
+                                                                <TextBlock Text="{Binding Address, StringFormat='Address: {0}'}" FontSize="11" Foreground="{StaticResource TextMuted}" />
+                                                                <TextBlock Text="{Binding MemAddr, StringFormat='EEPROM Slot: {0}'}" FontSize="10" Foreground="#6C7086"
+                                                                           Visibility="{Binding DataContext.ShowRawAldbDetails, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource BoolToVis}}" />
+                                                            </StackPanel>
+
+                                                            <!-- Col 1: Brightness Preset Slider -->
+                                                            <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="0,0,18,0">
+                                                                <DockPanel Margin="0,0,0,4">
+                                                                    <TextBlock Text="Preset On-Level:" FontSize="11" Foreground="{StaticResource TextMuted}" />
+                                                                    <TextBlock Text="{Binding BrightnessPercentText}" FontWeight="Bold" FontSize="11" Foreground="{StaticResource AccentGreen}" HorizontalAlignment="Right" />
+                                                                </DockPanel>
+                                                                <Slider Minimum="0" Maximum="255" Value="{Binding OnLevel, Mode=TwoWay}" SmallChange="5" LargeChange="25" />
+                                                            </StackPanel>
+
+                                                            <!-- Col 2: Ramp Rate Preset -->
+                                                            <StackPanel Grid.Column="2" VerticalAlignment="Center" Margin="0,0,18,0">
+                                                                <DockPanel Margin="0,0,0,4">
+                                                                    <TextBlock Text="Ramp Rate:" FontSize="11" Foreground="{StaticResource TextMuted}" />
+                                                                    <TextBlock Text="{Binding RampRateSecondsText}" FontWeight="Bold" FontSize="11" Foreground="{StaticResource AccentAmber}" HorizontalAlignment="Right" />
+                                                                </DockPanel>
+                                                                <Slider Minimum="0" Maximum="31" Value="{Binding RampRate, Mode=TwoWay}" SmallChange="1" LargeChange="5" />
+                                                            </StackPanel>
+
+                                                            <!-- Col 3: Actions -->
+                                                            <StackPanel Grid.Column="3" Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+                                                                <Button Content="💡 Test On" Command="{Binding DataContext.ControlDeviceCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                                        CommandParameter="{Binding Address, Converter={StaticResource ActionParam}, ConverterParameter=on}"
+                                                                        Padding="8,5" FontSize="11" Margin="0,0,6,0" Background="#2E4035" Foreground="#A6E3A1" ToolTip="Turn on this device directly to test brightness" />
+                                                                <Button Content="🌑 Test Off" Command="{Binding DataContext.ControlDeviceCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                                        CommandParameter="{Binding Address, Converter={StaticResource ActionParam}, ConverterParameter=off}"
+                                                                        Padding="8,5" FontSize="11" Margin="0,0,6,0" Background="#3D2930" Foreground="#F38BA8" ToolTip="Turn off this device" />
+                                                                <Button Content="💾 Save Preset" Click="SaveMemberPresetButton_Click"
+                                                                        Style="{StaticResource PrimaryButtonStyle}" Padding="12,6" FontSize="11" Margin="0,0,6,0"
+                                                                        ToolTip="Surgically write updated On-Level and Ramp Rate to this device's EEPROM (&lt;1.0s) and record an Undo entry" />
+                                                                <Button Content="📋 Stage Remove" Command="{Binding DataContext.StageRemoveMemberFromSceneCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                                        CommandParameter="{Binding}"
+                                                                        Background="#3D2930" Foreground="#F38BA8" BorderBrush="#E78284" BorderThickness="1"
+                                                                        Padding="10,6" FontSize="11"
+                                                                        ToolTip="Stage removal of this member from the scene in Pending Changes" />
+                                                            </StackPanel>
+                                                        </Grid>
+                                                    </Border>
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
+                                    </ScrollViewer>
+                                </Grid>
+                            </Border>
+                        </Grid>
+
+                        <!-- VIEW B: Device × Scene Participation Matrix -->
+                        <Grid Visibility="{Binding IsSceneMatrixView, Converter={StaticResource BoolToVis}}">
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="*" />
+                            </Grid.RowDefinitions>
+
+                            <Border Grid.Row="0" Background="{StaticResource DarkSurfaceLight}" CornerRadius="8" Padding="16,14" Margin="0,0,0,14" BorderBrush="#45475A" BorderThickness="1">
+                                <DockPanel LastChildFill="False">
+                                    <StackPanel DockPanel.Dock="Left" VerticalAlignment="Center">
+                                        <TextBlock Text="📊 Device × Scene Participation Matrix" FontSize="18" FontWeight="Bold" Foreground="{StaticResource AccentBlue}" />
+                                        <TextBlock Text="High-density cross-reference of every Insteon device and its [C] Controller or [R · %] Responder roles across all active scenes. Click any scene chip to jump to its tuner." FontSize="12" Foreground="{StaticResource TextMuted}" Margin="0,4,0,0" />
+                                    </StackPanel>
+                                    <Button DockPanel.Dock="Right" Content="🎛️ Back to Scene Preset Tuner" Command="{Binding ToggleSceneMatrixViewCommand}"
+                                            Style="{StaticResource PrimaryButtonStyle}" Padding="14,8" VerticalAlignment="Center" />
+                                </DockPanel>
+                            </Border>
+
+                            <Border Grid.Row="1" Background="{StaticResource DarkSurfaceLight}" CornerRadius="8" Padding="14" BorderBrush="#313244" BorderThickness="1">
+                                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                                    <ItemsControl ItemsSource="{Binding DeviceSceneMatrixRows}">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate DataType="{x:Type models:DeviceSceneMatrixRowModel}">
+                                                <Border Background="#1E1E2E" CornerRadius="6" Padding="12,8" Margin="0,0,0,6" BorderBrush="#313244" BorderThickness="1">
                                                     <Grid>
                                                         <Grid.ColumnDefinitions>
-                                                            <!-- Device Name & Address (240px) -->
-                                                            <ColumnDefinition Width="240" />
-                                                            <!-- On-Level / Brightness Slider (320px) -->
-                                                            <ColumnDefinition Width="320" />
-                                                            <!-- Ramp Rate Stepper/Dropdown (220px) -->
-                                                            <ColumnDefinition Width="220" />
-                                                            <!-- Actions (Auto) -->
+                                                            <ColumnDefinition Width="260" />
+                                                            <ColumnDefinition Width="150" />
                                                             <ColumnDefinition Width="*" />
                                                         </Grid.ColumnDefinitions>
 
-                                                        <!-- Col 0: Device Identity -->
-                                                        <StackPanel Grid.Column="0" VerticalAlignment="Center" Margin="0,0,14,0">
-                                                            <TextBlock Text="{Binding Label}" FontWeight="Bold" FontSize="13" Foreground="{StaticResource AccentBlue}" TextTrimming="CharacterEllipsis" />
-                                                            <TextBlock Text="{Binding Address, StringFormat='Address: {0}'}" FontSize="11" Foreground="{StaticResource TextMuted}" />
-                                                            <TextBlock Text="{Binding MemAddr, StringFormat='EEPROM Slot: {0}'}" FontSize="10" Foreground="#6C7086" />
+                                                        <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                                                            <Button Content="{Binding DisplayTitle}"
+                                                                    Command="{Binding DataContext.InspectNodeInAldbCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                                    CommandParameter="{Binding DeviceAddress}"
+                                                                    HorizontalAlignment="Left" Background="Transparent" BorderThickness="0" Padding="0"
+                                                                    FontWeight="Bold" FontSize="12" Foreground="{StaticResource AccentBlue}" Cursor="Hand"
+                                                                    ToolTip="Click to inspect this device in Organized Device ALDBs" />
+                                                            <TextBlock Text="{Binding DeviceType}" FontSize="10" Foreground="{StaticResource TextMuted}" Margin="0,2,0,0" />
                                                         </StackPanel>
 
-                                                        <!-- Col 1: Brightness Preset Slider -->
-                                                        <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="0,0,18,0">
-                                                            <DockPanel Margin="0,0,0,4">
-                                                                <TextBlock Text="Preset On-Level:" FontSize="11" Foreground="{StaticResource TextMuted}" />
-                                                                <TextBlock Text="{Binding BrightnessPercentText}" FontWeight="Bold" FontSize="11" Foreground="{StaticResource AccentGreen}" HorizontalAlignment="Right" />
-                                                            </DockPanel>
-                                                            <Slider Minimum="0" Maximum="255" Value="{Binding OnLevel, Mode=TwoWay}" SmallChange="5" LargeChange="25" />
-                                                        </StackPanel>
+                                                        <Border Grid.Column="1" Background="#181825" CornerRadius="4" Padding="8,4" HorizontalAlignment="Left" VerticalAlignment="Center" Margin="0,0,12,0">
+                                                            <TextBlock Text="{Binding SummaryBadge}" FontSize="11" FontWeight="SemiBold" Foreground="{StaticResource AccentAmber}" />
+                                                        </Border>
 
-                                                        <!-- Col 2: Ramp Rate Preset -->
-                                                        <StackPanel Grid.Column="2" VerticalAlignment="Center" Margin="0,0,18,0">
-                                                            <DockPanel Margin="0,0,0,4">
-                                                                <TextBlock Text="Ramp Rate:" FontSize="11" Foreground="{StaticResource TextMuted}" />
-                                                                <TextBlock Text="{Binding RampRateSecondsText}" FontWeight="Bold" FontSize="11" Foreground="{StaticResource AccentAmber}" HorizontalAlignment="Right" />
-                                                            </DockPanel>
-                                                            <Slider Minimum="0" Maximum="31" Value="{Binding RampRate, Mode=TwoWay}" SmallChange="1" LargeChange="5" />
-                                                        </StackPanel>
-
-                                                        <!-- Col 3: Actions -->
-                                                        <StackPanel Grid.Column="3" Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
-                                                            <Button Content="💡 Test On" Command="{Binding DataContext.ControlDeviceCommand, RelativeSource={RelativeSource AncestorType=Window}}"
-                                                                    CommandParameter="{Binding Address, Converter={StaticResource ActionParam}, ConverterParameter=on}"
-                                                                    Padding="8,5" FontSize="11" Margin="0,0,6,0" Background="#2E4035" Foreground="#A6E3A1" ToolTip="Turn on this device directly to test brightness" />
-                                                            <Button Content="🌑 Test Off" Command="{Binding DataContext.ControlDeviceCommand, RelativeSource={RelativeSource AncestorType=Window}}"
-                                                                    CommandParameter="{Binding Address, Converter={StaticResource ActionParam}, ConverterParameter=off}"
-                                                                    Padding="8,5" FontSize="11" Margin="0,0,6,0" Background="#3D2930" Foreground="#F38BA8" ToolTip="Turn off this device" />
-                                                            <Button Content="💾 Save Preset" Click="SaveMemberPresetButton_Click"
-                                                                    Style="{StaticResource PrimaryButtonStyle}" Padding="12,6" FontSize="11" Margin="0,0,6,0"
-                                                                    ToolTip="Surgically write updated On-Level and Ramp Rate to this device's EEPROM (&lt;1.0s)" />
-                                                            <Button Content="🗑️ Remove" Command="{Binding DataContext.RemoveMemberFromSceneCommand, RelativeSource={RelativeSource AncestorType=Window}}"
-                                                                    CommandParameter="{Binding}"
-                                                                    Background="#3D2930" Foreground="#F38BA8" BorderBrush="#E78284" BorderThickness="1"
-                                                                    Padding="10,6" FontSize="11"
-                                                                    ToolTip="Atomically remove this member from the scene and delete reciprocal links on hardware" />
-                                                        </StackPanel>
+                                                        <ItemsControl Grid.Column="2" ItemsSource="{Binding SceneRoles}" VerticalAlignment="Center">
+                                                            <ItemsControl.ItemsPanel>
+                                                                <ItemsPanelTemplate>
+                                                                    <WrapPanel Orientation="Horizontal" />
+                                                                </ItemsPanelTemplate>
+                                                            </ItemsControl.ItemsPanel>
+                                                            <ItemsControl.ItemTemplate>
+                                                                <DataTemplate DataType="{x:Type models:DeviceSceneRoleChipModel}">
+                                                                    <Button Command="{Binding DataContext.SelectSceneByGroupCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                                            CommandParameter="{Binding SceneGroup}"
+                                                                            Background="{Binding ChipBackground}" BorderBrush="{Binding ChipBorder}" BorderThickness="1"
+                                                                            Padding="8,4" Margin="0,2,6,2" Cursor="Hand"
+                                                                            ToolTip="{Binding TooltipText}">
+                                                                        <StackPanel Orientation="Horizontal">
+                                                                            <TextBlock Text="{Binding RoleBadge}" FontWeight="Bold" FontSize="10" Foreground="{Binding ChipForeground}" Margin="0,0,5,0" />
+                                                                            <TextBlock Text="{Binding SceneGroup, StringFormat='G{0}: '}" FontWeight="Bold" FontSize="10" Foreground="{StaticResource AccentAmber}" />
+                                                                            <TextBlock Text="{Binding SceneName}" FontSize="10" Foreground="{StaticResource TextPrimary}" MaxWidth="150" TextTrimming="CharacterEllipsis" />
+                                                                        </StackPanel>
+                                                                    </Button>
+                                                                </DataTemplate>
+                                                            </ItemsControl.ItemTemplate>
+                                                        </ItemsControl>
                                                     </Grid>
                                                 </Border>
                                             </DataTemplate>
                                         </ItemsControl.ItemTemplate>
                                     </ItemsControl>
                                 </ScrollViewer>
-                            </Grid>
-                        </Border>
+                            </Border>
+                        </Grid>
                     </Grid>
                 </Grid>
             </TabItem>
@@ -2272,14 +2426,8 @@
                                                                         Command="{Binding DataContext.StageDefaultLinkForDeviceCommand, RelativeSource={RelativeSource AncestorType=Window}}"
                                                                         CommandParameter="{Binding}"
                                                                         Style="{StaticResource PrimaryButtonStyle}"
-                                                                        Padding="10,5" Margin="0,0,6,0"
-                                                                        ToolTip="Stage reciprocal Group 1 links with PLM into 'Pending Changes' for safety review" />
-                                                                <Button Content="⚡ Fix Now"
-                                                                        Command="{Binding DataContext.FixDefaultLinkForDeviceCommand, RelativeSource={RelativeSource AncestorType=Window}}"
-                                                                        CommandParameter="{Binding}"
-                                                                        Background="#263445" Foreground="#89B4FA"
-                                                                        Padding="10,5"
-                                                                        ToolTip="Immediately write reciprocal Group 1 links with PLM (53.C1.42)" />
+                                                                        Padding="12,5"
+                                                                        ToolTip="Stage reciprocal Group 0/1 links with PLM into 'Pending Changes' for preflight safety review" />
                                                             </StackPanel>
                                                         </DockPanel>
                                                     </Border>
@@ -2345,11 +2493,8 @@
                                                   Foreground="{StaticResource TextPrimary}" VerticalAlignment="Center" Margin="0,0,0,8" ToolTip="Automatically establish reciprocal All-Link Group 1 records with PLM modem 53.C1.42" />
                                         <StackPanel Orientation="Horizontal">
                                             <Button Content="📋 Stage Add Device" Command="{Binding StageAddDeviceCommand}"
-                                                    Style="{StaticResource PrimaryButtonStyle}" Padding="12,6" Margin="0,0,8,0"
-                                                    ToolTip="Stage device addition and default link creation in 'Pending Changes' for review before committing" />
-                                            <Button Content="⚡ Add Now" Command="{Binding AddDeviceNowCommand}"
-                                                    Background="#263445" Foreground="#89B4FA" Padding="10,6"
-                                                    ToolTip="Immediately register device and establish default PLM links" />
+                                                    Style="{StaticResource PrimaryButtonStyle}" Padding="14,6"
+                                                    ToolTip="Stage device addition and default link creation in 'Pending Changes' for preflight review before committing" />
                                         </StackPanel>
                                     </StackPanel>
                                 </Grid>
@@ -2376,9 +2521,9 @@
                                 <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,8,0,12" VerticalAlignment="Center">
                                     <TextBlock Text="Detected Orphan Targets:" VerticalAlignment="Center" Margin="0,0,10,0" FontWeight="SemiBold" Foreground="{StaticResource TextPrimary}" />
                                     <ComboBox ItemsSource="{Binding GhostTargets}" SelectedItem="{Binding SelectedGhostTarget}" Width="260" Padding="8,4" />
-                                    <Button Content="🔥 Eradicate Ghost References" Command="{Binding PurgeSelectedGhostTargetCommand}" 
+                                    <Button Content="📋 Stage Ghost Purge" Command="{Binding StagePurgeGhostTargetCommand}" 
                                             Style="{StaticResource DangerButtonStyle}" Margin="12,0,0,0" Padding="14,6"
-                                            ToolTip="Safely marks all links targeting this address as deleted across the PLM and all peer switches." />
+                                            ToolTip="Stage network-wide ghost purge in Pending Changes for preflight review before writing to hardware." />
                                 </StackPanel>
 
                                 <TextBlock Grid.Row="2" Text="* Safe operation: Updates link records without touching other active scenes." FontSize="11" Foreground="#6C7086" FontStyle="Italic" />
@@ -2439,10 +2584,8 @@
                                     <!-- Action Buttons -->
                                     <StackPanel Grid.Column="3" Orientation="Horizontal" VerticalAlignment="Top" Margin="18,18,0,0">
                                         <CheckBox Content="Clone Scene Links" IsChecked="{Binding ReplaceCopyLinks}" VerticalAlignment="Center" Margin="0,0,14,0" Foreground="{StaticResource TextPrimary}" />
-                                        <Button Content="📋 Stage Replacement" Command="{Binding StageDeviceReplaceCommand}" Style="{StaticResource PrimaryButtonStyle}" Padding="12,6" Margin="0,0,8,0"
-                                                ToolTip="Stage replacement in 'Pending Changes &amp; Verification' for review before committing" />
-                                        <Button Content="⚡ Swap Now" Command="{Binding ExecuteDeviceReplaceCommand}" Background="#263445" Foreground="#89B4FA" Padding="10,6"
-                                                ToolTip="Execute device replacement immediately without staging" />
+                                        <Button Content="📋 Stage Replacement" Command="{Binding StageDeviceReplaceCommand}" Style="{StaticResource PrimaryButtonStyle}" Padding="14,6"
+                                                ToolTip="Stage replacement in 'Pending Changes &amp; Verification' for preflight review before committing" />
                                     </StackPanel>
                                 </Grid>
 
@@ -2529,11 +2672,8 @@
                                     <!-- Action Buttons -->
                                     <StackPanel Grid.Column="6" Orientation="Horizontal" VerticalAlignment="Top" Margin="0,18,0,0">
                                         <Button Content="📋 Stage Link for Verification" Command="{Binding StageReciprocalLinkCommand}" 
-                                                Style="{StaticResource PrimaryButtonStyle}" Padding="12,6" Margin="0,0,8,0"
-                                                ToolTip="Stage link in 'Pending Changes &amp; Verification' for safety review before writing to hardware" />
-                                        <Button Content="⚡ Create Now" Command="{Binding CreateReciprocalLinkCommand}" 
-                                                Background="#263445" Foreground="#89B4FA" Padding="10,6"
-                                                ToolTip="Immediately create link on hardware/simulator without staging" />
+                                                Style="{StaticResource PrimaryButtonStyle}" Padding="14,6"
+                                                ToolTip="Stage link in 'Pending Changes &amp; Verification' for preflight safety review before writing to hardware" />
                                     </StackPanel>
                                 </Grid>
 
@@ -2724,12 +2864,8 @@
                                     <!-- Delete Action Buttons -->
                                     <StackPanel Grid.Column="4" Orientation="Horizontal" VerticalAlignment="Top" Margin="0,18,0,0">
                                         <Button Content="📋 Stage Deletion" Command="{Binding StageDeleteLinkCommand}" 
-                                                Style="{StaticResource DangerButtonStyle}" Padding="12,6" Margin="0,0,8,0"
-                                                ToolTip="Stage deletion in 'Pending Changes &amp; Verification' for review before writing to hardware" />
-                                        <Button Content="🗑️ Delete Now" Command="{Binding DeleteReciprocalLinkCommand}" 
-                                                Background="#3D2930" Foreground="#F38BA8" BorderBrush="#E78284" BorderThickness="1"
-                                                Padding="10,6" FontWeight="SemiBold"
-                                                ToolTip="Immediately delete reciprocal link on hardware/simulator without staging" />
+                                                Style="{StaticResource DangerButtonStyle}" Padding="14,6"
+                                                ToolTip="Stage deletion in 'Pending Changes &amp; Verification' for preflight review before writing to hardware" />
                                     </StackPanel>
                                 </Grid>
 
@@ -2742,15 +2878,15 @@
             </TabItem>
 
             <!-- TAB 8: Network Health Analyzer -->
-            <TabItem Header="🩺 Network Health Analyzer">
+            <TabItem Header="♥ Network Health Analyzer">
                 <ScrollViewer VerticalScrollBarVisibility="Auto" Background="{StaticResource DarkSurface}">
                     <StackPanel Margin="24" MaxWidth="1150" HorizontalAlignment="Left">
                         
                         <!-- Header Banner -->
                         <DockPanel LastChildFill="False" Margin="0,0,0,20">
                             <StackPanel DockPanel.Dock="Left">
-                                <TextBlock Text="🩺 Insteon Network Health &amp; Topology Analyzer" FontSize="20" FontWeight="Bold" Foreground="{StaticResource AccentBlue}" />
-                                <TextBlock Text="Deep inspection of All-Link Database link reciprocity, orphan loopbacks, ghost targets, and broken scenes." FontSize="12" Foreground="{StaticResource TextMuted}" Margin="0,4,0,0" />
+                                <TextBlock Text="♥ Insteon Network Health &amp; Topology Analyzer" FontSize="20" FontWeight="Bold" Foreground="{StaticResource AccentBlue}" />
+                                <TextBlock Text="Deep inspection of All-Link Database link reciprocity, redundant duplicates, orphan loopbacks, ghost targets, and broken scenes." FontSize="12" Foreground="{StaticResource TextMuted}" Margin="0,4,0,0" />
                             </StackPanel>
                             <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
                                 <Button Content="🔄 Re-Analyze Network" 
@@ -2758,23 +2894,18 @@
                                         Background="#313244" Foreground="{StaticResource TextPrimary}" 
                                         Margin="0,0,10,0" Padding="14,8"
                                         ToolTip="Perform a fresh diagnostic scan of the entire Insteon network topology" />
-                                <Button Content="⚡ Auto-Fix All Half-Links" 
-                                        Command="{Binding FixAllHalfLinksCommand}"
-                                        Style="{StaticResource PrimaryButtonStyle}" 
-                                        Margin="0,0,10,0" Padding="14,8"
-                                        ToolTip="Automatically repair all one-way half-links by generating missing reciprocal responder records" />
                                 <Button Content="📋 Stage All Fixes" 
                                         Command="{Binding StageAllAnalyzerFixesCommand}"
-                                        Background="#2B3654" Foreground="#89DCEB" BorderBrush="#89DCEB" BorderThickness="1"
-                                        Padding="14,8" FontWeight="SemiBold"
-                                        ToolTip="Stage all proposed analyzer corrections into 'Pending Changes' for safety verification" />
+                                        Style="{StaticResource PrimaryButtonStyle}"
+                                        Padding="14,8"
+                                        ToolTip="Stage all proposed analyzer corrections into 'Pending Changes' for preflight safety verification before committing" />
                             </StackPanel>
                         </DockPanel>
 
                         <!-- Health Score & Metric Summary Cards -->
                         <Grid Margin="0,0,0,20">
                             <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="280" />
+                                <ColumnDefinition Width="260" />
                                 <ColumnDefinition Width="*" />
                             </Grid.ColumnDefinitions>
 
@@ -2790,7 +2921,7 @@
                                 </StackPanel>
                             </Border>
 
-                            <!-- Breakdown Stat Chips Grid -->
+                            <!-- Breakdown Stat Chips Grid (3x2 so breakdown sums to TotalIssues) -->
                             <Grid Grid.Column="1">
                                 <Grid.RowDefinitions>
                                     <RowDefinition Height="*" />
@@ -2799,49 +2930,72 @@
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="*" />
                                     <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="*" />
                                 </Grid.ColumnDefinitions>
 
                                 <!-- Half Links -->
-                                <Border Grid.Row="0" Grid.Column="0" Background="{StaticResource DarkSurfaceLight}" CornerRadius="8" Padding="16" Margin="0,0,8,8" BorderBrush="#45475A" BorderThickness="1">
+                                <Border Grid.Row="0" Grid.Column="0" Background="{StaticResource DarkSurfaceLight}" CornerRadius="8" Padding="14" Margin="0,0,6,6" BorderBrush="#45475A" BorderThickness="1">
                                     <DockPanel LastChildFill="False">
                                         <StackPanel DockPanel.Dock="Left">
                                             <TextBlock Text="🔗 Broken Half-Links" FontSize="12" FontWeight="Bold" Foreground="#F38BA8" />
-                                            <TextBlock Text="Unreciprocated 1-way links; causes radio retries" FontSize="10" Foreground="{StaticResource TextMuted}" Margin="0,3,0,0" />
+                                            <TextBlock Text="Unreciprocated 1-way links" FontSize="10" Foreground="{StaticResource TextMuted}" Margin="0,3,0,0" />
                                         </StackPanel>
-                                        <TextBlock DockPanel.Dock="Right" Text="{Binding AnalyzerHalfLinksCount}" FontSize="26" FontWeight="Bold" Foreground="#F38BA8" VerticalAlignment="Center" />
+                                        <TextBlock DockPanel.Dock="Right" Text="{Binding AnalyzerHalfLinksCount}" FontSize="24" FontWeight="Bold" Foreground="#F38BA8" VerticalAlignment="Center" />
                                     </DockPanel>
                                 </Border>
 
                                 <!-- Loopbacks -->
-                                <Border Grid.Row="0" Grid.Column="1" Background="{StaticResource DarkSurfaceLight}" CornerRadius="8" Padding="16" Margin="8,0,0,8" BorderBrush="#45475A" BorderThickness="1">
+                                <Border Grid.Row="0" Grid.Column="1" Background="{StaticResource DarkSurfaceLight}" CornerRadius="8" Padding="14" Margin="6,0,6,6" BorderBrush="#45475A" BorderThickness="1">
                                     <DockPanel LastChildFill="False">
                                         <StackPanel DockPanel.Dock="Left">
                                             <TextBlock Text="🔄 Self-Loopbacks" FontSize="12" FontWeight="Bold" Foreground="#F9E2AF" />
-                                            <TextBlock Text="Slots pointing to device's own address" FontSize="10" Foreground="{StaticResource TextMuted}" Margin="0,3,0,0" />
+                                            <TextBlock Text="Slots pointing to own address" FontSize="10" Foreground="{StaticResource TextMuted}" Margin="0,3,0,0" />
                                         </StackPanel>
-                                        <TextBlock DockPanel.Dock="Right" Text="{Binding AnalyzerLoopbacksCount}" FontSize="26" FontWeight="Bold" Foreground="#F9E2AF" VerticalAlignment="Center" />
+                                        <TextBlock DockPanel.Dock="Right" Text="{Binding AnalyzerLoopbacksCount}" FontSize="24" FontWeight="Bold" Foreground="#F9E2AF" VerticalAlignment="Center" />
+                                    </DockPanel>
+                                </Border>
+
+                                <!-- Redundant Duplicates -->
+                                <Border Grid.Row="0" Grid.Column="2" Background="{StaticResource DarkSurfaceLight}" CornerRadius="8" Padding="14" Margin="6,0,0,6" BorderBrush="#45475A" BorderThickness="1">
+                                    <DockPanel LastChildFill="False">
+                                        <StackPanel DockPanel.Dock="Left">
+                                            <TextBlock Text="📋 Redundant Duplicates" FontSize="12" FontWeight="Bold" Foreground="#FAB387" />
+                                            <TextBlock Text="Identical slots wasting EEPROM" FontSize="10" Foreground="{StaticResource TextMuted}" Margin="0,3,0,0" />
+                                        </StackPanel>
+                                        <TextBlock DockPanel.Dock="Right" Text="{Binding AnalyzerDuplicatesCount}" FontSize="24" FontWeight="Bold" Foreground="#FAB387" VerticalAlignment="Center" />
                                     </DockPanel>
                                 </Border>
 
                                 <!-- Missing Default Links -->
-                                <Border Grid.Row="1" Grid.Column="0" Background="{StaticResource DarkSurfaceLight}" CornerRadius="8" Padding="16" Margin="0,8,8,0" BorderBrush="#45475A" BorderThickness="1">
+                                <Border Grid.Row="1" Grid.Column="0" Background="{StaticResource DarkSurfaceLight}" CornerRadius="8" Padding="14" Margin="0,6,6,0" BorderBrush="#45475A" BorderThickness="1">
                                     <DockPanel LastChildFill="False">
                                         <StackPanel DockPanel.Dock="Left">
-                                            <TextBlock Text="🛡️ Missing Default Links" FontSize="12" FontWeight="Bold" Foreground="#89B4FA" />
-                                            <TextBlock Text="Devices lacking reciprocal PLM modem link" FontSize="10" Foreground="{StaticResource TextMuted}" Margin="0,3,0,0" />
+                                            <TextBlock Text="🛡️ Missing PLM Links" FontSize="12" FontWeight="Bold" Foreground="#89B4FA" />
+                                            <TextBlock Text="Lacking Group 0/1 hub link" FontSize="10" Foreground="{StaticResource TextMuted}" Margin="0,3,0,0" />
                                         </StackPanel>
-                                        <TextBlock DockPanel.Dock="Right" Text="{Binding AnalyzerMissingPlmCount}" FontSize="26" FontWeight="Bold" Foreground="#89B4FA" VerticalAlignment="Center" />
+                                        <TextBlock DockPanel.Dock="Right" Text="{Binding AnalyzerMissingPlmCount}" FontSize="24" FontWeight="Bold" Foreground="#89B4FA" VerticalAlignment="Center" />
                                     </DockPanel>
                                 </Border>
 
                                 <!-- Ghost Targets -->
-                                <Border Grid.Row="1" Grid.Column="1" Background="{StaticResource DarkSurfaceLight}" CornerRadius="8" Padding="16" Margin="8,8,0,0" BorderBrush="#45475A" BorderThickness="1">
+                                <Border Grid.Row="1" Grid.Column="1" Background="{StaticResource DarkSurfaceLight}" CornerRadius="8" Padding="14" Margin="6,6,6,0" BorderBrush="#45475A" BorderThickness="1">
                                     <DockPanel LastChildFill="False">
                                         <StackPanel DockPanel.Dock="Left">
                                             <TextBlock Text="👻 Ghost Targets" FontSize="12" FontWeight="Bold" Foreground="#A6ADC8" />
-                                            <TextBlock Text="Links targeting non-existent devices" FontSize="10" Foreground="{StaticResource TextMuted}" Margin="0,3,0,0" />
+                                            <TextBlock Text="Targeting retired devices" FontSize="10" Foreground="{StaticResource TextMuted}" Margin="0,3,0,0" />
                                         </StackPanel>
-                                        <TextBlock DockPanel.Dock="Right" Text="{Binding AnalyzerGhostCount}" FontSize="26" FontWeight="Bold" Foreground="#A6ADC8" VerticalAlignment="Center" />
+                                        <TextBlock DockPanel.Dock="Right" Text="{Binding AnalyzerGhostCount}" FontSize="24" FontWeight="Bold" Foreground="#A6ADC8" VerticalAlignment="Center" />
+                                    </DockPanel>
+                                </Border>
+
+                                <!-- Scene & Config Notices -->
+                                <Border Grid.Row="1" Grid.Column="2" Background="{StaticResource DarkSurfaceLight}" CornerRadius="8" Padding="14" Margin="6,6,0,0" BorderBrush="#45475A" BorderThickness="1">
+                                    <DockPanel LastChildFill="False">
+                                        <StackPanel DockPanel.Dock="Left">
+                                            <TextBlock Text="🎭 Scene &amp; Config" FontSize="12" FontWeight="Bold" Foreground="#CBA6F7" />
+                                            <TextBlock Text="Orphan Grp 0 / Zombie scenes" FontSize="10" Foreground="{StaticResource TextMuted}" Margin="0,3,0,0" />
+                                        </StackPanel>
+                                        <TextBlock DockPanel.Dock="Right" Text="{Binding AnalyzerOtherIssuesCount}" FontSize="24" FontWeight="Bold" Foreground="#CBA6F7" VerticalAlignment="Center" />
                                     </DockPanel>
                                 </Border>
                             </Grid>
@@ -2850,7 +3004,7 @@
                         <!-- Filter Bar -->
                         <Border Background="{StaticResource DarkSurfaceLight}" CornerRadius="8" Padding="12,8" Margin="0,0,0,16" BorderBrush="#313244" BorderThickness="1">
                             <DockPanel LastChildFill="False">
-                                <StackPanel DockPanel.Dock="Left" Orientation="Horizontal" VerticalAlignment="Center">
+                                <WrapPanel DockPanel.Dock="Left" Orientation="Horizontal" VerticalAlignment="Center">
                                     <TextBlock Text="Filter Anomalies:" FontWeight="SemiBold" FontSize="11" Foreground="{StaticResource TextMuted}" VerticalAlignment="Center" Margin="0,0,12,0" />
                                     
                                     <RadioButton Content="All Issues" GroupName="AnalyzerFilterGroup"
@@ -2863,6 +3017,9 @@
                                     <RadioButton Content="Self Loopbacks" GroupName="AnalyzerFilterGroup"
                                                  Command="{Binding FilterAnalyzerCommand}" CommandParameter="loopback"
                                                  Margin="0,0,10,0" Foreground="#F9E2AF" />
+                                    <RadioButton Content="Duplicates" GroupName="AnalyzerFilterGroup"
+                                                 Command="{Binding FilterAnalyzerCommand}" CommandParameter="duplicate"
+                                                 Margin="0,0,10,0" Foreground="#FAB387" />
                                     <RadioButton Content="Keypad Mismatches" GroupName="AnalyzerFilterGroup"
                                                  Command="{Binding FilterAnalyzerCommand}" CommandParameter="keypad"
                                                  Margin="0,0,10,0" Foreground="#89DCEB" />
@@ -2871,8 +3028,11 @@
                                                  Margin="0,0,10,0" Foreground="#89B4FA" />
                                     <RadioButton Content="Ghost Targets" GroupName="AnalyzerFilterGroup"
                                                  Command="{Binding FilterAnalyzerCommand}" CommandParameter="ghost"
-                                                 Foreground="#A6ADC8" />
-                                </StackPanel>
+                                                 Margin="0,0,10,0" Foreground="#A6ADC8" />
+                                    <RadioButton Content="Scene &amp; Other" GroupName="AnalyzerFilterGroup"
+                                                 Command="{Binding FilterAnalyzerCommand}" CommandParameter="other"
+                                                 Foreground="#CBA6F7" />
+                                </WrapPanel>
 
                                 <TextBlock DockPanel.Dock="Right" Text="{Binding FilteredNetworkIssues.Count, StringFormat='Showing {0} issue(s)'}" FontSize="11" Foreground="{StaticResource TextMuted}" VerticalAlignment="Center" />
                             </DockPanel>
@@ -2937,34 +3097,32 @@
 
                                                 <!-- Explanation -->
                                                 <TextBlock Text="{Binding Explanation}" FontSize="11" Foreground="{StaticResource TextMuted}" TextWrapping="Wrap" Margin="0,0,0,4" />
+
+                                                <!-- Battery Wake Notice -->
+                                                <Border Background="#3B2A20" BorderBrush="#F9E2AF" BorderThickness="1" CornerRadius="6" Padding="10,6" Margin="0,4,0,0"
+                                                        Visibility="{Binding RequiresBatteryWake, Converter={StaticResource BoolToVis}}">
+                                                    <TextBlock Text="{Binding BatteryWakeHint}" FontSize="11" FontWeight="SemiBold" Foreground="#F9E2AF" TextWrapping="Wrap" />
+                                                </Border>
                                             </StackPanel>
 
-                                            <!-- Right: Action Buttons -->
+                                            <!-- Right: Action Buttons (Unified Staging Pipeline) -->
                                             <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
-                                                <!-- Primary Recommended Action -->
-                                                <Button Content="{Binding FixLabel}" 
-                                                        Command="{Binding DataContext.FixNetworkIssueCommand, RelativeSource={RelativeSource AncestorType=Window}}"
-                                                        CommandParameter="{Binding}"
-                                                        Style="{StaticResource PrimaryButtonStyle}" 
-                                                        Padding="12,7" Margin="0,0,8,0"
-                                                        ToolTip="Immediately execute recommended fix (e.g. generate reciprocal link or purge invalid slot)" />
-
-                                                <!-- Secondary Action (e.g. Delete Slot) -->
-                                                <Button Content="{Binding SecondaryLabel}" 
-                                                        Command="{Binding DataContext.DeleteNetworkIssueSlotCommand, RelativeSource={RelativeSource AncestorType=Window}}"
-                                                        CommandParameter="{Binding}"
-                                                        Background="#3D2930" Foreground="#F38BA8" BorderBrush="#E78284" BorderThickness="1"
-                                                        Padding="10,7" Margin="0,0,8,0"
-                                                        Visibility="{Binding HasSecondaryAction, Converter={StaticResource BoolToVis}}"
-                                                        ToolTip="Delete this specific corrupt/invalid slot from the device's database" />
-
-                                                <!-- Stage Fix in Pending Changes -->
-                                                <Button Content="📋 Stage Fix" 
+                                                <!-- Primary Safe Action: Stage Fix in Pending Changes -->
+                                                <Button Content="{Binding FixLabel, StringFormat='📋 Stage: {0}'}" 
                                                         Command="{Binding DataContext.StageNetworkIssueFixCommand, RelativeSource={RelativeSource AncestorType=Window}}"
                                                         CommandParameter="{Binding}"
-                                                        Background="#2B3654" Foreground="#89DCEB" BorderBrush="#89DCEB" BorderThickness="1"
+                                                        Style="{StaticResource PrimaryButtonStyle}"
+                                                        Padding="12,7" Margin="0,0,8,0"
+                                                        ToolTip="Stage this recommended fix in 'Pending Changes' for preflight safety review and verification" />
+
+                                                <!-- Secondary Slot / Alternative Action (Also Staged) -->
+                                                <Button Content="{Binding SecondaryLabel, StringFormat='📋 Stage: {0}'}" 
+                                                        Command="{Binding DataContext.StageDeleteNetworkIssueSlotCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                        CommandParameter="{Binding}"
+                                                        Background="#3D2930" Foreground="#F38BA8" BorderBrush="#E78284" BorderThickness="1"
                                                         Padding="10,7"
-                                                        ToolTip="Stage this fix in 'Pending Changes' for verification prior to execution" />
+                                                        Visibility="{Binding HasSecondaryAction, Converter={StaticResource BoolToVis}}"
+                                                        ToolTip="Stage this secondary/slot cleanup action in 'Pending Changes' for preflight safety review" />
                                             </StackPanel>
                                         </Grid>
                                     </Border>
@@ -2985,7 +3143,10 @@
                     <ColumnDefinition Width="Auto" />
                 </Grid.ColumnDefinitions>
                 
-                <TextBlock Grid.Column="0" Text="{Binding StatusMessage}" FontSize="12" Foreground="{StaticResource AccentBlue}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+                <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
+                    <TextBlock Text="{Binding StatusBadgeIcon}" FontSize="12" Foreground="{Binding StatusForeground}" Margin="0,0,6,0" VerticalAlignment="Center" />
+                    <TextBlock Text="{Binding StatusMessage}" FontSize="12" Foreground="{Binding StatusForeground}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+                </StackPanel>
                 <ProgressBar Grid.Column="1" IsIndeterminate="{Binding IsLoading}" Visibility="{Binding IsLoading, Converter={StaticResource BoolToVis}}" Width="120" Height="10" Margin="8,0,0,0" VerticalAlignment="Center" />
             </Grid>
         </Border>

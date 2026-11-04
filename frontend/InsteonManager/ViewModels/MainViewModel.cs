@@ -10,6 +10,7 @@ public class MainViewModel : ViewModelBase
 {
     private readonly InsteonApiClient _apiClient;
     private readonly NodePositionService _positionService;
+    private readonly ChangeSetService _changeSetService = new();
     private readonly DispatcherTimer _heartbeatTimer;
     private readonly DispatcherTimer _statusPollTimer;
     private readonly DispatcherTimer _logPollTimer;
@@ -116,7 +117,7 @@ public class MainViewModel : ViewModelBase
         ResetLayoutCommand = new RelayCommand(ResetLayout);
         SpreadLayoutCommand = new RelayCommand(SpreadLayout);
         ClearLogsCommand = new RelayCommand(ClearLogs);
-        StageSampleChangeCommand = new RelayCommand(StageSampleChange);
+        GoToPendingChangesCommand = new RelayCommand(() => SelectedTabIndex = 4);
         CommitStagedChangesCommand = new AsyncRelayCommand(CommitStagedChangesAsync, () => StagedChanges.Count > 0 && !IsLoading);
         DiscardStagedChangesCommand = new RelayCommand(DiscardStagedChanges);
         RemoveStagedChangeCommand = new RelayCommand(obj =>
@@ -129,7 +130,36 @@ public class MainViewModel : ViewModelBase
                 CommitStagedChangesCommand?.NotifyCanExecuteChanged();
             }
         });
-        StagedChanges.CollectionChanged += (s, e) => CommitStagedChangesCommand?.NotifyCanExecuteChanged();
+        StagedChanges.CollectionChanged += (s, e) =>
+        {
+            if (e.NewItems != null)
+            {
+                foreach (StagedChangeModel item in e.NewItems)
+                {
+                    item.PropertyChanged += (_, pe) =>
+                    {
+                        if (pe.PropertyName == nameof(StagedChangeModel.IsSelected))
+                        {
+                            NotifyPreflightChanged();
+                        }
+                    };
+                }
+            }
+            CommitStagedChangesCommand?.NotifyCanExecuteChanged();
+            OnPropertyChanged(nameof(PendingChangesCount));
+            OnPropertyChanged(nameof(HasPendingChanges));
+            OnPropertyChanged(nameof(PendingChangesBadgeText));
+            OnPropertyChanged(nameof(PendingChangesTabHeader));
+            NotifyPreflightChanged();
+        };
+        StageUndoLastChangeCommand = new RelayCommand(StageUndoLastChange, () => _changeSetService.CanUndo);
+        StagePurgeGhostTargetCommand = new RelayCommand(StagePurgeSelectedGhostTarget, () => !string.IsNullOrEmpty(SelectedGhostTarget));
+        StageAddDeviceToSceneCommand = new RelayCommand(StageAddDeviceToScene, () => SelectedScene != null && SelectedDeviceToAddToScene != null);
+        StageRemoveMemberFromSceneCommand = new RelayCommand<SceneMemberModel>(StageRemoveMemberFromScene, member => member != null && SelectedScene != null);
+        StageDeleteSceneCommand = new RelayCommand(StageDeleteScene, () => SelectedScene != null && SelectedScene.Group > 1);
+        StageDeleteNetworkIssueSlotCommand = new RelayCommand<NetworkIssueModel>(StageDeleteNetworkIssueSlot, issue => issue != null && issue.HasSecondaryAction);
+        ToggleSceneMatrixViewCommand = new RelayCommand(() => IsSceneMatrixView = !IsSceneMatrixView);
+        SelectSceneByGroupCommand = new RelayCommand<object>(SelectSceneByGroup);
 
         StageReciprocalLinkCommand = new RelayCommand(StageReciprocalLink, () => !string.IsNullOrEmpty(NewLinkControllerAddress) && !string.IsNullOrEmpty(NewLinkResponderAddress));
         StageDeleteLinkCommand = new RelayCommand(StageDeleteLink, () => !string.IsNullOrEmpty(DeleteLinkControllerAddress) && !string.IsNullOrEmpty(DeleteLinkResponderAddress) && !IsProtectedPlmLink(DeleteLinkControllerAddress, DeleteLinkResponderAddress, DeleteLinkGroup));
@@ -323,9 +353,29 @@ public class MainViewModel : ViewModelBase
             {
                 OnPropertyChanged(nameof(SessionToggleButtonText));
                 OnPropertyChanged(nameof(SessionToggleButtonToolTip));
+                OnPropertyChanged(nameof(ModeBadgeText));
+                OnPropertyChanged(nameof(ModeBadgeBackground));
+                OnPropertyChanged(nameof(ModeBadgeForeground));
+                OnPropertyChanged(nameof(ModeBadgeToolTip));
             }
         }
     }
+
+    public string ModeBadgeText => IsSessionActive ? "◉ MANAGE MODE (Live Hardware)" : "◉ BROWSE MODE (Cached Snapshot)";
+    public string ModeBadgeBackground => IsSessionActive ? "#2D3B2D" : "#1E293B";
+    public string ModeBadgeForeground => IsSessionActive ? "#A6E3A1" : "#89B4FA";
+    public string ModeBadgeToolTip => IsSessionActive
+        ? "Manage Mode Active: USB PLM is locked by Insteon Manager (openHAB paused). Live hardware reads and staged commits are enabled."
+        : "Browse Mode Active: Inspecting cached network snapshot without interrupting openHAB. Start a Management Session only when you need to read or write physical hardware.";
+
+    public int PendingChangesCount => StagedChanges.Count;
+    public bool HasPendingChanges => StagedChanges.Count > 0;
+    public string PendingChangesBadgeText => StagedChanges.Count > 0
+        ? $"⚖️ {StagedChanges.Count} Pending {(StagedChanges.Count == 1 ? "Change" : "Changes")}"
+        : "⚖️ 0 Pending";
+    public string PendingChangesTabHeader => StagedChanges.Count > 0
+        ? $"⚖️ Pending Changes ({StagedChanges.Count})"
+        : "⚖️ Pending Changes & Verification";
 
     public string SessionStatusText
     {
@@ -342,7 +392,65 @@ public class MainViewModel : ViewModelBase
     public string StatusMessage
     {
         get => _statusMessage;
-        set => SetProperty(ref _statusMessage, value);
+        set
+        {
+            if (SetProperty(ref _statusMessage, value))
+            {
+                OnPropertyChanged(nameof(StatusForeground));
+                OnPropertyChanged(nameof(StatusBadgeIcon));
+            }
+        }
+    }
+
+    public string StatusForeground
+    {
+        get
+        {
+            var msg = _statusMessage ?? string.Empty;
+            if (msg.Contains("Failed", StringComparison.OrdinalIgnoreCase) ||
+                msg.Contains("Error", StringComparison.OrdinalIgnoreCase) ||
+                msg.Contains("Blocked", StringComparison.OrdinalIgnoreCase) ||
+                msg.Contains("Cannot", StringComparison.OrdinalIgnoreCase) ||
+                msg.Contains("Invalid", StringComparison.OrdinalIgnoreCase) ||
+                msg.Contains("aborted", StringComparison.OrdinalIgnoreCase) ||
+                msg.Contains("unreachable", StringComparison.OrdinalIgnoreCase))
+            {
+                return "#F38BA8";
+            }
+            if (msg.Contains("Warning", StringComparison.OrdinalIgnoreCase) ||
+                msg.Contains("Canceled", StringComparison.OrdinalIgnoreCase) ||
+                msg.Contains("Must start", StringComparison.OrdinalIgnoreCase) ||
+                msg.Contains("Partial", StringComparison.OrdinalIgnoreCase) ||
+                msg.Contains("Emergency", StringComparison.OrdinalIgnoreCase))
+            {
+                return "#F9E2AF";
+            }
+            if (msg.Contains("Successfully", StringComparison.OrdinalIgnoreCase) ||
+                msg.Contains("complete", StringComparison.OrdinalIgnoreCase) ||
+                msg.Contains("Refreshed", StringComparison.OrdinalIgnoreCase) ||
+                msg.Contains("Session active", StringComparison.OrdinalIgnoreCase) ||
+                msg.Contains("Fixed:", StringComparison.OrdinalIgnoreCase) ||
+                msg.Contains("Loaded ", StringComparison.OrdinalIgnoreCase) ||
+                msg.Contains("Verified", StringComparison.OrdinalIgnoreCase))
+            {
+                return "#A6E3A1";
+            }
+            return "#89B4FA";
+        }
+    }
+
+    public string StatusBadgeIcon
+    {
+        get
+        {
+            return StatusForeground switch
+            {
+                "#F38BA8" => "⛔",
+                "#F9E2AF" => "⚠️",
+                "#A6E3A1" => "✓",
+                _ => "ℹ️"
+            };
+        }
     }
 
     public bool IsLoading
@@ -516,7 +624,15 @@ public class MainViewModel : ViewModelBase
     public RelayCommand ResetLayoutCommand { get; }
     public RelayCommand SpreadLayoutCommand { get; }
     public RelayCommand ClearLogsCommand { get; }
-    public RelayCommand StageSampleChangeCommand { get; }
+    public RelayCommand GoToPendingChangesCommand { get; }
+    public RelayCommand StageUndoLastChangeCommand { get; }
+    public RelayCommand StagePurgeGhostTargetCommand { get; }
+    public RelayCommand StageAddDeviceToSceneCommand { get; }
+    public RelayCommand<SceneMemberModel> StageRemoveMemberFromSceneCommand { get; }
+    public RelayCommand StageDeleteSceneCommand { get; }
+    public RelayCommand<NetworkIssueModel> StageDeleteNetworkIssueSlotCommand { get; }
+    public RelayCommand ToggleSceneMatrixViewCommand { get; }
+    public RelayCommand<object> SelectSceneByGroupCommand { get; }
     public AsyncRelayCommand CommitStagedChangesCommand { get; }
     public RelayCommand DiscardStagedChangesCommand { get; }
     public RelayCommand RemoveStagedChangeCommand { get; }
@@ -596,7 +712,72 @@ public class MainViewModel : ViewModelBase
 
     public ObservableCollection<SceneModel> Scenes { get; }
     public ObservableCollection<SceneModel> FilteredScenes { get; }
+    public ObservableCollection<DeviceSceneMatrixRowModel> DeviceSceneMatrixRows { get; } = new();
     public ObservableCollection<string> GhostTargets { get; }
+
+    private bool _showRawAldbDetails;
+    public bool ShowRawAldbDetails
+    {
+        get => _showRawAldbDetails;
+        set => SetProperty(ref _showRawAldbDetails, value);
+    }
+
+    private bool _isSceneMatrixView;
+    public bool IsSceneMatrixView
+    {
+        get => _isSceneMatrixView;
+        set
+        {
+            if (SetProperty(ref _isSceneMatrixView, value))
+            {
+                OnPropertyChanged(nameof(IsSceneTunerView));
+                OnPropertyChanged(nameof(SceneMatrixToggleText));
+            }
+        }
+    }
+
+    public bool IsSceneTunerView => !IsSceneMatrixView;
+    public string SceneMatrixToggleText => IsSceneMatrixView
+        ? "🎛️ Switch to Scene Preset Tuner"
+        : "📊 View Device × Scene Matrix";
+
+    public PreflightSummary CurrentPreflight => _changeSetService.EvaluatePreflight(StagedChanges);
+    public string PreflightHeadline => CurrentPreflight.SummaryHeadline;
+    public string PreflightSubtext => CurrentPreflight.DetailSubtext;
+    public string PreflightBackground => CurrentPreflight.BannerBackground;
+    public string PreflightBorder => CurrentPreflight.BannerBorder;
+    public string PreflightForeground => CurrentPreflight.BannerForeground;
+
+    public bool CanUndoLastChange => _changeSetService.CanUndo;
+    public string LastUndoButtonText => _changeSetService.LastUndoDescription;
+
+    private void NotifyPreflightChanged()
+    {
+        OnPropertyChanged(nameof(CurrentPreflight));
+        OnPropertyChanged(nameof(PreflightHeadline));
+        OnPropertyChanged(nameof(PreflightSubtext));
+        OnPropertyChanged(nameof(PreflightBackground));
+        OnPropertyChanged(nameof(PreflightBorder));
+        OnPropertyChanged(nameof(PreflightForeground));
+    }
+
+    private void NotifyUndoChanged()
+    {
+        OnPropertyChanged(nameof(CanUndoLastChange));
+        OnPropertyChanged(nameof(LastUndoButtonText));
+        StageUndoLastChangeCommand?.NotifyCanExecuteChanged();
+    }
+
+    public void StageUndoLastChange()
+    {
+        var undo = _changeSetService.PopUndo();
+        if (undo == null) return;
+        StagedChanges.Add(undo.UndoChange);
+        NotifyUndoChanged();
+        StatusMessage = $"Staged undo operation: {undo.Description}. Review in Pending Changes.";
+        AddLog(LogLevel.Info, "Undo", $"Staged undo operation '{undo.Description}' ({undo.UndoChange.Id}).");
+        SelectedTabIndex = 4;
+    }
     public ObservableCollection<MissingDefaultLinkItemModel> MissingDefaultLinks { get; }
     public ObservableCollection<DeviceCategoryOption> DeviceCategoryOptions { get; }
 
@@ -669,6 +850,20 @@ public class MainViewModel : ViewModelBase
     {
         get => _analyzerGhostCount;
         set => SetProperty(ref _analyzerGhostCount, value);
+    }
+
+    private int _analyzerDuplicatesCount;
+    public int AnalyzerDuplicatesCount
+    {
+        get => _analyzerDuplicatesCount;
+        set => SetProperty(ref _analyzerDuplicatesCount, value);
+    }
+
+    private int _analyzerOtherIssuesCount;
+    public int AnalyzerOtherIssuesCount
+    {
+        get => _analyzerOtherIssuesCount;
+        set => SetProperty(ref _analyzerOtherIssuesCount, value);
     }
 
     private string _selectedAnalyzerFilter = "All";
@@ -829,7 +1024,9 @@ public class MainViewModel : ViewModelBase
                 TriggerSceneFastOffCommand?.NotifyCanExecuteChanged();
                 OpenAddDeviceToSceneDialogCommand?.NotifyCanExecuteChanged();
                 AddDeviceToSceneNowCommand?.NotifyCanExecuteChanged();
+                StageAddDeviceToSceneCommand?.NotifyCanExecuteChanged();
                 DeleteSceneCommand?.NotifyCanExecuteChanged();
+                StageDeleteSceneCommand?.NotifyCanExecuteChanged();
                 IsAddingMemberToScene = false;
             }
         }
@@ -874,6 +1071,7 @@ public class MainViewModel : ViewModelBase
             if (SetProperty(ref _selectedDeviceToAddToScene, value))
             {
                 AddDeviceToSceneNowCommand?.NotifyCanExecuteChanged();
+                StageAddDeviceToSceneCommand?.NotifyCanExecuteChanged();
             }
         }
     }
@@ -924,7 +1122,14 @@ public class MainViewModel : ViewModelBase
     public string? SelectedGhostTarget
     {
         get => _selectedGhostTarget;
-        set => SetProperty(ref _selectedGhostTarget, value);
+        set
+        {
+            if (SetProperty(ref _selectedGhostTarget, value))
+            {
+                PurgeSelectedGhostTargetCommand?.NotifyCanExecuteChanged();
+                StagePurgeGhostTargetCommand?.NotifyCanExecuteChanged();
+            }
+        }
     }
 
     private DeviceLookupItem? EnsureLookupChoice(string normalizedAddress)
@@ -2175,7 +2380,8 @@ public class MainViewModel : ViewModelBase
                 tagProtectedPlmLink(entry);
                 // On the PLM, Group 0 Controller records are valid PLM Device Management & I2CS Auth records
                 entry.IsGroupZero = (entry.Group == 0 && !org.IsModem);
-                string key = $"{entry.TargetAddress}|{entry.Group}";
+                int btnDisc = org.IsKeypad ? entry.Data3 : 0;
+                string key = $"{entry.TargetAddress}|{entry.Group}|{btnDisc}";
                 if (!seenCtrl.Add(key))
                 {
                     entry.IsDuplicate = true;
@@ -2516,52 +2722,6 @@ public class MainViewModel : ViewModelBase
 
     // --- Staging & Verification Workflow (Pre-Commit) ---
 
-    public void StageSampleChange()
-    {
-        int nextId = StagedChanges.Count + 1;
-        var samples = new[]
-        {
-            new StagedChangeModel
-            {
-                Id = $"CHG-{nextId:D3}",
-                TargetAddress = "2A.44.11",
-                TargetLabel = "Living Room Dimmer",
-                Operation = "MODIFY_RAMP_RATE",
-                CurrentState = "Ramp Rate: 0.5s, On-Level: 100%",
-                ProposedState = "Ramp Rate: 2.0s, On-Level: 80%",
-                Description = "Adjust ambient ramp rate and soft-start level for evening scene.",
-                Risk = ChangeRisk.Low
-            },
-            new StagedChangeModel
-            {
-                Id = $"CHG-{nextId:D3}",
-                TargetAddress = "4F.12.A8",
-                TargetLabel = "KeypadLinc Button B",
-                Operation = "ADD_SCENE_LINK",
-                CurrentState = "No ALDB link on Scene 3",
-                ProposedState = "Controller link to PLM (Group 3, D1=255, D2=28)",
-                Description = "Link Keypad Button B to trigger Master Hallway lighting scene.",
-                Risk = ChangeRisk.Medium
-            },
-            new StagedChangeModel
-            {
-                Id = $"CHG-{nextId:D3}",
-                TargetAddress = "1A.2B.3C -> 5D.88.99",
-                TargetLabel = "Defective Switch Replacement",
-                Operation = "REPLACE_DEVICE",
-                CurrentState = "Old Device 1A.2B.3C (6 peer links in PLM & network)",
-                ProposedState = "New Device 5D.88.99 (Clone all 6 links & purge old address)",
-                Description = "Automatic network-wide replacement: rewrite ALDB records in PLM and peers.",
-                Risk = ChangeRisk.High
-            }
-        };
-
-        var sample = samples[(nextId - 1) % samples.Length];
-        StagedChanges.Add(sample);
-        AddLog(LogLevel.Info, "Staging", $"Staged action '{sample.Operation}' on {sample.TargetAddress} for review.");
-        StatusMessage = $"Added staged change '{sample.Id}'. Review in 'Pending Changes' tab before committing.";
-    }
-
     public void SetSelectedNodeAsController(DeviceNode node)
     {
         if (node == null) return;
@@ -2809,6 +2969,29 @@ public class MainViewModel : ViewModelBase
             return;
         }
 
+        bool involvesBatteryDevice = itemsToCommit.Any(c =>
+            (c.TargetAddress?.Contains("1C.2C.40", StringComparison.OrdinalIgnoreCase) ?? false) ||
+            (c.TargetLabel?.Contains("Battery", StringComparison.OrdinalIgnoreCase) ?? false) ||
+            (c.TargetLabel?.Contains("Remote", StringComparison.OrdinalIgnoreCase) ?? false) ||
+            (c.TargetLabel?.Contains("Sensor", StringComparison.OrdinalIgnoreCase) ?? false));
+
+        if (involvesBatteryDevice)
+        {
+            var wakeConfirm = MessageBox.Show(
+                "🔋 Battery-Powered Device Wake Required\n\n" +
+                "One or more selected staged changes target a battery-powered Insteon remote/sensor whose RF radio normally sleeps.\n\n" +
+                "1. Walk to the battery device and press & hold its SET button (~3 seconds) until its LED begins blinking.\n" +
+                "2. Click OK immediately while the device radio is awake to transmit the staged EEPROM changes.",
+                "Wake Battery Device Before Committing",
+                MessageBoxButton.OKCancel,
+                MessageBoxImage.Information);
+            if (wakeConfirm != MessageBoxResult.OK)
+            {
+                StatusMessage = "Commit canceled: Wake battery device before committing.";
+                return;
+            }
+        }
+
         if (!await EnsureSessionActiveAsync($"commit {itemsToCommit.Count} staged network changes to hardware"))
         {
             return;
@@ -2950,6 +3133,7 @@ public class MainViewModel : ViewModelBase
                 Scenes.Add(sc);
             }
             ApplySceneFilter();
+            RebuildDeviceSceneMatrix();
 
             if (currentGroup.HasValue)
             {
@@ -2982,10 +3166,118 @@ public class MainViewModel : ViewModelBase
         {
             if (string.IsNullOrWhiteSpace(q) ||
                 sc.Group.ToString().Contains(q) ||
-                sc.Name.Contains(q, StringComparison.OrdinalIgnoreCase))
+                sc.Name.Contains(q, StringComparison.OrdinalIgnoreCase) ||
+                sc.ControllersSummaryText.Contains(q, StringComparison.OrdinalIgnoreCase) ||
+                sc.RespondersSummaryText.Contains(q, StringComparison.OrdinalIgnoreCase))
             {
                 FilteredScenes.Add(sc);
             }
+        }
+    }
+
+    public void RebuildDeviceSceneMatrix()
+    {
+        DeviceSceneMatrixRows.Clear();
+        var allAddrs = new Dictionary<string, (string Name, string ModelBadge)>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var d in _currentDevices)
+        {
+            string badge = !string.IsNullOrWhiteSpace(d.ModelName) ? d.ModelName : d.Description;
+            allAddrs[d.Address] = (d.Description, badge);
+        }
+
+        foreach (var sc in Scenes)
+        {
+            foreach (var c in sc.Controllers)
+            {
+                if (!string.IsNullOrWhiteSpace(c.Address) && !allAddrs.ContainsKey(c.Address))
+                {
+                    allAddrs[c.Address] = (c.Label, "Controller");
+                }
+            }
+            foreach (var m in sc.Members)
+            {
+                if (!string.IsNullOrWhiteSpace(m.Address) && !allAddrs.ContainsKey(m.Address))
+                {
+                    allAddrs[m.Address] = (m.Label, "Responder");
+                }
+            }
+        }
+
+        foreach (var kvp in allAddrs.OrderBy(k => k.Value.Name))
+        {
+            string addr = kvp.Key;
+            var row = new DeviceSceneMatrixRowModel
+            {
+                DeviceAddress = addr,
+                DeviceName = kvp.Value.Name,
+                DeviceModelBadge = kvp.Value.ModelBadge
+            };
+
+            int ctrlCount = 0;
+            int respCount = 0;
+
+            foreach (var sc in Scenes.OrderBy(s => s.Group))
+            {
+                var ctrlMatch = sc.Controllers.FirstOrDefault(c => c.Address.Equals(addr, StringComparison.OrdinalIgnoreCase));
+                var respMatch = sc.Members.FirstOrDefault(m => m.Address.Equals(addr, StringComparison.OrdinalIgnoreCase));
+
+                if (ctrlMatch == null && respMatch == null) continue;
+
+                bool isCtrl = ctrlMatch != null;
+                bool isResp = respMatch != null;
+                if (isCtrl) ctrlCount++;
+                if (isResp) respCount++;
+
+                string roleTag = (isCtrl && isResp)
+                    ? $"G{sc.Group} [C+R · {respMatch!.BrightnessPercent:F0}%]"
+                    : (isCtrl
+                        ? (ctrlMatch!.ButtonGroup > 1 ? $"G{sc.Group} [C · Btn {ctrlMatch.ButtonGroup}]" : $"G{sc.Group} [C]")
+                        : $"G{sc.Group} [R · {respMatch!.BrightnessPercent:F0}%]");
+
+                string tip = $"{sc.DisplayTitle}\n" +
+                             (isCtrl ? $"• [C] Controller (Button {ctrlMatch!.ButtonGroup})\n" : "") +
+                             (isResp ? $"• [R] Responder: Brightness {respMatch!.BrightnessPercentText}, Ramp {respMatch.RampRateSecondsText}\n" : "") +
+                             "Click to inspect and tune this scene.";
+
+                row.SceneChips.Add(new DeviceSceneRoleChipModel
+                {
+                    SceneGroup = sc.Group,
+                    SceneName = sc.DisplayTitle,
+                    IsController = isCtrl,
+                    IsResponder = isResp,
+                    BadgeText = roleTag,
+                    ToolTipText = tip
+                });
+            }
+
+            row.ControlledScenesCount = ctrlCount;
+            row.ResponderScenesCount = respCount;
+            if (row.SceneChips.Count > 0)
+            {
+                DeviceSceneMatrixRows.Add(row);
+            }
+        }
+    }
+
+    public void SelectSceneByGroup(object? param)
+    {
+        int? grp = param switch
+        {
+            int g => g,
+            DeviceSceneRoleChipModel chip => chip.SceneGroup,
+            SceneModel sm => sm.Group,
+            string s when int.TryParse(s, out int parsed) => parsed,
+            _ => null
+        };
+        if (!grp.HasValue) return;
+
+        var targetScene = Scenes.FirstOrDefault(s => s.Group == grp.Value);
+        if (targetScene != null)
+        {
+            SelectedScene = targetScene;
+            IsSceneMatrixView = false;
+            StatusMessage = $"Selected {targetScene.DisplayTitle} for inspection and preset tuning.";
         }
     }
 
@@ -3027,6 +3319,19 @@ public class MainViewModel : ViewModelBase
         if (SelectedScene == null || member == null) return;
         if (!await EnsureSessionActiveAsync($"update Scene {SelectedScene.Group} preset on {member.Label} ({member.Address})")) return;
 
+        int sceneGroup = SelectedScene.Group;
+        string memAddress = member.Address;
+        string memLabel = member.Label;
+
+        // Capture previous hardware preset from in-memory ALDB records for Undo
+        var prevRec = AldbRecords.FirstOrDefault(r =>
+            r.SourceAddress != null &&
+            r.SourceAddress.Equals(memAddress, StringComparison.OrdinalIgnoreCase) &&
+            r.Group == sceneGroup &&
+            r.IsResponder);
+        int prevLevel = prevRec?.Data1 ?? 255;
+        int prevRamp = prevRec?.Data2 ?? 28;
+
         IsLoading = true;
         StatusMessage = $"Updating preset for {member.Label} in Scene {SelectedScene.Group}...";
         AddLog(LogLevel.Info, "Scenes", $"Surgically updating preset for {member.Address} in Scene {SelectedScene.Group}: Level={member.OnLevel}, Ramp={member.RampRate}...");
@@ -3041,6 +3346,29 @@ public class MainViewModel : ViewModelBase
             if (updated != null)
             {
                 member.IsDirty = false;
+
+                // Record automatic undo entry for Tier 1 preset change
+                _changeSetService.RecordUndo(
+                    $"Revert {memLabel} (Scene {sceneGroup}) to {Math.Round(prevLevel / 255.0 * 100):F0}%",
+                    new StagedChangeModel
+                    {
+                        Id = $"UNDO-{DateTime.Now:HHmmss}",
+                        TargetAddress = memAddress,
+                        TargetLabel = memLabel,
+                        Operation = "REVERT_SCENE_PRESET",
+                        CurrentState = $"Scene {sceneGroup} Level: {updated.BrightnessPercentText}, Ramp: {updated.RampRateSecondsText}",
+                        ProposedState = $"Scene {sceneGroup} Level: {Math.Round(prevLevel / 255.0 * 100):F0}% ({prevLevel}/255), Ramp: {InsteonRampRateHelper.FormatRampRate(prevRamp)}",
+                        Description = $"Undo surgical preset change on {memLabel} in Scene {sceneGroup}.",
+                        Risk = ChangeRisk.Low,
+                        ExecutionHandler = async () =>
+                        {
+                            var rev = await _apiClient.UpdateSceneMemberPresetAsync(sceneGroup, memAddress, prevLevel, prevRamp);
+                            return rev != null
+                                ? (true, $"Reverted {memLabel} in Scene {sceneGroup} back to Level={prevLevel}, Ramp={prevRamp}.")
+                                : (false, $"Failed to revert preset on {memLabel} in Scene {sceneGroup}.");
+                        }
+                    });
+                NotifyUndoChanged();
 
                 // Sync modified preset values to in-memory AldbRecords
                 var matchingRecs = AldbRecords.Where(r =>
@@ -3072,8 +3400,9 @@ public class MainViewModel : ViewModelBase
 
                 ApplyFilter();
                 RebuildOrganizedAldbView();
+                RebuildDeviceSceneMatrix();
 
-                StatusMessage = $"Preset updated successfully for {member.Label}.";
+                StatusMessage = $"Preset updated successfully for {member.Label} (Undo available in Pending Changes).";
                 AddLog(LogLevel.Success, "Scenes", $"Verified hardware write on {member.Address}: OnLevel={updated.OnLevel}, RampRate={updated.RampRate}.");
             }
         }
@@ -3113,6 +3442,146 @@ public class MainViewModel : ViewModelBase
     public void CancelAddDeviceToScene()
     {
         IsAddingMemberToScene = false;
+    }
+
+    public void StageAddDeviceToScene()
+    {
+        if (SelectedScene == null || SelectedDeviceToAddToScene == null) return;
+        var dev = SelectedDeviceToAddToScene;
+        int grp = SelectedScene.Group;
+        string sceneTitle = SelectedScene.DisplayTitle;
+        int level = NewSceneMemberOnLevel;
+        int ramp = NewSceneMemberRampRate;
+        string levelText = NewSceneMemberBrightnessPercentText;
+        string rampText = NewSceneMemberRampRateSecondsText;
+
+        if (SelectedScene.Members.Any(m => m.Address.Equals(dev.Address, StringComparison.OrdinalIgnoreCase)))
+        {
+            StatusMessage = $"{dev.FriendlyName} ({dev.Address}) is already a member of {sceneTitle}.";
+            return;
+        }
+
+        var staged = new StagedChangeModel
+        {
+            Id = $"SCN-ADD-{DateTime.Now:HHmmss}",
+            TargetAddress = dev.Address,
+            TargetLabel = $"{dev.FriendlyName} ➔ {sceneTitle}",
+            Operation = "ADD_SCENE_MEMBER",
+            CurrentState = $"Not a responder in {sceneTitle}",
+            ProposedState = $"Responder in {sceneTitle} (Level: {levelText}, Ramp: {rampText})",
+            Description = $"Add {dev.FriendlyName} ({dev.Address}) as a verified responder to {sceneTitle} with initial brightness {levelText} and ramp rate {rampText}.",
+            Risk = ChangeRisk.Low,
+            ExecutionHandler = async () =>
+            {
+                var req = new SceneMemberAddRequestModel
+                {
+                    Address = dev.Address,
+                    OnLevel = level,
+                    RampRate = ramp,
+                    ButtonGroup = 1
+                };
+                return await _apiClient.AddSceneMemberAsync(grp, req);
+            }
+        };
+
+        StagedChanges.Add(staged);
+        IsAddingMemberToScene = false;
+        StatusMessage = $"Staged adding {dev.FriendlyName} to {sceneTitle}. Review in Pending Changes.";
+        AddLog(LogLevel.Info, "Staging", $"Staged adding {dev.FriendlyName} ({dev.Address}) to {sceneTitle}.");
+        SelectedTabIndex = 4;
+    }
+
+    public void StageRemoveMemberFromScene(SceneMemberModel? member)
+    {
+        if (SelectedScene == null || member == null) return;
+        int grp = SelectedScene.Group;
+        string sceneTitle = SelectedScene.DisplayTitle;
+        string memAddr = member.Address;
+        string memLabel = member.Label;
+
+        var staged = new StagedChangeModel
+        {
+            Id = $"SCN-REM-{DateTime.Now:HHmmss}",
+            TargetAddress = memAddr,
+            TargetLabel = $"{memLabel} (from {sceneTitle})",
+            Operation = "REMOVE_SCENE_MEMBER",
+            CurrentState = $"Active responder in {sceneTitle} (Level: {member.BrightnessPercentText})",
+            ProposedState = $"Removed from {sceneTitle} (reciprocal links cleared)",
+            Description = $"Atomically remove {memLabel} ({memAddr}) from {sceneTitle} and clear reciprocal controller/responder records.",
+            Risk = ChangeRisk.Medium,
+            ExecutionHandler = async () =>
+            {
+                return await _apiClient.RemoveSceneMemberAsync(grp, memAddr);
+            }
+        };
+
+        StagedChanges.Add(staged);
+        StatusMessage = $"Staged removal of {memLabel} from {sceneTitle}. Review in Pending Changes.";
+        AddLog(LogLevel.Warning, "Staging", $"Staged removal of {memLabel} ({memAddr}) from {sceneTitle}.");
+        SelectedTabIndex = 4;
+    }
+
+    public void StageDeleteScene()
+    {
+        if (SelectedScene == null || SelectedScene.Group <= 1) return;
+        int grp = SelectedScene.Group;
+        string sceneTitle = SelectedScene.DisplayTitle;
+        int memberCount = SelectedScene.Members.Count;
+
+        var staged = new StagedChangeModel
+        {
+            Id = $"SCN-DEL-{grp}",
+            TargetAddress = $"Scene Group {grp}",
+            TargetLabel = sceneTitle,
+            Operation = "DELETE_SCENE",
+            CurrentState = $"Active scene with {memberCount} responder(s) and {SelectedScene.Controllers.Count} controller(s)",
+            ProposedState = "Scene deleted & all reciprocal ALDB links cleared across devices",
+            Description = $"Permanently delete {sceneTitle} and clear all Group {grp} controller/responder records across the network.",
+            Risk = ChangeRisk.High,
+            ExecutionHandler = async () =>
+            {
+                return await _apiClient.DeleteSceneAsync(grp);
+            }
+        };
+
+        StagedChanges.Add(staged);
+        StatusMessage = $"Staged deletion of {sceneTitle}. Review in Pending Changes.";
+        AddLog(LogLevel.Warning, "Staging", $"Staged deletion of {sceneTitle} (Group {grp}).");
+        SelectedTabIndex = 4;
+    }
+
+    public void StagePurgeSelectedGhostTarget()
+    {
+        if (string.IsNullOrWhiteSpace(SelectedGhostTarget)) return;
+        var targetAddr = SelectedGhostTarget.Split(' ')[0].Trim();
+
+        if (targetAddr.Equals("53.C1.42", StringComparison.OrdinalIgnoreCase) ||
+            (!string.IsNullOrWhiteSpace(PlmModemAddress) && targetAddr.Equals(PlmModemAddress, StringComparison.OrdinalIgnoreCase)))
+        {
+            StatusMessage = $"Blocked: {targetAddr} is the central PLM Hub modem and cannot be purged.";
+            return;
+        }
+
+        var staged = new StagedChangeModel
+        {
+            Id = $"GHOST-{targetAddr}",
+            TargetAddress = targetAddr,
+            TargetLabel = $"Ghost Target {SelectedGhostTarget}",
+            Operation = "PURGE_GHOST_TARGET",
+            CurrentState = $"Dangling active ALDB records pointing to retired device {SelectedGhostTarget}",
+            ProposedState = $"All ALDB slots targeting {targetAddr} marked in_use = False",
+            Description = $"Eradicate all orphan ALDB references to decommissioned device {targetAddr} across the PLM and peer switches.",
+            Risk = ChangeRisk.High,
+            ExecutionHandler = async () =>
+            {
+                return await _apiClient.PurgeGhostLinksAsync(targetAddr);
+            }
+        };
+
+        StagedChanges.Add(staged);
+        StatusMessage = $"Staged network-wide ghost purge for {targetAddr}. Review in Pending Changes.";
+        AddLog(LogLevel.Warning, "Staging", $"Staged ghost link purge for {targetAddr}.");
+        SelectedTabIndex = 4;
     }
 
     public async Task AddDeviceToSceneNowAsync()
@@ -3587,6 +4056,8 @@ public class MainViewModel : ViewModelBase
         }
 
         var link = SelectedAdjustLink;
+        int prevLevel = link.Data1;
+        int prevRamp = link.Data2;
         int level = AdjustLinkOnLevel;
         int ramp = AdjustLinkRampRate;
 
@@ -3608,9 +4079,41 @@ public class MainViewModel : ViewModelBase
             var (success, msg) = await _apiClient.UpdateLinkPresetAsync(req);
             if (success)
             {
+                string ctrlAddr = link.ControllerAddress;
+                string respAddr = link.ResponderAddress;
+                string respName = link.ResponderFriendlyName;
+                int grp = link.Group;
+
+                _changeSetService.RecordUndo(
+                    $"Revert {respName} (Group {grp}) to {Math.Round(prevLevel / 255.0 * 100):F0}%",
+                    new StagedChangeModel
+                    {
+                        Id = $"UNDO-{DateTime.Now:HHmmss}",
+                        TargetAddress = respAddr,
+                        TargetLabel = respName,
+                        Operation = "REVERT_LINK_PRESET",
+                        CurrentState = $"Level: {Math.Round(level / 255.0 * 100):F0}% ({level}/255), Ramp: {InsteonRampRateHelper.FormatRampRate(ramp)}",
+                        ProposedState = $"Level: {Math.Round(prevLevel / 255.0 * 100):F0}% ({prevLevel}/255), Ramp: {InsteonRampRateHelper.FormatRampRate(prevRamp)}",
+                        Description = $"Undo preset change on {respName} for controller {ctrlAddr} (Group {grp}).",
+                        Risk = ChangeRisk.Low,
+                        ExecutionHandler = async () =>
+                        {
+                            var revReq = new ReciprocalLinkUpdateRequestModel
+                            {
+                                ControllerAddress = ctrlAddr,
+                                ResponderAddress = respAddr,
+                                Group = grp,
+                                Data1 = prevLevel,
+                                Data2 = prevRamp
+                            };
+                            return await _apiClient.UpdateLinkPresetAsync(revReq);
+                        }
+                    });
+                NotifyUndoChanged();
+
                 link.Data1 = level;
                 link.Data2 = ramp;
-                StatusMessage = $"Preset updated successfully on {link.ResponderFriendlyName}.";
+                StatusMessage = $"Preset updated successfully on {link.ResponderFriendlyName} (Undo available in Pending Changes).";
                 AddLog(LogLevel.Success, "LinkAdjuster", msg);
                 await QueryAldbAsync(silent: true);
             }
@@ -3756,129 +4259,102 @@ public class MainViewModel : ViewModelBase
             return;
         }
 
-        if (!await EnsureSessionActiveAsync($"delete link record {entry.MemAddr} on {entry.OwnerFriendlyName} ({entry.OwnerAddress})")) return;
-
-        if (entry.IsDuplicate || entry.IsGroupZero)
+        if (entry.IsDuplicate || entry.IsGroupZero || (!entry.IsController && !entry.IsResponder))
         {
+            string stageId = $"DELSLOT-{entry.OwnerAddress}-{entry.MemAddr}";
+            if (StagedChanges.Any(sc => sc.Id == stageId))
+            {
+                StatusMessage = $"Slot {entry.MemAddr} deletion on {entry.OwnerAddress} is already staged.";
+                return;
+            }
+
             string reason = entry.IsDuplicate
-                ? $"Record {entry.MemAddr} is a redundant duplicate of an active link with {entry.TargetDisplay} on Group {entry.Group}."
-                : $"Record {entry.MemAddr} is an invalid/orphaned Group 0 record.";
+                ? $"Redundant duplicate of active link with {entry.TargetDisplay} on Group {entry.Group}"
+                : $"ALDB record slot {entry.MemAddr} on Group {entry.Group}";
 
-            var slotConfirm = MessageBox.Show(
-                $"{reason}\n\nDo you want to clean up (delete) this individual record slot {entry.MemAddr} on {entry.OwnerFriendlyName} ({entry.OwnerAddress})?\n\n(This safely clears this specific memory slot without affecting other active links).",
-                "Clean Up ALDB Record Slot",
-                MessageBoxButton.YesNo,
-                MessageBoxImage.Question
-            );
-            if (slotConfirm != MessageBoxResult.Yes) return;
+            string ownerAddr = entry.OwnerAddress;
+            string memAddr = entry.MemAddr;
+            var stagedSlot = new StagedChangeModel
+            {
+                Id = stageId,
+                TargetAddress = ownerAddr,
+                TargetLabel = $"{entry.OwnerFriendlyName} ({ownerAddr})",
+                Operation = "DELETE_SLOT",
+                Description = $"Clear record slot {memAddr} on {entry.OwnerFriendlyName}",
+                CurrentState = $"{reason} (Slot {memAddr}: {entry.DataHex})",
+                ProposedState = $"Slot {memAddr} marked unused (cleared) on {ownerAddr}",
+                Risk = ChangeRisk.Low,
+                ExecutionHandler = async () => await _apiClient.DeleteDeviceAldbRecordAsync(ownerAddr, memAddr)
+            };
 
-            IsLoading = true;
-            try
-            {
-                var (s, m) = await _apiClient.DeleteDeviceAldbRecordAsync(entry.OwnerAddress, entry.MemAddr);
-                if (s)
-                {
-                    StatusMessage = $"Cleaned up ALDB slot {entry.MemAddr} on {entry.OwnerAddress}.";
-                    AddLog(LogLevel.Success, "ALDB", m);
-                    await QueryAldbAsync(silent: true);
-                }
-                else
-                {
-                    StatusMessage = $"Delete failed: {m}";
-                    AddLog(LogLevel.Error, "ALDB", m);
-                }
-            }
-            finally
-            {
-                IsLoading = false;
-            }
+            StagedChanges.Add(stagedSlot);
+            StatusMessage = $"Staged cleanup of slot {memAddr} on {entry.OwnerFriendlyName}. Review in Pending Changes.";
+            AddLog(LogLevel.Info, "Staging", $"Staged deletion of ALDB slot {memAddr} on {ownerAddr}.");
+            await Task.CompletedTask;
             return;
         }
 
-        string ctrlAddr;
-        string respAddr;
+        string ctrlAddr = entry.IsController ? entry.OwnerAddress : entry.TargetAddress;
+        string respAddr = entry.IsController ? entry.TargetAddress : entry.OwnerAddress;
+        int group = entry.Group;
+        int d1 = entry.Data1;
+        int d2 = entry.Data2;
+        int d3 = entry.Data3;
 
-        if (entry.IsController)
+        string linkStageId = $"DELLINK-{ctrlAddr}-{respAddr}-{group}";
+        if (StagedChanges.Any(sc => sc.Id == linkStageId))
         {
-            ctrlAddr = entry.OwnerAddress;
-            respAddr = entry.TargetAddress;
-        }
-        else if (entry.IsResponder)
-        {
-            ctrlAddr = entry.TargetAddress;
-            respAddr = entry.OwnerAddress;
-        }
-        else
-        {
-            var slotConfirm = MessageBox.Show(
-                $"Delete ALDB record slot {entry.MemAddr} on device {entry.OwnerAddress}?",
-                "Confirm Delete ALDB Record",
-                MessageBoxButton.YesNo,
-                MessageBoxImage.Warning
-            );
-            if (slotConfirm != MessageBoxResult.Yes) return;
-
-            IsLoading = true;
-            try
-            {
-                var (s, m) = await _apiClient.DeleteDeviceAldbRecordAsync(entry.OwnerAddress, entry.MemAddr);
-                if (s)
-                {
-                    StatusMessage = $"Slot {entry.MemAddr} deleted successfully.";
-                    AddLog(LogLevel.Success, "ALDB", m);
-                    await QueryAldbAsync();
-                }
-                else
-                {
-                    StatusMessage = $"Delete failed: {m}";
-                    AddLog(LogLevel.Error, "ALDB", m);
-                }
-            }
-            finally
-            {
-                IsLoading = false;
-            }
+            StatusMessage = $"Deletion of link {ctrlAddr} <-> {respAddr} (Group {group}) is already staged.";
             return;
         }
 
-        var confirm = MessageBox.Show(
-            $"Delete reciprocal link between Controller {ctrlAddr} and Responder {respAddr} on Group {entry.Group}?\n\nThis will remove the link from both devices.",
-            "Confirm Delete Link",
-            MessageBoxButton.YesNo,
-            MessageBoxImage.Warning
-        );
-
-        if (confirm != MessageBoxResult.Yes) return;
-
-        IsLoading = true;
-        StatusMessage = $"Deleting reciprocal link between {ctrlAddr} and {respAddr} (Group {entry.Group})...";
-        AddLog(LogLevel.Warning, "ALDB", $"Deleting reciprocal link: {ctrlAddr} <-> {respAddr} (Group {entry.Group})...");
-
-        try
+        var stagedLink = new StagedChangeModel
         {
-            var (success, msg) = await _apiClient.DeleteReciprocalLinkAsync(ctrlAddr, respAddr, entry.Group);
-            if (success)
+            Id = linkStageId,
+            TargetAddress = $"{ctrlAddr} <-> {respAddr}",
+            TargetLabel = $"{ctrlAddr} <-> {respAddr}",
+            Operation = "DELETE_LINK",
+            Description = $"Remove reciprocal link {ctrlAddr} -> {respAddr} (Group {group})",
+            CurrentState = $"Active reciprocal link: Controller {ctrlAddr} -> Responder {respAddr} on Group {group} (Slot {entry.MemAddr})",
+            ProposedState = $"Remove controller & responder records for Group {group} between {ctrlAddr} and {respAddr}",
+            Risk = ChangeRisk.Medium,
+            ExecutionHandler = async () =>
             {
-                StatusMessage = $"Link deleted successfully: {ctrlAddr} <-> {respAddr}.";
-                AddLog(LogLevel.Success, "ALDB", msg);
-                await QueryAldbAsync(silent: true);
-                AddLog(LogLevel.Success, "Network", "ALDB records and topology refreshed.");
+                var res = await _apiClient.DeleteReciprocalLinkAsync(ctrlAddr, respAddr, group);
+                if (res.Success)
+                {
+                    _changeSetService.RecordUndo(
+                        $"Link Deletion {ctrlAddr} -> {respAddr} (Grp {group})",
+                        new StagedChangeModel
+                        {
+                            Id = $"UNDO-LINK-{DateTime.Now:HHmmss}",
+                            TargetAddress = $"{ctrlAddr} <-> {respAddr}",
+                            TargetLabel = $"{ctrlAddr} <-> {respAddr}",
+                            Operation = "RESTORE_LINK",
+                            CurrentState = $"Reciprocal link deleted on Group {group}",
+                            ProposedState = $"Restore reciprocal link {ctrlAddr} -> {respAddr} on Group {group} (Data1={d1}, Data2={d2}, Data3={d3})",
+                            Description = $"Undo deletion of reciprocal link {ctrlAddr} -> {respAddr} (Group {group}).",
+                            Risk = ChangeRisk.Low,
+                            ExecutionHandler = async () => await _apiClient.CreateReciprocalLinkAsync(new ReciprocalLinkRequestModel
+                            {
+                                ControllerAddress = ctrlAddr,
+                                ResponderAddress = respAddr,
+                                Group = group,
+                                Data1 = d1 > 0 ? d1 : 255,
+                                Data2 = d2 > 0 ? d2 : 28,
+                                Data3 = d3 > 0 ? d3 : 1
+                            })
+                        });
+                    NotifyUndoChanged();
+                }
+                return res;
             }
-            else
-            {
-                StatusMessage = $"Failed to delete link: {msg}";
-                AddLog(LogLevel.Error, "ALDB", msg);
-            }
-        }
-        catch (Exception ex)
-        {
-            StatusMessage = $"Error deleting link: {ex.Message}";
-            AddLog(LogLevel.Error, "ALDB", ex.Message);
-        }
-        finally
-        {
-            IsLoading = false;
-        }
+        };
+
+        StagedChanges.Add(stagedLink);
+        StatusMessage = $"Staged deletion of link {ctrlAddr} <-> {respAddr} (Group {group}). Review in Pending Changes.";
+        AddLog(LogLevel.Info, "Staging", $"Staged reciprocal link deletion: {ctrlAddr} <-> {respAddr} (Group {group}).");
+        await Task.CompletedTask;
     }
 
     private void RebuildActiveLinkPairs(List<AldbRecordModel> records)
@@ -4409,6 +4885,12 @@ public class MainViewModel : ViewModelBase
                             issue.TargetAddress.Equals("1C.2C.40", StringComparison.OrdinalIgnoreCase),
                 "missing_default" => issue.IssueType == "missing_default",
                 "ghost" => issue.IssueType == "ghost",
+                "duplicate" => issue.IssueType == "duplicate",
+                "other" => issue.IssueType != "half_link" &&
+                           issue.IssueType != "loopback" &&
+                           issue.IssueType != "missing_default" &&
+                           issue.IssueType != "ghost" &&
+                           issue.IssueType != "duplicate",
                 _ => true
             };
             if (match)
@@ -4439,6 +4921,9 @@ public class MainViewModel : ViewModelBase
                 AnalyzerLoopbacksCount = report.LoopbacksCount;
                 AnalyzerMissingPlmCount = report.MissingDefaultsCount;
                 AnalyzerGhostCount = report.GhostsCount;
+                AnalyzerDuplicatesCount = report.DuplicatesCount;
+                int categorized = report.HalfLinksCount + report.LoopbacksCount + report.MissingDefaultsCount + report.GhostsCount + report.DuplicatesCount;
+                AnalyzerOtherIssuesCount = Math.Max(0, report.TotalIssues - categorized);
 
                 NetworkIssues.Clear();
                 foreach (var issue in report.Issues)
@@ -4453,7 +4938,7 @@ public class MainViewModel : ViewModelBase
 
                 if (!silent)
                 {
-                    StatusMessage = $"Analysis complete: Health Score {report.HealthScore}%. Found {report.TotalIssues} network issues ({report.HalfLinksCount} broken half-links, {report.LoopbacksCount} loopbacks).";
+                    StatusMessage = $"Analysis complete: Health Score {report.HealthScore}%. Found {report.TotalIssues} network issues ({report.HalfLinksCount} half-links, {report.DuplicatesCount} duplicates, {report.LoopbacksCount} loopbacks).";
                     AddLog(LogLevel.Success, "Analyzer", $"Analysis complete: Health Score {report.HealthScore}%. {report.TotalIssues} issues detected across {report.TotalDevices} devices.");
                 }
             }
@@ -4483,6 +4968,23 @@ public class MainViewModel : ViewModelBase
     public async Task FixNetworkIssueAsync(NetworkIssueItemModel? issue)
     {
         if (issue == null) return;
+        if (issue.RequiresBatteryWake)
+        {
+            var wakeConfirm = MessageBox.Show(
+                $"🔋 Battery-Powered Device Wake Required\n\n" +
+                $"This operation writes to a battery-powered Insteon device ({issue.OwnerName} / {issue.TargetName}) whose RF radio normally sleeps.\n\n" +
+                $"1. Walk to the device and press & hold its SET button (~3 seconds) until its status LED begins blinking.\n" +
+                $"2. Click OK immediately while the device is awake to transmit the EEPROM changes.\n\n" +
+                $"(Or click Cancel and use 'Stage Fix' to queue this change for later.)",
+                "Wake Battery Device Before Writing",
+                MessageBoxButton.OKCancel,
+                MessageBoxImage.Information);
+            if (wakeConfirm != MessageBoxResult.OK)
+            {
+                StatusMessage = "Operation canceled: Wake battery device before writing or stage fix for later.";
+                return;
+            }
+        }
         if (!await EnsureSessionActiveAsync($"resolve network issue '{issue.Summary}'")) return;
 
         IsLoading = true;
@@ -4815,6 +5317,76 @@ public class MainViewModel : ViewModelBase
         StagedChanges.Add(staged);
         StatusMessage = $"Staged fix for {issue.Summary}. Review in Pending Changes.";
         AddLog(LogLevel.Info, "Staging", $"Staged fix for {issue.Summary}.");
+        SelectedTabIndex = 4;
+        CommitStagedChangesCommand?.NotifyCanExecuteChanged();
+    }
+
+    public void StageDeleteNetworkIssueSlot(NetworkIssueModel? issue)
+    {
+        if (issue == null) return;
+
+        string secAction = issue.SecondaryAction ?? "delete_record";
+        string stageId = $"SEC-{issue.Id}";
+        if (StagedChanges.Any(sc => sc.Id == stageId))
+        {
+            StatusMessage = $"Secondary action for {issue.Summary} is already staged.";
+            return;
+        }
+
+        string proposedState;
+        if (secAction == "create_reciprocal")
+        {
+            proposedState = $"Create reciprocal link between Controller {issue.ControllerAddress} ({issue.ControllerName}) and Responder {issue.ResponderAddress} ({issue.ResponderName}) on Group {issue.Group}";
+        }
+        else if (secAction == "purge_ghost")
+        {
+            proposedState = $"Purge all references to decommissioned device {issue.TargetAddress} across the network";
+        }
+        else
+        {
+            proposedState = $"Delete slot {issue.MemAddr} on {issue.OwnerAddress} ({issue.OwnerName})";
+        }
+
+        var staged = new StagedChangeModel
+        {
+            Id = stageId,
+            TargetAddress = issue.OwnerAddress,
+            TargetLabel = $"{issue.OwnerName} ({issue.OwnerAddress})",
+            Operation = secAction.ToUpperInvariant(),
+            Description = $"{issue.SecondaryLabel}: {issue.Summary}",
+            CurrentState = issue.Explanation,
+            ProposedState = proposedState,
+            Risk = secAction == "purge_ghost" ? ChangeRisk.High : ChangeRisk.Medium,
+            ExecutionHandler = async () =>
+            {
+                if (secAction == "create_reciprocal")
+                {
+                    var req = new ReciprocalLinkRequestModel
+                    {
+                        ControllerAddress = issue.ControllerAddress,
+                        ResponderAddress = issue.ResponderAddress,
+                        Group = issue.Group,
+                        Data1 = issue.Data1,
+                        Data2 = issue.Data2,
+                        Data3 = issue.Data3
+                    };
+                    return await _apiClient.CreateReciprocalLinkAsync(req);
+                }
+                else if (secAction == "purge_ghost")
+                {
+                    return await _apiClient.PurgeGhostLinksAsync(issue.TargetAddress);
+                }
+                else if (!string.IsNullOrEmpty(issue.MemAddr))
+                {
+                    return await _apiClient.DeleteDeviceAldbRecordAsync(issue.OwnerAddress, issue.MemAddr);
+                }
+                return (false, "No valid secondary action or memory slot.");
+            }
+        };
+
+        StagedChanges.Add(staged);
+        StatusMessage = $"Staged '{issue.SecondaryLabel}' for {issue.OwnerName}. Review in Pending Changes.";
+        AddLog(LogLevel.Info, "Staging", $"Staged secondary analyzer action for {issue.Summary}.");
         SelectedTabIndex = 4;
         CommitStagedChangesCommand?.NotifyCanExecuteChanged();
     }
