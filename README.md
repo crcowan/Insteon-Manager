@@ -16,17 +16,19 @@ Generic smart home hubs (openHAB, Home Assistant, etc.) lock serial interfaces c
 Insteon networks rely on two foundational link types that standard tools frequently misdiagnose or corrupt:
 * **Group 0 (I2CS Authorization & Direct Control):** Modern I2CS devices require mutual Group 0 records with the PLM for payload encryption and configuration rights.
 * **Group 1 (Primary Switch Load & Status Reporting):** When a wall switch paddle is tapped, it broadcasts on Group 1. The PLM must be linked as a Group 1 responder to receive instant physical state changes.
-* **Hardware-Enforced Protection:** The suite strictly guards these core communication links. The UI blocks their deletion, the Health Analyzer suppresses false duplicate warnings on them, and automated batch cleanups will never sever them.
+* **Hardware-Enforced Protection:** The suite strictly guards these core communication links (`🔒 Core Hub Link`). The UI disables their deletion, the Health Analyzer suppresses false duplicate warnings on them, and automated batch cleanups will never sever them.
 
-### 3. Atomic Two-Phase Commits (2PC) & Physical Silicon Verification
+### 3. Unified Pre-Commit Safety Pipeline (`ChangeSetService`), Two-Phase Commits & Undo Stack
 Powerline and RF dual-mesh networks are subject to noise, attenuation, and packet collisions. Optimistic databases frequently drift from physical reality.
-* **2-Phase Verification:** Every link creation, preset adjustment, or record deletion writes to device EEPROM and immediately executes a physical read-back (`_clean_peek` with powerline echo dissipation).
-* **Automatic Rollback:** If the responder fails verification (e.g., powerline echo corruption), the controller link is immediately rolled back, preventing half-links and orphaned records.
+* **Unified Staging & Preflight Verification:** Every structural network modification—link additions/deletions, device additions/replacements, scene membership edits, ghost target purges, PLM default link repairs, and Health Analyzer fixes—routes into the **Slide-Over Pending Changes Drawer** for preflight review before touching physical hardware.
+* **Preflight Impact & Battery Sensor Analysis:** Automatically calculates total EEPROM write operations, estimated powerline duration, risk severity, and flags **battery-operated RF sensors** (Motion, Leak, Door/Window sensors) that must be manually woken using their physical `SET` button prior to committing.
+* **2-Phase Hardware Verification & Rollback:** Every commit writes to device EEPROM and immediately executes a physical read-back (`_clean_peek` with powerline echo dissipation). If the responder fails verification, the controller link is rolled back to prevent half-links.
+* **Session Undo Stack (`↩ Undo`):** Live preset adjustments and link modifications record their prior EEPROM state, allowing 1-click staging of an inverse EEPROM write to revert the last change.
 * **Zero Database Fantasy:** The database snapshot is only updated once the physical silicon confirms the byte sequence.
 
 ### 4. High-Performance Network Maintenance & Surgical EEPROM Tuning
 * **Surgical Preset Adjustment:** Adjusting a responder's On-Level (brightness) or Ramp Rate (fade speed) modifies *only* that responder's specific 8-byte EEPROM record. Other scene members and controllers remain untouched, eliminating the risk and multi-minute traffic of full scene rebuilds.
-* **Multi-Cast Scene Optimization:** Multicast All-Link commands are leveraged for simultaneous multi-device firing, eliminating the "popcorn effect" of sequential commands.
+* **Device × Scene Participation Matrix:** Provides a high-density cross-reference of every Insteon device across all active scenes with `[C]` Controller and `[R · %]` Responder role chips and 1-click navigation into the Scene Preset Tuner.
 * **Device Replacement Wizard ("Clone & Swap"):** Replacing a broken switch historically required manually rebuilding dozens of scenes. The Clone & Swap engine reads the legacy device's records, writes reciprocal links to the replacement switch, and systematically retargets every peer switch and keypad in the house to point to the new address in a single coordinated operation.
 
 ### 5. Heuristic Network Health Analyzer (7-Step Diagnostics)
@@ -35,9 +37,9 @@ A comprehensive diagnostic engine inspects the entire network topology against a
 2. **Missing Core Links:** Detects unlinked devices missing critical Group 0 (management) or Group 1 (status reporting) links with the PLM.
 3. **Loopbacks:** Identifies corrupted records where a device targets its own address.
 4. **Duplicate EEPROM Slots:** Detects redundant identical link records consuming limited EEPROM space.
-5. **Half-Links:** Surfaces one-way links where a controller has no reciprocal responder (or vice-versa), offering 1-click reciprocal repair.
+5. **Half-Links:** Surfaces one-way links where a controller has no reciprocal responder (or vice-versa), offering 1-click staged reciprocal repair.
 6. **Corrupted Group 0 Records:** Cleans invalid Group 0 records on non-PLM devices.
-7. **Scene Health:** Flags obsolete diagnostic artifacts (e.g., Group 251 engine pings), empty zombie scenes (controllers with 0 responders), and single-device redundant scenes with 1-click purge actions.
+7. **Scene Health:** Flags obsolete diagnostic artifacts (e.g., Group 251 engine pings), empty zombie scenes (controllers with 0 responders), and single-device redundant scenes with 1-click staged cleanup.
 
 ---
 
@@ -47,13 +49,14 @@ A comprehensive diagnostic engine inspects the entire network topology against a
  +-------------------------------------------------------------------------+
  |                           Windows Desktop                               |
  |                                                                         |
- |   Insteon Manager (.NET 10 WPF / MVVM)                                  |
- |   ├── Interactive Network Topology Canvas (Zoom, Pan, State Visualizer) |
- |   ├── Deep Device ALDB Inspector & Live Bitmask Decoder                 |
- |   ├── Staged Changes & Diff Review Engine                               |
- |   ├── Insteon Scenes & Live Preset Tuner (Brightness & Ramp Sliders)    |
- |   ├── Device Replacement Wizard ("Clone & Swap")                        |
- |   └── Network Health & Topology Analyzer (7-Step Diagnostics)           |
+ |   Insteon Network Studio (.NET 10 WPF / MVVM)                           |
+ |   ├── Top Telemetry Header (Mode Badge, Health Score Pill, Counts)      |
+ |   ├── Workspace 1: 🌐 Network Overview (Interactive Topology & Node UI) |
+ |   ├── Workspace 2: 🔌 Devices & Links (Inspector, Raw ALDB, Link Tools) |
+ |   ├── Workspace 3: 🎭 Scenes & Presets (Preset Tuner & Device Matrix)   |
+ |   ├── Workspace 4: ♥ Health & Maintenance (Analyzer, PLM Audit, Ghosts) |
+ |   ├── Slide-Over Drawer: ⚖️ Pending Changes, Preflight & Undo History   |
+ |   └── Collapsible Bottom Drawer: 📜 Live Event & Powerline Bridge Log   |
  +------------------------------------+------------------------------------+
                                       |  REST (HTTP JSON)
                                       |  Heartbeat Keep-Alive (30s)
@@ -85,20 +88,24 @@ A comprehensive diagnostic engine inspects the entire network topology against a
 
 ---
 
-## 🖥️ Application Features & User Interface
+## 🖥️ Studio Workspaces & User Interface Architecture
 
-The desktop application supports **Browse Mode** (inspecting the cached network snapshot at any time without interrupting openHAB) and **Manage Mode** (exclusive hardware lock for live powerline reads and verified commits).
+**Insteon Network Studio** separates **Browse Mode** (`👁️ BROWSE MODE (Read-Only Cache)` — full exploration and change staging while openHAB stays `ONLINE`) from **Manage Mode** (`🛠️ MANAGE MODE (Live Hardware Exclusive)` — exclusive PLM hardware lock for live powerline commands and verified EEPROM commits, with automatic escalation prompts when needed).
 
-| Workspace | Feature | Description |
+### 4 Primary Workspaces
+| Workspace | Sub-Views & Capabilities | Description |
 |---|---|---|
-| **Tab 1** | **🗺️ Network Topology Map** | Interactive node-and-link graph showing all devices, link reciprocity, hardware profile badges, and real-time device/scene testing. |
-| **Tab 2** | **📑 Organized Device ALDBs** | Device-centric inspector categorizing Controller vs. Responder links, keypad button mappings, silicon I/O profiles, and locked core PLM links. |
-| **Tab 3** | **📋 Raw ALDB Table** | Flat searchable/sortable table of all raw EEPROM records across the network with bitmask flags and hex bytes. |
-| **Tab 4** | **📜 Event & Bridge Log** | Real-time streaming log of Raspberry Pi bridge operations, powerline transactions, and session heartbeats. |
-| **Tab 5** | **⚖️ Pending Changes & Verification** | Pre-commit safety staging queue allowing link, scene, and health fixes to be reviewed as diffs before writing to physical EEPROM. |
-| **Tab 6** | **🎭 Insteon Scenes** | Scene membership, controller/responder matrix, live scene triggers, and surgical responder brightness/ramp-rate preset tuning. |
-| **Tab 7** | **🔧 Network Tools & Recovery** | New device registration, default PLM link audit, reciprocal link creator/remover, ghost target purge, and "Clone & Swap" Device Replacement Wizard. |
-| **Tab 8** | **♥ Network Health Analyzer** | 7-step automated health inspection scoring network integrity from 0–100% with 6-category anomaly breakdown and staged/batch repair. |
+| **1. `🌐 Network Overview`** | **Interactive Topology Map & Node Inspector Sidebar** | Force-directed / hierarchical node-and-link canvas with link reciprocity visualization, hardware identity ribbons, and 1-click navigation to Device Inspector or Link Tools. |
+| **2. `🔌 Devices & Links`** | **• `🗂️ Organized Device Inspector`**<br>**• `📋 Raw ALDB Records Table`**<br>**• `🔗 Add, Replace & Link Tools`** | Categorizes Controller vs. Responder links with **`🔒 Core Hub Link`** protection badges, progressive disclosure (**`🔧 Show Raw ALDB Details`**), searchable raw EEPROM records, new device provisioning, **"Clone & Swap" Device Replacement Wizard**, and atomic reciprocal link creation/preset tuning/deletion. |
+| **3. `🎭 Scenes & Presets`** | **• `🎛️ Scene Preset Tuner`**<br>**• `📊 Device × Scene Matrix`** | Manage multi-device scenes, test live broadcasts, surgically tune individual responder On-Level brightness and Ramp Rate transitions, or switch to the high-density **Device × Scene Participation Matrix**. |
+| **4. `♥ Health & Maintenance`** | **• `♥ Network Health Analyzer`**<br>**• `🛡️ PLM Link Audit & Ghost Cleaner`** | 7-step diagnostic engine scoring network integrity (`0–100%`) with 6-category anomaly breakdown, battery-device wake alerts, PLM Group 1 self-healing audit, and network-wide Ghost Target eradication. |
+
+### Persistent Contextual Drawers & Telemetry Bar
+| Component | Location | Description |
+|---|---|---|
+| **`♥ Network Health Pill` & Telemetry Counters** | Top Command Bar (Left) | Always-visible health score (`100% — Healthy`) and live Device, Scene, and ALDB Record counts; clicking the Health pill jumps directly to `♥ Health & Maintenance`. |
+| **`⚖️ Pending Changes & Verification` Drawer** | Slide-Over Right Drawer | Opens automatically when any change is staged (or via the top-bar badge). Displays the **Preflight Safety & Impact Banner**, risk badges, current vs. proposed EEPROM state diffs, **`↩ Undo`**, **`❌ Discard All`**, and **`✔️ Commit to Hardware`**. |
+| **`📜 Live Event & Bridge Log` Drawer** | Collapsible Bottom Drawer | Toggleable from the bottom status bar (`📜 Show Event Log ▲`) to inspect real-time Raspberry Pi bridge operations, powerline transactions, and session heartbeats alongside any active workspace. |
 
 ---
 
@@ -108,7 +115,7 @@ The desktop application supports **Browse Mode** (inspecting the cached network 
 ```bash
 # Clone the repository to the host
 cd /opt
-sudo git clone https://github.com/your-repo/insteon-manager.git insteon-bridge
+sudo git clone https://github.com/crcowan/Insteon-Manager.git insteon-bridge
 cd /opt/insteon-bridge/backend
 
 # Create virtual environment and install dependencies
@@ -128,9 +135,8 @@ sudo systemctl enable --now insteon-bridge
 
 ### 2. Frontend Desktop Application (Windows)
 ```powershell
-# Open solution in Visual Studio or build via .NET CLI
-cd "frontend\InsteonManager"
-dotnet publish -c Release -o "..\..\dist\InsteonManager"
+# Package self-contained single-file executable to dist\InsteonManager
+powershell -ExecutionPolicy Bypass -File .\package_frontend.ps1
 
 # Launch the packaged executable
 .\dist\InsteonManager\InsteonManager.exe
@@ -140,5 +146,6 @@ dotnet publish -c Release -o "..\..\dist\InsteonManager"
 
 ## 🔒 Safety & Operational Guarantees
 * **No Unverified Writes:** No database commit occurs without positive read-back acknowledgment from the device's physical micro-controller.
+* **Protected Core PLM Links:** Group 0 & Group 1 links with the PLM modem (`53.C1.42`) are hardware-locked in the UI against accidental deletion.
 * **Fail-Safe Restoration:** If a session disconnects unexpectedly, the watchdog guarantees that openHAB or your host automation system is automatically resumed.
 * **Golden Snapshots:** Network configurations are automatically snapshotted before executing multi-device batch repairs.
