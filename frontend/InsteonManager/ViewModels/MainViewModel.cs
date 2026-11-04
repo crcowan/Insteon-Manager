@@ -1037,12 +1037,21 @@ public class MainViewModel : ViewModelBase
                 {
                     n.IsSelected = (n == value);
                 }
+                UpdateTopologyLinksPerspective(value);
                 OnPropertyChanged(nameof(HasSelectedGraphNode));
                 OnPropertyChanged(nameof(HasSelectedControllableGraphNode));
                 OnPropertyChanged(nameof(SelectedGraphNodeTitle));
                 OnPropertyChanged(nameof(SelectedGraphNodeHardwareBadge));
                 ControlSelectedNodeCommand?.NotifyCanExecuteChanged();
             }
+        }
+    }
+
+    private void UpdateTopologyLinksPerspective(DeviceNode? selectedNode)
+    {
+        foreach (var link in TopologyLinks)
+        {
+            link.UpdatePerspective(selectedNode);
         }
     }
 
@@ -2749,11 +2758,23 @@ public class MainViewModel : ViewModelBase
         }
 
         // 3. Build connecting Topology Links (PLM <-> Device and Peer <-> Peer)
+        string NormalizeEndpoint(string? addr)
+        {
+            if (string.IsNullOrWhiteSpace(addr) ||
+                addr.Equals("PLM Modem", StringComparison.OrdinalIgnoreCase) ||
+                addr.Equals("1A.2B.3C", StringComparison.OrdinalIgnoreCase) ||
+                addr.Equals(plmAddress, StringComparison.OrdinalIgnoreCase))
+            {
+                return plmAddress;
+            }
+            return addr;
+        }
+
         var linkPairs = records
             .Where(r => r.InUse && !string.IsNullOrWhiteSpace(r.TargetAddress))
             .GroupBy(r => {
-                string src = string.IsNullOrWhiteSpace(r.SourceAddress) ? plmAddress : r.SourceAddress;
-                string tgt = r.TargetAddress;
+                string src = NormalizeEndpoint(r.SourceAddress);
+                string tgt = NormalizeEndpoint(r.TargetAddress);
                 return string.Compare(src, tgt, StringComparison.OrdinalIgnoreCase) < 0
                     ? $"{src}|{tgt}|{r.Group}"
                     : $"{tgt}|{src}|{r.Group}";
@@ -2762,14 +2783,14 @@ public class MainViewModel : ViewModelBase
         foreach (var lg in linkPairs)
         {
             var firstRec = lg.First();
-            string endpointA = string.IsNullOrWhiteSpace(firstRec.SourceAddress) ? plmAddress : firstRec.SourceAddress;
-            string endpointB = firstRec.TargetAddress;
+            string endpointA = NormalizeEndpoint(firstRec.SourceAddress);
+            string endpointB = NormalizeEndpoint(firstRec.TargetAddress);
 
-            DeviceNode? nodeA = (endpointA.Equals("PLM Modem", StringComparison.OrdinalIgnoreCase) || endpointA.Equals("1A.2B.3C", StringComparison.OrdinalIgnoreCase) || endpointA.Equals(plmAddress, StringComparison.OrdinalIgnoreCase)) 
-                ? plmNode 
+            DeviceNode? nodeA = endpointA.Equals(plmAddress, StringComparison.OrdinalIgnoreCase)
+                ? plmNode
                 : (peerNodeMap.TryGetValue(endpointA, out var na) ? na : null);
-            DeviceNode? nodeB = (endpointB.Equals("PLM Modem", StringComparison.OrdinalIgnoreCase) || endpointB.Equals("1A.2B.3C", StringComparison.OrdinalIgnoreCase) || endpointB.Equals(plmAddress, StringComparison.OrdinalIgnoreCase)) 
-                ? plmNode 
+            DeviceNode? nodeB = endpointB.Equals(plmAddress, StringComparison.OrdinalIgnoreCase)
+                ? plmNode
                 : (peerNodeMap.TryGetValue(endpointB, out var nb) ? nb : null);
 
             if (nodeA == null || nodeB == null || nodeA == nodeB)
@@ -2777,25 +2798,50 @@ public class MainViewModel : ViewModelBase
                 continue;
             }
 
-            bool hasController = lg.Any(r => r.IsController);
-            bool hasResponder = lg.Any(r => r.IsResponder);
+            // Determine true control directionality between nodeA and nodeB on this Group:
+            // A controls B if A has a Controller record targeting B, OR B has a Responder record targeting A.
+            // B controls A if B has a Controller record targeting A, OR A has a Responder record targeting B.
+            bool aControlsB = lg.Any(r =>
+                (NormalizeEndpoint(r.SourceAddress).Equals(nodeA.Address, StringComparison.OrdinalIgnoreCase) && r.IsController) ||
+                (NormalizeEndpoint(r.SourceAddress).Equals(nodeB.Address, StringComparison.OrdinalIgnoreCase) && r.IsResponder));
 
-            LinkKind kind;
-            if (hasController && hasResponder)
+            bool bControlsA = lg.Any(r =>
+                (NormalizeEndpoint(r.SourceAddress).Equals(nodeB.Address, StringComparison.OrdinalIgnoreCase) && r.IsController) ||
+                (NormalizeEndpoint(r.SourceAddress).Equals(nodeA.Address, StringComparison.OrdinalIgnoreCase) && r.IsResponder));
+
+            TopologyLink link;
+            if (aControlsB && bControlsA)
             {
-                kind = LinkKind.CrossLinked;
+                // True bidirectional cross-link (both devices control and respond to each other on this group)
+                link = new TopologyLink(nodeA, nodeB, firstRec.Group, LinkKind.CrossLinked);
             }
-            else if (hasController)
+            else if (aControlsB)
             {
-                kind = LinkKind.Controller;
+                // 1-way link: nodeA is Controller -> nodeB is Responder
+                bool hasCtrlRec = lg.Any(r => NormalizeEndpoint(r.SourceAddress).Equals(nodeA.Address, StringComparison.OrdinalIgnoreCase) && r.IsController);
+                LinkKind defaultKind = (nodeB.IsModem || !hasCtrlRec) ? LinkKind.Responder : LinkKind.Controller;
+                link = new TopologyLink(nodeA, nodeB, firstRec.Group, defaultKind);
             }
             else
             {
-                kind = LinkKind.Responder;
+                // 1-way link: nodeB is Controller -> nodeA is Responder
+                bool hasCtrlRec = lg.Any(r => NormalizeEndpoint(r.SourceAddress).Equals(nodeB.Address, StringComparison.OrdinalIgnoreCase) && r.IsController);
+                LinkKind defaultKind = (nodeA.IsModem || !hasCtrlRec) ? LinkKind.Responder : LinkKind.Controller;
+                link = new TopologyLink(nodeB, nodeA, firstRec.Group, defaultKind);
             }
 
-            var link = new TopologyLink(nodeA, nodeB, firstRec.Group, kind);
             TopologyLinks.Add(link);
+        }
+
+        if (SelectedGraphNode != null)
+        {
+            var reselected = DeviceNodes.FirstOrDefault(n => n.Address.Equals(SelectedGraphNode.Address, StringComparison.OrdinalIgnoreCase));
+            if (reselected != null)
+            {
+                reselected.IsSelected = true;
+                _selectedGraphNode = reselected;
+                UpdateTopologyLinksPerspective(reselected);
+            }
         }
 
         ApplyMapNodeSearchFilter();

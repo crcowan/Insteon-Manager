@@ -36,12 +36,15 @@ public class TopologyLink : INotifyPropertyChanged
     private Geometry? _tailGeometry;
     private bool _isVisible = true;
 
+    private readonly LinkKind _defaultKind;
+
     public TopologyLink(DeviceNode source, DeviceNode target, int group, LinkKind kind)
     {
         _sourceNode = source;
         _targetNode = target;
         _group = group;
         _kind = kind;
+        _defaultKind = kind;
         _isVisible = _sourceNode.IsVisible && _targetNode.IsVisible;
 
         _sourceNode.PropertyChanged += OnNodePropertyChanged;
@@ -49,6 +52,38 @@ public class TopologyLink : INotifyPropertyChanged
 
         ApplyStyling();
         RecalculateGeometry();
+    }
+
+    /// <summary>
+    /// Updates the visual color/dash perspective when a node is selected on the topology map:
+    /// - For 1-way links:
+    ///   - If the selected node is the Controller (SourceNode), displays as Controls (Solid Blue).
+    ///   - If the selected node is the Responder (TargetNode), displays as Responds To (Dotted Green).
+    /// - Cross-linked bidirectional links always remain Cross-Linked (Dashed Gold).
+    /// </summary>
+    public void UpdatePerspective(DeviceNode? selectedNode)
+    {
+        if (_defaultKind == LinkKind.CrossLinked)
+        {
+            Kind = LinkKind.CrossLinked;
+            return;
+        }
+
+        if (selectedNode != null)
+        {
+            if (ReferenceEquals(selectedNode, SourceNode))
+            {
+                Kind = LinkKind.Controller;
+                return;
+            }
+            if (ReferenceEquals(selectedNode, TargetNode))
+            {
+                Kind = LinkKind.Responder;
+                return;
+            }
+        }
+
+        Kind = _defaultKind;
     }
 
     public bool IsVisible
@@ -180,29 +215,50 @@ public class TopologyLink : INotifyPropertyChanged
         private set => SetProperty(ref _tailGeometry, value);
     }
 
+    private string _tailColorHex = "#89B4FA";
+    private string _headColorHex = "#A6E3A1";
+
+    public string TailColorHex
+    {
+        get => _tailColorHex;
+        private set => SetProperty(ref _tailColorHex, value);
+    }
+
+    public string HeadColorHex
+    {
+        get => _headColorHex;
+        private set => SetProperty(ref _headColorHex, value);
+    }
+
     private void ApplyStyling()
     {
         switch (Kind)
         {
             case LinkKind.Controller:
-                StrokeHex = "#89B4FA"; // Sky Blue
+                StrokeHex = "#89B4FA"; // Solid Blue
+                TailColorHex = "#89B4FA"; // Blue Controller Tail
+                HeadColorHex = "#A6E3A1"; // Green Responder Head
                 StrokeDashArray = null; // Solid line
-                RelationshipLabel = $"Hub ➔ Controls (Grp {Group})";
-                TooltipText = $"HUB (Controller) controls {TargetNode.Address} (Responder) [Scene {Group}]. Arrow points into {TargetNode.Address}.";
+                RelationshipLabel = $"Controls ➔ (Grp {Group})";
+                TooltipText = $"{SourceNode.FriendlyName} ({SourceNode.Address}) [Controller] controls {TargetNode.FriendlyName} ({TargetNode.Address}) [Responder] on Group {Group}.";
                 break;
 
             case LinkKind.Responder:
-                StrokeHex = "#A6E3A1"; // Pastel Green
-                StrokeDashArray = new DoubleCollection { 3, 3 }; // Dotted line
-                RelationshipLabel = $"Keypad ➔ Controls Hub (Grp {Group})";
-                TooltipText = $"{TargetNode.Address} (Controller/Keypad) controls HUB (Responder) [Scene {Group}]. Arrow points into Hub.";
+                StrokeHex = "#A6E3A1"; // Dotted Green
+                TailColorHex = "#89B4FA"; // Blue Controller Tail
+                HeadColorHex = "#A6E3A1"; // Green Responder Head
+                StrokeDashArray = new DoubleCollection { 1.5, 2.0 }; // Dotted line
+                RelationshipLabel = $"Responds To (Grp {Group})";
+                TooltipText = $"{TargetNode.FriendlyName} ({TargetNode.Address}) [Responder] responds to {SourceNode.FriendlyName} ({SourceNode.Address}) [Controller] on Group {Group}.";
                 break;
 
             case LinkKind.CrossLinked:
-                StrokeHex = "#F9E2AF"; // Gold / Amber
-                StrokeDashArray = new DoubleCollection { 6, 3 }; // Dashed line
+                StrokeHex = "#F9E2AF"; // Dashed Gold
+                TailColorHex = "#F9E2AF";
+                HeadColorHex = "#F9E2AF"; // Gold Dual Heads
+                StrokeDashArray = new DoubleCollection { 4.5, 2.5 }; // Dashed line
                 RelationshipLabel = $"◀ 2-Way Peer ▶ (Grp {Group})";
-                TooltipText = $"{SourceNode.Address} and {TargetNode.Address} are bidirectional cross-linked peers. [Both control and respond to each other]";
+                TooltipText = $"{SourceNode.FriendlyName} ({SourceNode.Address}) and {TargetNode.FriendlyName} ({TargetNode.Address}) are bidirectional cross-linked peers on Group {Group}.";
                 break;
         }
     }
@@ -222,22 +278,9 @@ public class TopologyLink : INotifyPropertyChanged
 
     public void RecalculateGeometry()
     {
-        // 1. Identify Controller (Origin of command signal) vs Responder (Receiver of command signal)
-        DeviceNode controllerNode;
-        DeviceNode responderNode;
-
-        if (Kind == LinkKind.Responder)
-        {
-            // Peer is Controller, Hub is Responder
-            controllerNode = TargetNode;
-            responderNode = SourceNode;
-        }
-        else
-        {
-            // Hub is Controller, Peer is Responder (or primary in CrossLinked)
-            controllerNode = SourceNode;
-            responderNode = TargetNode;
-        }
+        // SourceNode is always the Controller (Origin of command signal) and TargetNode is the Responder (Receiver)
+        DeviceNode controllerNode = SourceNode;
+        DeviceNode responderNode = TargetNode;
 
         double cx1 = controllerNode.CenterX;
         double cy1 = controllerNode.CenterY;

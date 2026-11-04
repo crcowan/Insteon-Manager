@@ -673,8 +673,8 @@
 
                                                 <!-- B. Arrow Tail at Controller Node (initiates signal) -->
                                                 <Path Data="{Binding TailGeometry}"
-                                                      Stroke="{Binding StrokeHex}"
-                                                      Fill="{Binding StrokeHex}"
+                                                      Stroke="{Binding TailColorHex}"
+                                                      Fill="{Binding TailColorHex}"
                                                       StrokeThickness="2.4"
                                                       StrokeStartLineCap="Round"
                                                       StrokeEndLineCap="Round"
@@ -682,8 +682,8 @@
 
                                                 <!-- C. Arrow Head at Responder Node (receives signal) -->
                                                 <Path Data="{Binding HeadGeometry}"
-                                                      Fill="{Binding StrokeHex}"
-                                                      Stroke="{Binding StrokeHex}"
+                                                      Fill="{Binding HeadColorHex}"
+                                                      Stroke="{Binding HeadColorHex}"
                                                       StrokeThickness="1"
                                                       IsHitTestVisible="False" />
 
@@ -910,34 +910,61 @@
                             <Border HorizontalAlignment="Left" VerticalAlignment="Bottom"
                                     Margin="16" Background="#24273AE6" BorderBrush="#45475A" BorderThickness="1"
                                     CornerRadius="8" Padding="12" IsHitTestVisible="True">
-                                <StackPanel Width="230">
+                                <StackPanel Width="245">
                                     <TextBlock Text="Topology Legend" FontWeight="Bold" FontSize="12" Foreground="{StaticResource TextPrimary}" Margin="0,0,0,8" />
                                     
-                                    <!-- Controller Link -->
-                                    <StackPanel Orientation="Horizontal" Margin="0,2">
-                                        <Line X1="0" Y1="6" X2="24" Y2="6" Stroke="#89B4FA" StrokeThickness="3" Margin="0,0,8,0" VerticalAlignment="Center" />
-                                        <TextBlock Text="Controls (Solid Blue)" FontSize="11" Foreground="{StaticResource TextMuted}" />
+                                    <!-- Controller Link (Solid Blue) -->
+                                    <StackPanel Orientation="Horizontal" Margin="0,3" VerticalAlignment="Center">
+                                        <Line X1="0" Y1="6" X2="32" Y2="6" Stroke="#89B4FA" StrokeThickness="2.5" Margin="0,0,8,0" VerticalAlignment="Center" />
+                                        <TextBlock Text="Controls (Solid Blue)" FontSize="11" Foreground="{StaticResource TextPrimary}" VerticalAlignment="Center" />
                                     </StackPanel>
 
-                                    <!-- Responder Link -->
-                                    <StackPanel Orientation="Horizontal" Margin="0,2">
-                                        <Line X1="0" Y1="6" X2="24" Y2="6" Stroke="#A6E3A1" StrokeThickness="3" StrokeDashArray="3 3" Margin="0,0,8,0" VerticalAlignment="Center" />
-                                        <TextBlock Text="Responds To (Dotted Green)" FontSize="11" Foreground="{StaticResource TextMuted}" />
+                                    <!-- Responder Link (Dotted Green) -->
+                                    <StackPanel Orientation="Horizontal" Margin="0,3" VerticalAlignment="Center">
+                                        <Line X1="0" Y1="6" X2="32" Y2="6" Stroke="#A6E3A1" StrokeThickness="2.5" StrokeDashArray="1.2 1.6" Margin="0,0,8,0" VerticalAlignment="Center" />
+                                        <TextBlock Text="Responds To (Dotted Green)" FontSize="11" Foreground="{StaticResource TextPrimary}" VerticalAlignment="Center" />
                                     </StackPanel>
 
-                                    <!-- Cross-Linked -->
-                                    <StackPanel Orientation="Horizontal" Margin="0,2">
-                                        <Line X1="0" Y1="6" X2="24" Y2="6" Stroke="#F9E2AF" StrokeThickness="3" StrokeDashArray="6 3" Margin="0,0,8,0" VerticalAlignment="Center" />
-                                        <TextBlock Text="Cross-Linked (Dashed Gold)" FontSize="11" Foreground="{StaticResource TextMuted}" />
+                                    <!-- Cross-Linked (Dashed Gold) -->
+                                    <StackPanel Orientation="Horizontal" Margin="0,3" VerticalAlignment="Center">
+                                        <Line X1="0" Y1="6" X2="32" Y2="6" Stroke="#F9E2AF" StrokeThickness="2.5" StrokeDashArray="2.4 1.5" Margin="0,0,8,0" VerticalAlignment="Center" />
+                                        <TextBlock Text="Cross-Linked (Dashed Gold)" FontSize="11" Foreground="{StaticResource TextPrimary}" VerticalAlignment="Center" />
                                     </StackPanel>
 
-                                    <!-- Directional Markers -->
-                                    <Border Background="#181825" CornerRadius="4" Padding="6,4" Margin="0,6,0,4">
+                                    <!-- Directional Markers (Exact Vector Geometry) -->
+                                    <Border Background="#181825" CornerRadius="4" Padding="8,6" Margin="0,6,0,4">
                                         <StackPanel>
-                                            <TextBlock Text="Directional Markers:" FontWeight="SemiBold" FontSize="10" Foreground="{StaticResource TextPrimary}" Margin="0,0,0,2" />
-                                            <TextBlock Text="⤚ Arrow Tail  = Controller (Initiator)" FontSize="9.5" Foreground="{StaticResource AccentBlue}" Margin="0,1" />
-                                            <TextBlock Text="▶ Arrow Head  = Responder (Receiver)" FontSize="9.5" Foreground="{StaticResource AccentGreen}" Margin="0,1" />
-                                            <TextBlock Text="◀▶ Dual Heads = Peer-to-Peer" FontSize="9.5" Foreground="{StaticResource AccentAmber}" Margin="0,1" />
+                                            <TextBlock Text="Directional Markers:" FontWeight="SemiBold" FontSize="10" Foreground="{StaticResource TextPrimary}" Margin="0,0,0,4" />
+
+                                            <!-- Arrow Tail: Stop Bar + Dot + Forward Chevron (Blue) -->
+                                            <StackPanel Orientation="Horizontal" Margin="0,2" VerticalAlignment="Center">
+                                                <Canvas Width="26" Height="14" Margin="0,0,6,0" VerticalAlignment="Center">
+                                                    <Line X1="2" Y1="2" X2="2" Y2="12" Stroke="#89B4FA" StrokeThickness="2" />
+                                                    <Ellipse Canvas.Left="4" Canvas.Top="4.5" Width="5" Height="5" Fill="#89B4FA" />
+                                                    <Path Data="M 11,2.5 L 17,7 L 11,11.5" Stroke="#89B4FA" StrokeThickness="2" StrokeStartLineCap="Round" StrokeEndLineCap="Round" />
+                                                    <Line X1="17" Y1="7" X2="24" Y2="7" Stroke="#89B4FA" StrokeThickness="1.8" />
+                                                </Canvas>
+                                                <TextBlock Text="Arrow Tail = Controller (Initiator)" FontSize="9.5" Foreground="{StaticResource AccentBlue}" VerticalAlignment="Center" />
+                                            </StackPanel>
+
+                                            <!-- Arrow Head: Filled Triangle (Green) -->
+                                            <StackPanel Orientation="Horizontal" Margin="0,2" VerticalAlignment="Center">
+                                                <Canvas Width="26" Height="14" Margin="0,0,6,0" VerticalAlignment="Center">
+                                                    <Line X1="2" Y1="7" X2="13" Y2="7" Stroke="#A6E3A1" StrokeThickness="2" StrokeDashArray="1.2 1.2" />
+                                                    <Polygon Points="13,2 23,7 13,12" Fill="#A6E3A1" />
+                                                </Canvas>
+                                                <TextBlock Text="Arrow Head = Responder (Receiver)" FontSize="9.5" Foreground="{StaticResource AccentGreen}" VerticalAlignment="Center" />
+                                            </StackPanel>
+
+                                            <!-- Dual Heads: Opposing Filled Triangles (Gold) -->
+                                            <StackPanel Orientation="Horizontal" Margin="0,2" VerticalAlignment="Center">
+                                                <Canvas Width="26" Height="14" Margin="0,0,6,0" VerticalAlignment="Center">
+                                                    <Polygon Points="9,2 1,7 9,12" Fill="#F9E2AF" />
+                                                    <Line X1="9" Y1="7" X2="17" Y2="7" Stroke="#F9E2AF" StrokeThickness="2" StrokeDashArray="1.5 1" />
+                                                    <Polygon Points="17,2 25,7 17,12" Fill="#F9E2AF" />
+                                                </Canvas>
+                                                <TextBlock Text="Dual Heads = 2-Way Peer-to-Peer" FontSize="9.5" Foreground="{StaticResource AccentAmber}" VerticalAlignment="Center" />
+                                            </StackPanel>
                                         </StackPanel>
                                     </Border>
 
