@@ -117,7 +117,22 @@ public class MainViewModel : ViewModelBase
         ResetLayoutCommand = new RelayCommand(ResetLayout);
         SpreadLayoutCommand = new RelayCommand(SpreadLayout);
         ClearLogsCommand = new RelayCommand(ClearLogs);
-        GoToPendingChangesCommand = new RelayCommand(() => SelectedTabIndex = 4);
+        GoToPendingChangesCommand = new RelayCommand(() => IsPendingDrawerOpen = !IsPendingDrawerOpen);
+        ClosePendingDrawerCommand = new RelayCommand(() => IsPendingDrawerOpen = false);
+        ToggleLogDrawerCommand = new RelayCommand(() => IsLogDrawerOpen = !IsLogDrawerOpen);
+        GoToHealthWorkspaceCommand = new RelayCommand(() => { SelectedTabIndex = 3; HealthSubViewIndex = 0; });
+        SetDevicesSubViewCommand = new RelayCommand<string>(param =>
+        {
+            if (int.TryParse(param, out int idx)) DevicesSubViewIndex = idx;
+        });
+        SetHealthSubViewCommand = new RelayCommand<string>(param =>
+        {
+            if (int.TryParse(param, out int idx)) HealthSubViewIndex = idx;
+        });
+        SetSceneViewModeCommand = new RelayCommand<string>(mode =>
+        {
+            IsSceneMatrixView = string.Equals(mode, "matrix", StringComparison.OrdinalIgnoreCase);
+        });
         CommitStagedChangesCommand = new AsyncRelayCommand(CommitStagedChangesAsync, () => StagedChanges.Count > 0 && !IsLoading);
         DiscardStagedChangesCommand = new RelayCommand(DiscardStagedChanges);
         RemoveStagedChangeCommand = new RelayCommand(obj =>
@@ -625,6 +640,12 @@ public class MainViewModel : ViewModelBase
     public RelayCommand SpreadLayoutCommand { get; }
     public RelayCommand ClearLogsCommand { get; }
     public RelayCommand GoToPendingChangesCommand { get; }
+    public RelayCommand ClosePendingDrawerCommand { get; }
+    public RelayCommand ToggleLogDrawerCommand { get; }
+    public RelayCommand GoToHealthWorkspaceCommand { get; }
+    public RelayCommand<string> SetDevicesSubViewCommand { get; }
+    public RelayCommand<string> SetHealthSubViewCommand { get; }
+    public RelayCommand<string> SetSceneViewModeCommand { get; }
     public RelayCommand StageUndoLastChangeCommand { get; }
     public RelayCommand StagePurgeGhostTargetCommand { get; }
     public RelayCommand StageAddDeviceToSceneCommand { get; }
@@ -705,6 +726,66 @@ public class MainViewModel : ViewModelBase
         set => SetProperty(ref _selectedTabIndex, value);
     }
 
+    private int _devicesSubViewIndex = 0;
+    public int DevicesSubViewIndex
+    {
+        get => _devicesSubViewIndex;
+        set
+        {
+            if (SetProperty(ref _devicesSubViewIndex, value))
+            {
+                OnPropertyChanged(nameof(IsDevicesInspectorView));
+                OnPropertyChanged(nameof(IsDevicesRawTableView));
+                OnPropertyChanged(nameof(IsDevicesToolsView));
+            }
+        }
+    }
+
+    public bool IsDevicesInspectorView => DevicesSubViewIndex == 0;
+    public bool IsDevicesRawTableView => DevicesSubViewIndex == 1;
+    public bool IsDevicesToolsView => DevicesSubViewIndex == 2;
+
+    private int _healthSubViewIndex = 0;
+    public int HealthSubViewIndex
+    {
+        get => _healthSubViewIndex;
+        set
+        {
+            if (SetProperty(ref _healthSubViewIndex, value))
+            {
+                OnPropertyChanged(nameof(IsHealthAnalyzerView));
+                OnPropertyChanged(nameof(IsHealthAuditGhostView));
+            }
+        }
+    }
+
+    public bool IsHealthAnalyzerView => HealthSubViewIndex == 0;
+    public bool IsHealthAuditGhostView => HealthSubViewIndex == 1;
+
+    private bool _isPendingDrawerOpen;
+    public bool IsPendingDrawerOpen
+    {
+        get => _isPendingDrawerOpen;
+        set => SetProperty(ref _isPendingDrawerOpen, value);
+    }
+
+    private bool _isLogDrawerOpen;
+    public bool IsLogDrawerOpen
+    {
+        get => _isLogDrawerOpen;
+        set
+        {
+            if (SetProperty(ref _isLogDrawerOpen, value))
+            {
+                OnPropertyChanged(nameof(LogDrawerButtonText));
+            }
+        }
+    }
+
+    public string LogDrawerButtonText => IsLogDrawerOpen
+        ? $"▼ Hide Event Log ({LogEntries.Count})"
+        : $"▲ Live Event Log ({LogEntries.Count})";
+
     public AsyncRelayCommand<string> ControlDeviceCommand { get; }
     public AsyncRelayCommand<string> ControlSelectedNodeCommand { get; }
     public AsyncRelayCommand<string> QuickTriggerSceneCommand { get; }
@@ -776,7 +857,7 @@ public class MainViewModel : ViewModelBase
         NotifyUndoChanged();
         StatusMessage = $"Staged undo operation: {undo.Description}. Review in Pending Changes.";
         AddLog(LogLevel.Info, "Undo", $"Staged undo operation '{undo.Description}' ({undo.UndoChange.Id}).");
-        SelectedTabIndex = 4;
+        IsPendingDrawerOpen = true;
     }
     public ObservableCollection<MissingDefaultLinkItemModel> MissingDefaultLinks { get; }
     public ObservableCollection<DeviceCategoryOption> DeviceCategoryOptions { get; }
@@ -1513,6 +1594,7 @@ public class MainViewModel : ViewModelBase
         {
             LogEntries.RemoveAt(LogEntries.Count - 1);
         }
+        OnPropertyChanged(nameof(LogDrawerButtonText));
     }
 
     public void ClearLogs()
@@ -2727,7 +2809,8 @@ public class MainViewModel : ViewModelBase
         if (node == null) return;
         SelectGraphNode(node);
         NewLinkControllerAddress = node.Address;
-        SelectedTabIndex = 6;
+        SelectedTabIndex = 1;
+        DevicesSubViewIndex = 2;
         StatusMessage = $"Selected {node.FriendlyName} ({node.Address}) as Controller in Link Creator.";
         AddLog(LogLevel.Info, "UI", $"Selected {node.FriendlyName} ({node.Address}) as Controller in Link Creator.");
     }
@@ -2737,7 +2820,8 @@ public class MainViewModel : ViewModelBase
         if (node == null) return;
         SelectGraphNode(node);
         NewLinkResponderAddress = node.Address;
-        SelectedTabIndex = 6;
+        SelectedTabIndex = 1;
+        DevicesSubViewIndex = 2;
         StatusMessage = $"Selected {node.FriendlyName} ({node.Address}) as Responder in Link Creator.";
         AddLog(LogLevel.Info, "UI", $"Selected {node.FriendlyName} ({node.Address}) as Responder in Link Creator.");
     }
@@ -2747,7 +2831,8 @@ public class MainViewModel : ViewModelBase
         if (node == null) return;
         SelectGraphNode(node);
         ReplaceOldDeviceAddress = node.Address;
-        SelectedTabIndex = 6;
+        SelectedTabIndex = 1;
+        DevicesSubViewIndex = 2;
         StatusMessage = $"Selected {node.FriendlyName} ({node.Address}) as device to replace.";
         AddLog(LogLevel.Info, "UI", $"Selected {node.FriendlyName} ({node.Address}) as device to replace.");
     }
@@ -2761,6 +2846,7 @@ public class MainViewModel : ViewModelBase
         }
         RebuildOrganizedAldbView();
         SelectedTabIndex = 1;
+        DevicesSubViewIndex = 0;
         StatusMessage = $"Inspecting ALDB records for {address}.";
         AddLog(LogLevel.Info, "UI", $"Switched to ALDB Inspector for device {address}.");
     }
@@ -2810,7 +2896,7 @@ public class MainViewModel : ViewModelBase
         StagedChanges.Add(staged);
         StatusMessage = $"Staged reciprocal link between {ctrlName} and {respName}. Review in Pending Changes.";
         AddLog(LogLevel.Info, "Staging", $"Staged reciprocal link creation for {ctrlAddr} <-> {respAddr} (Group {grp}).");
-        SelectedTabIndex = 4;
+        IsPendingDrawerOpen = true;
         CommitStagedChangesCommand?.NotifyCanExecuteChanged();
     }
 
@@ -2861,7 +2947,7 @@ public class MainViewModel : ViewModelBase
         StagedChanges.Add(staged);
         StatusMessage = $"Staged preset update for link to {link.ResponderFriendlyName}. Review in Pending Changes.";
         AddLog(LogLevel.Info, "Staging", $"Staged preset update for link {link.ControllerAddress} -> {link.ResponderAddress} (Grp {link.Group}): Level={level}, Ramp={ramp}.");
-        SelectedTabIndex = 4;
+        IsPendingDrawerOpen = true;
         CommitStagedChangesCommand?.NotifyCanExecuteChanged();
     }
 
@@ -2911,7 +2997,7 @@ public class MainViewModel : ViewModelBase
         StagedChanges.Add(staged);
         StatusMessage = $"Staged link deletion between {ctrlName} and {respName}. Review in Pending Changes.";
         AddLog(LogLevel.Warning, "Staging", $"Staged link deletion for {ctrlAddr} <-> {respAddr} (Group {grp}).");
-        SelectedTabIndex = 4;
+        IsPendingDrawerOpen = true;
         CommitStagedChangesCommand?.NotifyCanExecuteChanged();
     }
 
@@ -2956,7 +3042,7 @@ public class MainViewModel : ViewModelBase
         StagedChanges.Add(staged);
         StatusMessage = $"Staged replacement of {oldName} with {newName}. Review in Pending Changes.";
         AddLog(LogLevel.Warning, "Staging", $"Staged device replacement: {oldAddr} -> {newAddr}.");
-        SelectedTabIndex = 4;
+        IsPendingDrawerOpen = true;
         CommitStagedChangesCommand?.NotifyCanExecuteChanged();
     }
 
@@ -3488,7 +3574,7 @@ public class MainViewModel : ViewModelBase
         IsAddingMemberToScene = false;
         StatusMessage = $"Staged adding {dev.FriendlyName} to {sceneTitle}. Review in Pending Changes.";
         AddLog(LogLevel.Info, "Staging", $"Staged adding {dev.FriendlyName} ({dev.Address}) to {sceneTitle}.");
-        SelectedTabIndex = 4;
+        IsPendingDrawerOpen = true;
     }
 
     public void StageRemoveMemberFromScene(SceneMemberModel? member)
@@ -3518,7 +3604,7 @@ public class MainViewModel : ViewModelBase
         StagedChanges.Add(staged);
         StatusMessage = $"Staged removal of {memLabel} from {sceneTitle}. Review in Pending Changes.";
         AddLog(LogLevel.Warning, "Staging", $"Staged removal of {memLabel} ({memAddr}) from {sceneTitle}.");
-        SelectedTabIndex = 4;
+        IsPendingDrawerOpen = true;
     }
 
     public void StageDeleteScene()
@@ -3547,7 +3633,7 @@ public class MainViewModel : ViewModelBase
         StagedChanges.Add(staged);
         StatusMessage = $"Staged deletion of {sceneTitle}. Review in Pending Changes.";
         AddLog(LogLevel.Warning, "Staging", $"Staged deletion of {sceneTitle} (Group {grp}).");
-        SelectedTabIndex = 4;
+        IsPendingDrawerOpen = true;
     }
 
     public void StagePurgeSelectedGhostTarget()
@@ -3581,7 +3667,7 @@ public class MainViewModel : ViewModelBase
         StagedChanges.Add(staged);
         StatusMessage = $"Staged network-wide ghost purge for {targetAddr}. Review in Pending Changes.";
         AddLog(LogLevel.Warning, "Staging", $"Staged ghost link purge for {targetAddr}.");
-        SelectedTabIndex = 4;
+        IsPendingDrawerOpen = true;
     }
 
     public async Task AddDeviceToSceneNowAsync()
@@ -4171,7 +4257,8 @@ public class MainViewModel : ViewModelBase
         AdjustLinkOnLevel = entry.Data1;
         AdjustLinkRampRate = entry.Data2;
 
-        SelectedTabIndex = 6; // Switch to Tab 7 (Tools & Maintenance)
+        SelectedTabIndex = 1;
+        DevicesSubViewIndex = 2;
         StatusMessage = $"Loaded preset for {entry.OwnerFriendlyName} (Group {entry.Group}) in Live Link Preset Adjuster.";
         AddLog(LogLevel.Info, "UI", $"Loaded preset for slot {entry.MemAddr} on {entry.OwnerAddress} in Live Link Preset Adjuster.");
     }
@@ -4288,6 +4375,7 @@ public class MainViewModel : ViewModelBase
             };
 
             StagedChanges.Add(stagedSlot);
+            IsPendingDrawerOpen = true;
             StatusMessage = $"Staged cleanup of slot {memAddr} on {entry.OwnerFriendlyName}. Review in Pending Changes.";
             AddLog(LogLevel.Info, "Staging", $"Staged deletion of ALDB slot {memAddr} on {ownerAddr}.");
             await Task.CompletedTask;
@@ -4352,6 +4440,7 @@ public class MainViewModel : ViewModelBase
         };
 
         StagedChanges.Add(stagedLink);
+        IsPendingDrawerOpen = true;
         StatusMessage = $"Staged deletion of link {ctrlAddr} <-> {respAddr} (Group {group}). Review in Pending Changes.";
         AddLog(LogLevel.Info, "Staging", $"Staged reciprocal link deletion: {ctrlAddr} <-> {respAddr} (Group {group}).");
         await Task.CompletedTask;
@@ -4586,7 +4675,7 @@ public class MainViewModel : ViewModelBase
         if (StagedChanges.Any(c => c.TargetAddress.Contains(devAddr) && c.Operation == "CREATE_DEFAULT_PLM_LINK"))
         {
             StatusMessage = $"Default link for {name} ({devAddr}) is already staged.";
-            if (switchTab) SelectedTabIndex = 4;
+            if (switchTab) IsPendingDrawerOpen = true;
             return;
         }
 
@@ -4635,7 +4724,7 @@ public class MainViewModel : ViewModelBase
         StagedChanges.Add(staged);
         StatusMessage = $"Staged default PLM link pair for {name} ({devAddr}). Review in Pending Changes.";
         AddLog(LogLevel.Info, "Staging", $"Staged default PLM link pair: {plm} <-> {devAddr} (Group 0 Auth + Group 1 Status).");
-        if (switchTab) SelectedTabIndex = 4;
+        if (switchTab) IsPendingDrawerOpen = true;
         CommitStagedChangesCommand?.NotifyCanExecuteChanged();
     }
 
@@ -4758,7 +4847,7 @@ public class MainViewModel : ViewModelBase
 
         StatusMessage = $"Staged {count} default PLM link pairs in Pending Changes.";
         AddLog(LogLevel.Info, "Staging", $"Batch-staged default reciprocal PLM links for {count} devices.");
-        SelectedTabIndex = 4;
+        IsPendingDrawerOpen = true;
         CommitStagedChangesCommand?.NotifyCanExecuteChanged();
     }
 
@@ -4806,7 +4895,7 @@ public class MainViewModel : ViewModelBase
         StagedChanges.Add(staged);
         StatusMessage = $"Staged device registration for {name} ({cleanAddr}). Review in Pending Changes.";
         AddLog(LogLevel.Info, "Staging", $"Staged new device registration: {cleanAddr} ({name}).");
-        SelectedTabIndex = 4;
+        IsPendingDrawerOpen = true;
         CommitStagedChangesCommand?.NotifyCanExecuteChanged();
     }
 
@@ -5317,7 +5406,7 @@ public class MainViewModel : ViewModelBase
         StagedChanges.Add(staged);
         StatusMessage = $"Staged fix for {issue.Summary}. Review in Pending Changes.";
         AddLog(LogLevel.Info, "Staging", $"Staged fix for {issue.Summary}.");
-        SelectedTabIndex = 4;
+        IsPendingDrawerOpen = true;
         CommitStagedChangesCommand?.NotifyCanExecuteChanged();
     }
 
@@ -5387,7 +5476,7 @@ public class MainViewModel : ViewModelBase
         StagedChanges.Add(staged);
         StatusMessage = $"Staged '{issue.SecondaryLabel}' for {issue.OwnerName}. Review in Pending Changes.";
         AddLog(LogLevel.Info, "Staging", $"Staged secondary analyzer action for {issue.Summary}.");
-        SelectedTabIndex = 4;
+        IsPendingDrawerOpen = true;
         CommitStagedChangesCommand?.NotifyCanExecuteChanged();
     }
 
@@ -5470,7 +5559,7 @@ public class MainViewModel : ViewModelBase
 
         StatusMessage = $"Staged {count} analyzer fixes in Pending Changes.";
         AddLog(LogLevel.Info, "Staging", $"Staged {count} analyzer fixes for network repair.");
-        SelectedTabIndex = 4;
+        IsPendingDrawerOpen = true;
     }
 }
 
