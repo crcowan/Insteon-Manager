@@ -1,6 +1,152 @@
-# Insteon Manager: Network Topology, Diagnostics & ALDB Management Suite
+# Insteon Network Studio: Topology, Diagnostics & ALDB Management Suite
 
-An enterprise-grade, decoupled management suite for Insteon dual-mesh home automation networks. Designed to bypass the operational and diagnostic limitations of generic smart-home platforms while guaranteeing physical EEPROM integrity, high network performance, and rock-solid system stability.
+An enterprise-grade, decoupled desktop and bridge management suite for Insteon dual-mesh (Powerline + RF) smart home networks. Designed to bypass the operational and diagnostic limitations of generic smart-home platforms while guaranteeing physical EEPROM integrity, high network performance, and rock-solid system stability.
+
+---
+
+## 📑 Table of Contents
+1. [📦 Download & Installation Guide (No Compiling Required)](#-download--installation-guide-no-compiling-required)
+   - [Prerequisites](#-prerequisites)
+   - [Part 1: Install the Raspberry Pi Bridge (`InsteonBridge-RaspberryPi`)](#part-1-install-the-raspberry-pi-bridge-insteonbridge-raspberrypi)
+   - [Part 2: Install the Windows PC Studio (`InsteonManager-Windows-x64`)](#part-2-install-the-windows-pc-studio-insteonmanager-windows-x64)
+   - [Part 3: First-Run Connection & Network Discovery](#part-3-first-run-connection--network-discovery)
+   - [Upgrading an Existing Installation](#-upgrading-an-existing-installation)
+2. [🖥️ Studio Workspaces & User Interface Architecture](#️-studio-workspaces--user-interface-architecture)
+3. [🏛️ Key Architectural Decisions & Engineering Principles](#️-key-architectural-decisions--engineering-principles)
+4. [🏗️ System Architecture](#️-system-architecture)
+5. [🛠️ Building & Packaging from Source (For Developers)](#️-building--packaging-from-source-for-developers)
+6. [🔒 Safety & Operational Guarantees](#-safety--operational-guarantees)
+
+---
+
+## 📦 Download & Installation Guide (No Compiling Required)
+
+Pre-built, ready-to-run release packages for both the **Windows 10/11 Desktop Studio** and the **Raspberry Pi Bridge Service** are available directly on the [**GitHub Releases**](https://github.com/crcowan/Insteon-Manager/releases/latest) page. **You do not need to install compilers, Visual Studio, or the .NET SDK/Runtime to use this application.**
+
+### ✅ Prerequisites
+* **Raspberry Pi / Linux Host:** Raspberry Pi 3, 4, or 5 (running Raspberry Pi OS, openHABian, Debian, or Ubuntu) with a physical **Insteon PLM Modem** (`2413U` USB, `2413S` Serial, or `2448A7` USB Stick) connected.
+* **Windows PC:** Windows 10 or Windows 11 (64-bit / `x64`) connected to the same local network (LAN) as your Raspberry Pi.
+
+---
+
+### Part 1: Install the Raspberry Pi Bridge (`InsteonBridge-RaspberryPi`)
+
+The Raspberry Pi Bridge runs as a lightweight background `systemd` service (`/opt/insteon-bridge`) on port `8000`. It arbitrates hardware access to the USB PLM modem with openHAB (or runs standalone) and executes verified powerline/RF transactions.
+
+Choose **any one** of the three installation methods below:
+
+#### Option A: 1-Line Turnkey Install Directly on the Raspberry Pi *(Recommended)*
+Open an SSH session or terminal on your Raspberry Pi and run:
+```bash
+curl -sSL https://github.com/crcowan/Insteon-Manager/releases/latest/download/InsteonBridge-RaspberryPi.tar.gz | tar -xz && cd InsteonBridge-RaspberryPi && sudo bash install_pi.sh
+```
+The installer will automatically:
+1. Ensure Python 3 `venv` and `pip` are installed on your Raspberry Pi.
+2. Install the FastAPI bridge application into `/opt/insteon-bridge` and create an isolated Python virtual environment (`.venv`).
+3. Prompt you for your openHAB URL, API Token, Insteon Thing UID, and USB PLM serial port (or preserve your existing `/opt/insteon-bridge/.env` if upgrading).
+4. Grant serial port permissions (`dialout` group) to your Linux user.
+5. Register, enable, and start the `insteon-bridge.service` background daemon via `systemd`.
+
+#### Option B: 1-Click Remote Push Installer from Your Windows PC *(No Linux Terminal Needed)*
+If you prefer to push the installation directly from your Windows PC over SSH:
+1. Download [**`InsteonBridge-RaspberryPi.zip`**](https://github.com/crcowan/Insteon-Manager/releases/latest/download/InsteonBridge-RaspberryPi.zip) from the [Latest GitHub Release](https://github.com/crcowan/Insteon-Manager/releases/latest) and extract it on your Windows PC.
+2. Double-click **`Install-PiBridge-From-PC.cmd`** inside the extracted folder.
+3. Follow the on-screen prompts to enter your Raspberry Pi hostname/IP (default: `openhabian5`), SSH username (default: `openhabian`), and optional openHAB settings.
+4. The script will upload all bridge files via `scp` and run the automated `systemd` service installer on your Raspberry Pi.
+
+#### Option C: Manual Archive Download & Install on the Raspberry Pi
+1. Download [**`InsteonBridge-RaspberryPi.tar.gz`**](https://github.com/crcowan/Insteon-Manager/releases/latest/download/InsteonBridge-RaspberryPi.tar.gz) from the [Latest GitHub Release](https://github.com/crcowan/Insteon-Manager/releases/latest) onto your Raspberry Pi.
+2. Extract and run the installer:
+   ```bash
+   tar -xzf InsteonBridge-RaspberryPi.tar.gz
+   cd InsteonBridge-RaspberryPi
+   sudo bash install_pi.sh
+   ```
+
+#### ⚙️ Configuring `/opt/insteon-bridge/.env` on the Raspberry Pi
+If you skipped the interactive prompts during installation or need to update your settings later, edit `/opt/insteon-bridge/.env`:
+```bash
+sudo nano /opt/insteon-bridge/.env
+```
+Key settings in `/opt/insteon-bridge/.env`:
+| Variable | Default / Example | Description |
+|---|---|---|
+| `OPENHAB_URL` | `http://localhost:8080` | URL of your local openHAB server. |
+| `OPENHAB_TOKEN` | `oh.insteonbridge.xxxx` | Generate in openHAB UI: click your **Profile (bottom-left)** → **Create new API Token**. |
+| `OPENHAB_THING_UID` | `insteon:network:local` | Your openHAB Insteon Bridge Thing UID (found in openHAB UI under **Settings → Things**). |
+| `INSTEON_PORT` | `/dev/ttyUSB0` | Serial port of your USB PLM (tip: check `ls -l /dev/serial/by-id/` for a persistent path). |
+| `PORT` | `8000` | Port exposed by the Insteon Bridge HTTP API. |
+
+After editing `/opt/insteon-bridge/.env`, restart the service:
+```bash
+sudo systemctl restart insteon-bridge
+sudo systemctl status insteon-bridge
+```
+
+---
+
+### Part 2: Install the Windows PC Studio (`InsteonManager-Windows-x64`)
+
+The Windows Desktop application is packaged as a **100% self-contained single-file executable (`InsteonManager.exe`)**. All required .NET 10 and WPF native libraries are bundled directly inside the executable—nothing else needs to be installed.
+
+1. **Download the Windows Release ZIP:**
+   Download [**`InsteonManager-Windows-x64.zip`**](https://github.com/crcowan/Insteon-Manager/releases/latest/download/InsteonManager-Windows-x64.zip) from the [Latest GitHub Release](https://github.com/crcowan/Insteon-Manager/releases/latest).
+2. **Extract to a Permanent Folder:**
+   Right-click `InsteonManager-Windows-x64.zip` → **Extract All...** and extract it to a permanent folder on your PC (for example, `C:\InsteonManager` or `C:\Users\<YourName>\AppData\Local\InsteonManager`).
+   > **Tip:** Before extracting, you can right-click the downloaded `.zip` file → **Properties** → check **Unblock** (at the bottom) → **Apply** so Windows does not show a SmartScreen prompt on first launch.
+3. **Create the Desktop Shortcut (1 Click):**
+   Open the extracted folder and double-click **`Install-DesktopShortcut.cmd`**.
+   This automatically places an **Insteon Manager** shortcut (with the custom studio icon) directly onto your Windows Desktop.
+4. **Launch Insteon Network Studio:**
+   Double-click the **Insteon Manager** icon on your Desktop (or run `InsteonManager.exe` directly from the folder).
+
+---
+
+### Part 3: First-Run Connection & Network Discovery
+
+1. **Connect to Your Raspberry Pi Bridge:**
+   * Look at the top-right corner of the **Insteon Network Studio** window.
+   * In the **`Bridge:`** text box, enter the IP address or hostname of your Raspberry Pi on port `8000`:
+     ```text
+     http://openhabian5:8000
+     ```
+     *(or e.g. `http://192.168.1.50:8000` — the exact URL is printed at the end of `install_pi.sh`)*.
+   * Click **`Test Link`**. The status bar will confirm connectivity and load your cached network snapshot in **`👁️ BROWSE MODE (Read-Only Cache)`** (leaving openHAB `ONLINE` and uninterrupted).
+2. **Initial Hardware Crawl (First-Time Setup Only):**
+   * If you are setting up the bridge for the very first time and have not yet scanned your Insteon network:
+     1. Click **`🛠️ Enter Manage Mode`** in the top command bar. The bridge will safely pause your openHAB Insteon Thing and lock `/dev/ttyUSB0`.
+     2. Navigate to the **`🔌 Devices & Links`** workspace and click **`🔄 Crawl Hardware`**.
+     3. Once the hardware scan finishes, click **`👁️ Return to Browse Mode`** to immediately hand the USB PLM back to openHAB!
+
+---
+
+### 🔄 Upgrading an Existing Installation
+
+* **Upgrading the Windows PC Studio:**
+  Close `InsteonManager.exe`, download the latest [`InsteonManager-Windows-x64.zip`](https://github.com/crcowan/Insteon-Manager/releases/latest/download/InsteonManager-Windows-x64.zip), and extract/overwrite the files in your installation folder. Your layout and UI settings (`node_positions.json` and `ui_settings.json`) are preserved automatically.
+* **Upgrading the Raspberry Pi Bridge:**
+  Re-run the 1-line installer on the Raspberry Pi (or run `Install-PiBridge-From-PC.cmd` on Windows). The installer preserves your existing `/opt/insteon-bridge/.env` and cached `network_snapshot.json` while updating the Python application and restarting `insteon-bridge.service`.
+
+---
+
+## 🖥️ Studio Workspaces & User Interface Architecture
+
+**Insteon Network Studio** separates **Browse Mode** (`👁️ BROWSE MODE (Read-Only Cache)` — full exploration and change staging while openHAB stays `ONLINE`) from **Manage Mode** (`🛠️ MANAGE MODE (Live Hardware Exclusive)` — exclusive PLM hardware lock for live powerline commands and verified EEPROM commits, with automatic escalation prompts when needed).
+
+### 4 Primary Workspaces
+| Workspace | Sub-Views & Capabilities | Description |
+|---|---|---|
+| **1. `🌐 Network Overview`** | **Interactive Topology Map & Node Inspector Sidebar** | Node-and-link canvas with directional link encoding (**Solid Blue** `Controls`, **Dotted Green** `Responds To`, **Dashed Gold** `Cross-Linked`, vector Arrow Tail/Head markers, and dynamic selected-node perspective), hardware identity ribbons, and 1-click navigation to Device Inspector or Link Tools. |
+| **2. `🔌 Devices & Links`** | **• `🗂️ Organized Device Inspector`**<br>**• `📋 Raw ALDB Records Table`**<br>**• `🔗 Add, Replace & Link Tools`** | Categorizes Controller vs. Responder links with **`🔒 Core Hub Link`** protection badges, progressive disclosure (**`🔧 Show Raw ALDB Details`**), searchable raw EEPROM records, new device provisioning, **"Clone & Swap" Device Replacement Wizard**, and atomic reciprocal link creation/preset tuning/deletion. |
+| **3. `🎭 Scenes & Presets`** | **• `🎛️ Scene Preset Tuner`**<br>**• `📊 Device × Scene Matrix`** | Manage multi-device scenes, test live broadcasts, surgically tune individual responder On-Level brightness and Ramp Rate transitions, or switch to the high-density **Device × Scene Participation Matrix**. |
+| **4. `♥ Health & Maintenance`** | **• `♥ Network Health Analyzer`**<br>**• `🛡️ PLM Link Audit & Ghost Cleaner`** | 7-step diagnostic engine scoring network integrity (`0–100%`) with 6-category anomaly breakdown, battery-device wake alerts, PLM Group 1 self-healing audit, and network-wide Ghost Target eradication. |
+
+### Persistent Contextual Drawers & Telemetry Bar
+| Component | Location | Description |
+|---|---|---|
+| **`♥ Network Health Pill` & Telemetry Counters** | Top Command Bar (Left) | Always-visible health score (`100% — Healthy`) and live Device, Scene, and ALDB Record counts; clicking the Health pill jumps directly to `♥ Health & Maintenance`. |
+| **`⚖️ Pending Changes & Verification` Drawer** | Slide-Over Right Drawer | Opens automatically when any change is staged (or via the top-bar badge). Displays the **Preflight Safety & Impact Banner**, risk badges, current vs. proposed EEPROM state diffs, **`↩ Undo`**, **`❌ Discard All`**, and **`✔️ Commit to Hardware`**. |
+| **`📜 Live Event & Bridge Log` Drawer** | Collapsible Bottom Drawer | Toggleable from the bottom status bar (`📜 Show Event Log ▲`) to inspect real-time Raspberry Pi bridge operations, powerline transactions, and session heartbeats alongside any active workspace. |
 
 ---
 
@@ -9,7 +155,7 @@ An enterprise-grade, decoupled management suite for Insteon dual-mesh home autom
 ### 1. Host-Agnostic Hardware Arbitration (openHAB & Beyond)
 Generic smart home hubs (openHAB, Home Assistant, etc.) lock serial interfaces continuously, making concurrent deep diagnostics impossible without port collision.
 * **Management Session Lease:** Rather than thrashing the serial port per command, Insteon Manager uses a stateful **Management Session**. Upon acquisition, the bridge safely pauses host bindings via REST (e.g. openHAB Insteon Thing `PUT /rest/things/{uid}/enable false`), transfers ownership of the USB PLM (`/dev/ttyUSB0`) to `pyinsteon`, and begins high-speed management.
-* **Watchdog Keep-Alive:** The desktop client issues periodic heartbeats (30s interval). If the client disconnects or crashes, an autonomous backend watchdog releases the serial port and restores the host automation engine to ONLINE within 300 seconds.
+* **Watchdog Keep-Alive:** The desktop client issues periodic heartbeats (30s interval). If the client disconnects or crashes, an autonomous backend watchdog releases the serial port and restores the host automation engine to `ONLINE` within 300 seconds.
 * **Modular Adaptability:** While pre-configured for openHAB 4.x/5.x, the host arbitration adapter is completely decoupled. By implementing a lightweight adapter class, it can easily manage **Home Assistant** (suspending the Insteon integration via WebSocket/REST), **Node-RED**, or run as a standalone **Headless Network Controller**.
 
 ### 2. Protected Core System Links (Groups 0 & 1)
@@ -49,7 +195,7 @@ A comprehensive diagnostic engine inspects the entire network topology against a
  +-------------------------------------------------------------------------+
  |                           Windows Desktop                               |
  |                                                                         |
- |   Insteon Network Studio (.NET 10 WPF / MVVM)                           |
+ |   Insteon Network Studio (.NET 10 WPF / MVVM — Self-Contained .exe)     |
  |   ├── Top Telemetry Header (Mode Badge, Health Score Pill, Counts)      |
  |   ├── Workspace 1: 🌐 Network Overview (Interactive Topology & Node UI) |
  |   ├── Workspace 2: 🔌 Devices & Links (Inspector, Raw ALDB, Link Tools) |
@@ -88,58 +234,19 @@ A comprehensive diagnostic engine inspects the entire network topology against a
 
 ---
 
-## 🖥️ Studio Workspaces & User Interface Architecture
+## 🛠️ Building & Packaging from Source (For Developers)
 
-**Insteon Network Studio** separates **Browse Mode** (`👁️ BROWSE MODE (Read-Only Cache)` — full exploration and change staging while openHAB stays `ONLINE`) from **Manage Mode** (`🛠️ MANAGE MODE (Live Hardware Exclusive)` — exclusive PLM hardware lock for live powerline commands and verified EEPROM commits, with automatic escalation prompts when needed).
+If you are modifying the source code and want to build the self-contained Windows executable or generate new release archives yourself (requires the [.NET 10 SDK](https://dotnet.microsoft.com/download)):
 
-### 4 Primary Workspaces
-| Workspace | Sub-Views & Capabilities | Description |
-|---|---|---|
-| **1. `🌐 Network Overview`** | **Interactive Topology Map & Node Inspector Sidebar** | Node-and-link canvas with directional link encoding (**Solid Blue** `Controls`, **Dotted Green** `Responds To`, **Dashed Gold** `Cross-Linked`, vector Arrow Tail/Head markers, and dynamic selected-node perspective), hardware identity ribbons, and 1-click navigation to Device Inspector or Link Tools. |
-| **2. `🔌 Devices & Links`** | **• `🗂️ Organized Device Inspector`**<br>**• `📋 Raw ALDB Records Table`**<br>**• `🔗 Add, Replace & Link Tools`** | Categorizes Controller vs. Responder links with **`🔒 Core Hub Link`** protection badges, progressive disclosure (**`🔧 Show Raw ALDB Details`**), searchable raw EEPROM records, new device provisioning, **"Clone & Swap" Device Replacement Wizard**, and atomic reciprocal link creation/preset tuning/deletion. |
-| **3. `🎭 Scenes & Presets`** | **• `🎛️ Scene Preset Tuner`**<br>**• `📊 Device × Scene Matrix`** | Manage multi-device scenes, test live broadcasts, surgically tune individual responder On-Level brightness and Ramp Rate transitions, or switch to the high-density **Device × Scene Participation Matrix**. |
-| **4. `♥ Health & Maintenance`** | **• `♥ Network Health Analyzer`**<br>**• `🛡️ PLM Link Audit & Ghost Cleaner`** | 7-step diagnostic engine scoring network integrity (`0–100%`) with 6-category anomaly breakdown, battery-device wake alerts, PLM Group 1 self-healing audit, and network-wide Ghost Target eradication. |
-
-### Persistent Contextual Drawers & Telemetry Bar
-| Component | Location | Description |
-|---|---|---|
-| **`♥ Network Health Pill` & Telemetry Counters** | Top Command Bar (Left) | Always-visible health score (`100% — Healthy`) and live Device, Scene, and ALDB Record counts; clicking the Health pill jumps directly to `♥ Health & Maintenance`. |
-| **`⚖️ Pending Changes & Verification` Drawer** | Slide-Over Right Drawer | Opens automatically when any change is staged (or via the top-bar badge). Displays the **Preflight Safety & Impact Banner**, risk badges, current vs. proposed EEPROM state diffs, **`↩ Undo`**, **`❌ Discard All`**, and **`✔️ Commit to Hardware`**. |
-| **`📜 Live Event & Bridge Log` Drawer** | Collapsible Bottom Drawer | Toggleable from the bottom status bar (`📜 Show Event Log ▲`) to inspect real-time Raspberry Pi bridge operations, powerline transactions, and session heartbeats alongside any active workspace. |
-
----
-
-## 🚀 Quick Start & Deployment
-
-### 1. Backend Service (Linux / Raspberry Pi)
-```bash
-# Clone the repository to the host
-cd /opt
-sudo git clone https://github.com/crcowan/Insteon-Manager.git insteon-bridge
-cd /opt/insteon-bridge/backend
-
-# Create virtual environment and install dependencies
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-
-# Configure environment (.env)
-cp .env.example .env
-# Edit OPENHAB_URL, OPENHAB_API_TOKEN, and PLM_PORT
-
-# Install and start systemd service
-sudo cp ../deployment/insteon-bridge.service /etc/systemd/system/
-sudo systemctl daemon-reload
-sudo systemctl enable --now insteon-bridge
-```
-
-### 2. Frontend Desktop Application (Windows)
 ```powershell
-# Package self-contained single-file executable to dist\InsteonManager
-powershell -ExecutionPolicy Bypass -File .\package_frontend.ps1
+# 1. Build & package the self-contained single-file Windows app into dist\InsteonManager
+powershell -NoProfile -ExecutionPolicy Bypass -File .\package_frontend.ps1
 
-# Launch the packaged executable
-.\dist\InsteonManager\InsteonManager.exe
+# 2. Build all GitHub Release archives (Windows .zip + Raspberry Pi .tar.gz / .zip) in dist\releases\v2.0.0
+powershell -NoProfile -ExecutionPolicy Bypass -File .\build_release.ps1 -Version "v2.0.0"
+
+# 3. Deploy updated Python backend code directly to a Raspberry Pi over SSH
+powershell -NoProfile -ExecutionPolicy Bypass -File .\deploy_backend_code.ps1
 ```
 
 ---

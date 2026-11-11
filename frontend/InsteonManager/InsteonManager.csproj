@@ -8,11 +8,11 @@
     <UseWPF>true</UseWPF>
     <ApplicationIcon>icon.ico</ApplicationIcon>
     <AssemblyName>InsteonManager</AssemblyName>
-    <AssemblyTitle>Insteon Network Manager</AssemblyTitle>
-    <Product>Insteon Network Manager</Product>
-    <Description>Insteon Smart Home Network Topology and ALDB Inspector</Description>
-    <Version>1.0.0</Version>
-    <FileVersion>1.0.0.0</FileVersion>
+    <AssemblyTitle>Insteon Network Studio</AssemblyTitle>
+    <Product>Insteon Network Studio</Product>
+    <Description>Insteon Smart Home Network Topology, Diagnostics and ALDB Management Suite</Description>
+    <Version>2.0.0</Version>
+    <FileVersion>2.0.0.0</FileVersion>
   </PropertyGroup>
 
   <ItemGroup>
